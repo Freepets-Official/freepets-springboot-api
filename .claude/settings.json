@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/application.yml)",
+      "Read(**/application-*.yml)"
+    ]
+  }
+}

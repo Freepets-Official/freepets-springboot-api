@@ -35,7 +35,7 @@ class UserControllerTest {
     void signUp_성공하면_200과_빈_result를_반환한다() throws Exception {
         when(userCommandService.signUp(any())).thenReturn(new UserResponseDTO.SignUpResult());
 
-        mockMvc.perform(post("/api/users/signup")
+        mockMvc.perform(post("/api/v1/users/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"test@test.com\",\"password\":\"password1\",\"nickname\":\"tester\"}"))
                 .andExpect(status().isOk())
@@ -49,7 +49,7 @@ class UserControllerTest {
     void signUp_이메일이_중복되면_409를_반환한다() throws Exception {
         when(userCommandService.signUp(any())).thenThrow(new GeneralException(ErrorStatus.MEMBER4001));
 
-        mockMvc.perform(post("/api/users/signup")
+        mockMvc.perform(post("/api/v1/users/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"test@test.com\",\"password\":\"password1\",\"nickname\":\"tester\"}"))
                 .andExpect(status().isConflict())
@@ -59,7 +59,7 @@ class UserControllerTest {
 
     @Test
     void signUp_필드가_비어있으면_400을_반환한다() throws Exception {
-        mockMvc.perform(post("/api/users/signup")
+        mockMvc.perform(post("/api/v1/users/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"\",\"password\":\"\",\"nickname\":\"\"}"))
                 .andExpect(status().isBadRequest())
@@ -73,7 +73,7 @@ class UserControllerTest {
 
     @Test
     void signUp_이메일_형식이_올바르지_않으면_400을_반환한다() throws Exception {
-        mockMvc.perform(post("/api/users/signup")
+        mockMvc.perform(post("/api/v1/users/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"not-an-email\",\"password\":\"password1\",\"nickname\":\"tester\"}"))
                 .andExpect(status().isBadRequest())

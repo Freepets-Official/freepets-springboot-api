@@ -14,7 +14,9 @@ public enum ErrorStatus implements BaseErrorCode {
     COMMON500(INTERNAL_SERVER_ERROR, "COMMON500", "서버 내부 오류가 발생했습니다."),
 
     // 회원 에러
-    MEMBER4001(CONFLICT, "MEMBER4001", "이미 가입된 이메일입니다.");
+    MEMBER4001(CONFLICT, "MEMBER4001", "이미 가입된 이메일입니다."),
+    MEMBER4005(NOT_FOUND, "MEMBER4005", "해당 아이디를 가진 유저가 존재하지 않습니다."),
+    MEMBER4006(UNAUTHORIZED, "MEMBER4006", "비밀번호가 일치하지 않습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

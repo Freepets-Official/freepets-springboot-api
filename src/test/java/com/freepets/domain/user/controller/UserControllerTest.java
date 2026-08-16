@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.service.UserCommandService;
+import com.freepets.domain.user.service.UserQueryService;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
 
@@ -30,6 +31,9 @@ class UserControllerTest {
 
     @MockitoBean
     private UserCommandService userCommandService;
+
+    @MockitoBean
+    private UserQueryService userQueryService;
 
     @Test
     void signUp_성공하면_200과_빈_result를_반환한다() throws Exception {
@@ -81,5 +85,56 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.result.email").exists());
 
         verify(userCommandService, never()).signUp(any());
+    }
+
+    @Test
+    void login_성공하면_200과_토큰을_반환한다() throws Exception {
+        when(userQueryService.login(any()))
+                .thenReturn(new UserResponseDTO.LoginResult("access-token", "refresh-token"));
+
+        mockMvc.perform(post("/api/v1/users/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"test@test.com\",\"password\":\"password1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.accessToken").value("access-token"))
+                .andExpect(jsonPath("$.result.refreshToken").value("refresh-token"));
+    }
+
+    @Test
+    void login_존재하지_않는_이메일이면_404를_반환한다() throws Exception {
+        when(userQueryService.login(any())).thenThrow(new GeneralException(ErrorStatus.MEMBER4005));
+
+        mockMvc.perform(post("/api/v1/users/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"nope@test.com\",\"password\":\"password1\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("MEMBER4005"));
+    }
+
+    @Test
+    void login_비밀번호가_일치하지_않으면_401을_반환한다() throws Exception {
+        when(userQueryService.login(any())).thenThrow(new GeneralException(ErrorStatus.MEMBER4006));
+
+        mockMvc.perform(post("/api/v1/users/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"test@test.com\",\"password\":\"wrong\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("MEMBER4006"));
+    }
+
+    @Test
+    void login_필드가_비어있으면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/users/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"\",\"password\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"))
+                .andExpect(jsonPath("$.result.email").exists())
+                .andExpect(jsonPath("$.result.password").exists());
+
+        verifyNoInteractions(userQueryService);
     }
 }

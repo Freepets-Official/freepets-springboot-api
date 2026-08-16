@@ -24,4 +24,11 @@ public class UserConverter {
     public static UserResponseDTO.SignUpResult toSignUpResult(User user) {
         return new UserResponseDTO.SignUpResult();
     }
+
+    public static UserResponseDTO.LoginResult toLoginResult(
+            String accessToken,
+            String refreshToken
+    ) {
+        return new UserResponseDTO.LoginResult(accessToken, refreshToken);
+    }
 }

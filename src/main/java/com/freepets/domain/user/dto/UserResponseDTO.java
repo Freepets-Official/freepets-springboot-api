@@ -5,4 +5,9 @@ public class UserResponseDTO {
     private UserResponseDTO() {}
 
     public static class SignUpResult {}
+
+    public record LoginResult(
+            String accessToken,
+            String refreshToken
+    ) {}
 }

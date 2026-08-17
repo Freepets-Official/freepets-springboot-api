@@ -7,6 +7,13 @@ import javax.crypto.SecretKey;
 
 import org.springframework.stereotype.Component;
 
+import com.freepets.global.apiPayload.code.status.ErrorStatus;
+import com.freepets.global.apiPayload.exception.GeneralException;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -21,10 +28,12 @@ public class JwtProvider {
     private final JwtProperties jwtProperties;
 
     private SecretKey signingKey;
+    private JwtParser jwtParser;
 
     @PostConstruct
     private void init() {
         signingKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.secret()));
+        jwtParser = Jwts.parser().verifyWith(signingKey).build();
     }
 
     public String createAccessToken(Long userId) {
@@ -33,6 +42,21 @@ public class JwtProvider {
 
     public String createRefreshToken(Long userId) {
         return createToken(userId, jwtProperties.refreshTokenExpiration());
+    }
+
+    public Long getUserId(String token) {
+        Claims claims = parseClaims(token);
+        return Long.valueOf(claims.getSubject());
+    }
+
+    private Claims parseClaims(String token) {
+        try {
+            return jwtParser.parseSignedClaims(token).getPayload();
+        } catch (ExpiredJwtException exception) {
+            throw new GeneralException(ErrorStatus.TOKEN4002);
+        } catch (JwtException | IllegalArgumentException exception) {
+            throw new GeneralException(ErrorStatus.TOKEN4001);
+        }
     }
 
     private String createToken(

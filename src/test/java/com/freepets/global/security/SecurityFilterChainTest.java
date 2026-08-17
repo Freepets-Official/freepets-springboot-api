@@ -64,7 +64,7 @@ class SecurityFilterChainTest {
         mockMvc.perform(get("/api/v1/security-test/ping")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(content().string("pong"));
+                .andExpect(content().string("pong:1"));
     }
 
     @Test

@@ -16,7 +16,11 @@ public enum ErrorStatus implements BaseErrorCode {
     // 회원 에러
     MEMBER4001(CONFLICT, "MEMBER4001", "이미 가입된 이메일입니다."),
     MEMBER4005(NOT_FOUND, "MEMBER4005", "해당 아이디를 가진 유저가 존재하지 않습니다."),
-    MEMBER4006(UNAUTHORIZED, "MEMBER4006", "비밀번호가 일치하지 않습니다.");
+    MEMBER4006(UNAUTHORIZED, "MEMBER4006", "비밀번호가 일치하지 않습니다."),
+
+    // 토큰 에러
+    TOKEN4001(UNAUTHORIZED, "TOKEN4001", "유효하지 않은 토큰입니다."),
+    TOKEN4002(UNAUTHORIZED, "TOKEN4002", "만료된 토큰입니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

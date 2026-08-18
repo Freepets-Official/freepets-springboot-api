@@ -8,6 +8,7 @@ import com.freepets.domain.pet.entity.BreedSize;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PastOrPresent;
@@ -46,6 +47,9 @@ public class PetRequestDTO {
         @PastOrPresent(message = "예방접종일은 오늘 이전 날짜여야 합니다.")
         private LocalDate vaccinationDate;
 
+        @FutureOrPresent(message = "다음 접종 예정일은 오늘 이후 날짜여야 합니다.")
+        private LocalDate nextVaccinationDate;
+
         // Lombok이 만드는 setVaccinated 때문에 JSON 키가 vaccinated로 깎이는 것을 막는다
         @JsonProperty("isVaccinated")
         private boolean isVaccinated;
@@ -76,6 +80,9 @@ public class PetRequestDTO {
 
         @PastOrPresent(message = "예방접종일은 오늘 이전 날짜여야 합니다.")
         private LocalDate vaccinationDate;
+
+        @FutureOrPresent(message = "다음 접종 예정일은 오늘 이후 날짜여야 합니다.")
+        private LocalDate nextVaccinationDate;
 
         @JsonProperty("isVaccinated")
         private boolean isVaccinated;

@@ -63,6 +63,9 @@ public class Pet extends BaseEntity {
     @Column(name = "vaccination_date")
     private LocalDate vaccinationDate;
 
+    @Column(name = "next_vaccination_date")
+    private LocalDate nextVaccinationDate;
+
     @Column(name = "is_vaccinated", nullable = false)
     private boolean isVaccinated;
 
@@ -84,6 +87,7 @@ public class Pet extends BaseEntity {
             BreedSize breedSize,
             String profile,
             LocalDate vaccinationDate,
+            LocalDate nextVaccinationDate,
             boolean isVaccinated
     ) {
         this.user = user;
@@ -93,6 +97,7 @@ public class Pet extends BaseEntity {
         this.breedSize = breedSize;
         this.profile = profile;
         this.vaccinationDate = vaccinationDate;
+        this.nextVaccinationDate = nextVaccinationDate;
         this.isVaccinated = isVaccinated;
     }
 
@@ -103,6 +108,7 @@ public class Pet extends BaseEntity {
             BreedSize breedSize,
             String profile,
             LocalDate vaccinationDate,
+            LocalDate nextVaccinationDate,
             boolean isVaccinated
     ) {
         this.name = name;
@@ -111,6 +117,7 @@ public class Pet extends BaseEntity {
         this.breedSize = breedSize;
         this.profile = profile;
         this.vaccinationDate = vaccinationDate;
+        this.nextVaccinationDate = nextVaccinationDate;
         this.isVaccinated = isVaccinated;
     }
 

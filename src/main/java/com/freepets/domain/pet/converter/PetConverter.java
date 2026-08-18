@@ -23,6 +23,7 @@ public class PetConverter {
                 .breedSize(request.getBreedSize())
                 .profile(request.getProfile())
                 .vaccinationDate(request.getVaccinationDate())
+                .nextVaccinationDate(request.getNextVaccinationDate())
                 .isVaccinated(request.isVaccinated())
                 .build();
     }
@@ -36,6 +37,7 @@ public class PetConverter {
                 pet.getBreedSize(),
                 pet.getProfile(),
                 pet.getVaccinationDate(),
+                pet.getNextVaccinationDate(),
                 pet.isVaccinated(),
                 pet.getCreatedAt(),
                 pet.getUpdatedAt()

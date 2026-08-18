@@ -20,6 +20,7 @@ public class PetResponseDTO {
             BreedSize breedSize,
             String profile,
             LocalDate vaccinationDate,
+            LocalDate nextVaccinationDate,
 
             // record의 접근자도 isVaccinated()라 Jackson이 vaccinated로 줄이는 것을 막는다
             @JsonProperty("isVaccinated")

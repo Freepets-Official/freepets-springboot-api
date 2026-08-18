@@ -50,6 +50,7 @@ public class PetCommandService {
                 request.getBreedSize(),
                 request.getProfile(),
                 request.getVaccinationDate(),
+                request.getNextVaccinationDate(),
                 request.isVaccinated()
         );
 

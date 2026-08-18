@@ -2,6 +2,7 @@ package com.freepets.domain.pet.entity;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -62,8 +63,14 @@ public class Pet extends BaseEntity {
     @Column(name = "vaccination_date")
     private LocalDate vaccinationDate;
 
+    @Column(name = "next_vaccination_date")
+    private LocalDate nextVaccinationDate;
+
     @Column(name = "is_vaccinated", nullable = false)
     private boolean isVaccinated;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     @OneToMany(mappedBy = "pet", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PetCheck> petChecks = new ArrayList<>();
@@ -80,6 +87,7 @@ public class Pet extends BaseEntity {
             BreedSize breedSize,
             String profile,
             LocalDate vaccinationDate,
+            LocalDate nextVaccinationDate,
             boolean isVaccinated
     ) {
         this.user = user;
@@ -89,7 +97,40 @@ public class Pet extends BaseEntity {
         this.breedSize = breedSize;
         this.profile = profile;
         this.vaccinationDate = vaccinationDate;
+        this.nextVaccinationDate = nextVaccinationDate;
         this.isVaccinated = isVaccinated;
+    }
+
+    public void update(
+            String name,
+            String species,
+            BigDecimal weight,
+            BreedSize breedSize,
+            String profile,
+            LocalDate vaccinationDate,
+            LocalDate nextVaccinationDate,
+            boolean isVaccinated
+    ) {
+        this.name = name;
+        this.species = species;
+        this.weight = weight;
+        this.breedSize = breedSize;
+        this.profile = profile;
+        this.vaccinationDate = vaccinationDate;
+        this.nextVaccinationDate = nextVaccinationDate;
+        this.isVaccinated = isVaccinated;
+    }
+
+    public void delete() {
+        this.deletedAt = LocalDateTime.now();
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
+    }
+
+    public boolean isOwnedBy(Long userId) {
+        return user != null && user.getId().equals(userId);
     }
 
 }

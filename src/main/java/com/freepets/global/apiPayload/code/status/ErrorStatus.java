@@ -18,6 +18,10 @@ public enum ErrorStatus implements BaseErrorCode {
     MEMBER4005(NOT_FOUND, "MEMBER4005", "해당 아이디를 가진 유저가 존재하지 않습니다."),
     MEMBER4006(UNAUTHORIZED, "MEMBER4006", "비밀번호가 일치하지 않습니다."),
 
+    // 반려동물 에러
+    PET4001(NOT_FOUND, "PET4001", "해당 반려동물이 존재하지 않습니다."),
+    PET4002(FORBIDDEN, "PET4002", "해당 반려동물에 대한 권한이 없습니다."),
+
     // 토큰 에러
     TOKEN4001(UNAUTHORIZED, "TOKEN4001", "유효하지 않은 토큰입니다."),
     TOKEN4002(UNAUTHORIZED, "TOKEN4002", "만료된 토큰입니다.");

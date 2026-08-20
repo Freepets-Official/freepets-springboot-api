@@ -1,12 +1,13 @@
 package com.freepets.domain.pet.controller;
 
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,10 +28,10 @@ public class PetController {
     private final PetCommandService petCommandService;
     private final PetQueryService petQueryService;
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<PetResponseDTO.CreateResult> createPet(
             @AuthenticationPrincipal Long userId,
-            @Valid @RequestBody PetRequestDTO.CreateRequest request
+            @Valid @ModelAttribute PetRequestDTO.CreateRequest request
     ) {
         return ApiResponse.onSuccess(
                 petCommandService.createPet(userId, request)
@@ -56,11 +57,11 @@ public class PetController {
         );
     }
 
-    @PutMapping("/{petId}")
+    @PutMapping(value = "/{petId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<PetResponseDTO.PetDetail> updatePet(
             @AuthenticationPrincipal Long userId,
             @PathVariable("petId") Long petId,
-            @Valid @RequestBody PetRequestDTO.UpdateRequest request
+            @Valid @ModelAttribute PetRequestDTO.UpdateRequest request
     ) {
         return ApiResponse.onSuccess(
                 petCommandService.updatePet(userId, petId, request)

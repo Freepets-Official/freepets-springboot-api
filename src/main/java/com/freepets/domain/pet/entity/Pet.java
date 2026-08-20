@@ -28,6 +28,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 
 @Getter
 @Entity
@@ -46,6 +47,13 @@ public class Pet extends BaseEntity {
 
     @Column(length = 50, nullable = false)
     private String name;
+
+    // 기존 데이터가 있는 상태로 컬럼이 추가돼도 깨지지 않도록 기본값을 둔다.
+    // 과거 데이터는 실제 종류와 다를 수 있으니 배포 후 검토가 필요하다.
+    @ColumnDefault("'DOG'")
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private Kind kind;
 
     @Column(length = 100, nullable = false)
     private String species;
@@ -82,6 +90,7 @@ public class Pet extends BaseEntity {
     private Pet(
             User user,
             String name,
+            Kind kind,
             String species,
             BigDecimal weight,
             BreedSize breedSize,
@@ -92,6 +101,7 @@ public class Pet extends BaseEntity {
     ) {
         this.user = user;
         this.name = name;
+        this.kind = kind;
         this.species = species;
         this.weight = weight;
         this.breedSize = breedSize;
@@ -103,6 +113,7 @@ public class Pet extends BaseEntity {
 
     public void update(
             String name,
+            Kind kind,
             String species,
             BigDecimal weight,
             BreedSize breedSize,
@@ -112,6 +123,7 @@ public class Pet extends BaseEntity {
             boolean isVaccinated
     ) {
         this.name = name;
+        this.kind = kind;
         this.species = species;
         this.weight = weight;
         this.breedSize = breedSize;

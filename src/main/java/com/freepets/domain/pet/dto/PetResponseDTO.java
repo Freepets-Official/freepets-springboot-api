@@ -7,6 +7,7 @@ import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.freepets.domain.pet.entity.BreedSize;
+import com.freepets.domain.pet.entity.Kind;
 
 public class PetResponseDTO {
 
@@ -15,6 +16,7 @@ public class PetResponseDTO {
     public record PetDetail(
             Long petId,
             String name,
+            Kind kind,
             String species,
             BigDecimal weight,
             BreedSize breedSize,

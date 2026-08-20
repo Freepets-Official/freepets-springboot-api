@@ -55,6 +55,7 @@ public class PetCommandService {
 
         pet.update(
                 request.getName(),
+                request.getKind(),
                 request.getSpecies(),
                 request.getWeight(),
                 request.getBreedSize(),

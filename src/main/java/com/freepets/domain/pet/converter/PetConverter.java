@@ -19,6 +19,7 @@ public class PetConverter {
         return Pet.builder()
                 .user(user)
                 .name(request.getName())
+                .kind(request.getKind())
                 .species(request.getSpecies())
                 .weight(request.getWeight())
                 .breedSize(request.getBreedSize())
@@ -33,6 +34,7 @@ public class PetConverter {
         return new PetResponseDTO.PetDetail(
                 pet.getPetId(),
                 pet.getName(),
+                pet.getKind(),
                 pet.getSpecies(),
                 pet.getWeight(),
                 pet.getBreedSize(),

@@ -2,6 +2,7 @@ package com.freepets.domain.pet.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.freepets.domain.pet.converter.PetConverter;
 import com.freepets.domain.pet.dto.PetRequestDTO;
@@ -12,6 +13,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.s3.S3ImageService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -22,6 +24,7 @@ public class PetCommandService {
 
     private final PetRepository petRepository;
     private final UserRepository userRepository;
+    private final S3ImageService s3ImageService;
 
     public PetResponseDTO.CreateResult createPet(
             Long userId,
@@ -30,7 +33,9 @@ public class PetCommandService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
 
-        Pet pet = PetConverter.toPet(request, user);
+        String profileUrl = uploadProfileIfPresent(request.getProfile());
+
+        Pet pet = PetConverter.toPet(request, user, profileUrl);
         Pet savedPet = petRepository.save(pet);
 
         return PetConverter.toCreateResult(savedPet);
@@ -43,16 +48,25 @@ public class PetCommandService {
     ) {
         Pet pet = findOwnedPet(userId, petId);
 
+        String previousProfileUrl = pet.getProfile();
+        String profileUrl = isNewProfilePresent(request.getProfile())
+                ? uploadProfileIfPresent(request.getProfile())
+                : previousProfileUrl;
+
         pet.update(
                 request.getName(),
                 request.getSpecies(),
                 request.getWeight(),
                 request.getBreedSize(),
-                request.getProfile(),
+                profileUrl,
                 request.getVaccinationDate(),
                 request.getNextVaccinationDate(),
                 request.isVaccinated()
         );
+
+        if (isNewProfilePresent(request.getProfile()) && previousProfileUrl != null) {
+            s3ImageService.delete(previousProfileUrl);
+        }
 
         return PetConverter.toPetDetail(pet);
     }
@@ -79,5 +93,17 @@ public class PetCommandService {
         }
 
         return pet;
+    }
+
+    private boolean isNewProfilePresent(MultipartFile profile) {
+        return profile != null && !profile.isEmpty();
+    }
+
+    private String uploadProfileIfPresent(MultipartFile profile) {
+        if (!isNewProfilePresent(profile)) {
+            return null;
+        }
+
+        return s3ImageService.upload(profile);
     }
 }

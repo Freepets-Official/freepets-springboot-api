@@ -13,7 +13,8 @@ public class PetConverter {
 
     public static Pet toPet(
             PetRequestDTO.CreateRequest request,
-            User user
+            User user,
+            String profileUrl
     ) {
         return Pet.builder()
                 .user(user)
@@ -21,7 +22,7 @@ public class PetConverter {
                 .species(request.getSpecies())
                 .weight(request.getWeight())
                 .breedSize(request.getBreedSize())
-                .profile(request.getProfile())
+                .profile(profileUrl)
                 .vaccinationDate(request.getVaccinationDate())
                 .nextVaccinationDate(request.getNextVaccinationDate())
                 .isVaccinated(request.isVaccinated())

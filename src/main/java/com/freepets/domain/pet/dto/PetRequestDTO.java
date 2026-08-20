@@ -16,6 +16,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.web.multipart.MultipartFile;
 
 public class PetRequestDTO {
 
@@ -42,7 +43,7 @@ public class PetRequestDTO {
         @NotNull(message = "견종 크기는 필수입니다.")
         private BreedSize breedSize;
 
-        private String profile;
+        private MultipartFile profile;
 
         @PastOrPresent(message = "예방접종일은 오늘 이전 날짜여야 합니다.")
         private LocalDate vaccinationDate;
@@ -76,7 +77,7 @@ public class PetRequestDTO {
         @NotNull(message = "견종 크기는 필수입니다.")
         private BreedSize breedSize;
 
-        private String profile;
+        private MultipartFile profile;
 
         @PastOrPresent(message = "예방접종일은 오늘 이전 날짜여야 합니다.")
         private LocalDate vaccinationDate;

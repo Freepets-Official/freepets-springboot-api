@@ -31,4 +31,8 @@ public class UserConverter {
     ) {
         return new UserResponseDTO.LoginResult(accessToken, refreshToken);
     }
+
+    public static UserResponseDTO.AccountResult toAccountResult(User user) {
+        return new UserResponseDTO.AccountResult(user.getNickname(), user.getAvatarUri());
+    }
 }

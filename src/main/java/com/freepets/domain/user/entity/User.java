@@ -44,6 +44,9 @@ public class User extends BaseEntity {
     @Column(nullable = false, length = 20)
     private Provider provider;
 
+    @Column(columnDefinition = "TEXT")
+    private String avatarUri;
+
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Pet> pets = new ArrayList<>();
 
@@ -52,12 +55,22 @@ public class User extends BaseEntity {
             String email,
             String passwordHash,
             String nickname,
-            Provider provider
+            Provider provider,
+            String avatarUri
     ) {
         this.email = email;
         this.passwordHash = passwordHash;
         this.nickname = nickname;
         this.provider = provider;
+        this.avatarUri = avatarUri;
+    }
+
+    public void update(
+            String nickname,
+            String avatarUri
+    ) {
+        this.nickname = nickname;
+        this.avatarUri = avatarUri;
     }
 
 }

@@ -15,6 +15,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -24,7 +25,15 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Entity
-@Table(name = "facilities")
+@Table(
+        name = "facilities",
+        indexes = {
+                @Index(name = "idx_facilities_content_id", columnList = "content_id", unique = true),
+                @Index(name = "idx_facilities_coordinate", columnList = "lat, lng"),
+                @Index(name = "idx_facilities_category", columnList = "category"),
+                @Index(name = "idx_facilities_region", columnList = "sido_code, sigungu_code")
+        }
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Facility extends BaseEntity {
 
@@ -33,52 +42,158 @@ public class Facility extends BaseEntity {
     @Column(name = "facility_id")
     private Long facilityId;
 
+    // ------------------------------------------------------------------
+    // 관광공사 기본 정보 (areaBasedList2)
+    // ------------------------------------------------------------------
+
+    /** 관광공사 콘텐츠 ID. 사업자가 직접 등록한 시설에는 없으므로 nullable이다. */
+    @Column(name = "content_id", length = 20)
+    private String contentId;
+
     @Column(length = 200, nullable = false)
     private String name;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 20)
     private FacilityCategory category;
 
-    @Column(length = 300, nullable = false)
+    @Column(length = 300)
     private String address;
 
-    @Column(precision = 10, scale = 7, nullable = false)
+    /** 위도. 관광공사 응답의 {@code mapy}에 해당한다. */
+    @Column(precision = 10, scale = 7)
     private BigDecimal lat;
 
-    @Column(precision = 10, scale = 7, nullable = false)
+    /** 경도. 관광공사 응답의 {@code mapx}에 해당한다. */
+    @Column(precision = 10, scale = 7)
     private BigDecimal lng;
 
-    @Column(length = 30, nullable = false)
+    /**
+     * 연락처. 관광공사 {@code tel}은 번호만 오는 게 아니라
+     * {@code "관리사무소 041-930-6883, 안내센터 041-930-6885"}처럼 안내문이 담겨 온다.
+     * 길이를 제한하지 않고 원문 그대로 보관한다.
+     */
+    @Column(columnDefinition = "TEXT")
     private String phone;
 
+    @Column(name = "large_category_code", length = 10)
+    private String largeCategoryCode;
+
+    @Column(name = "medium_category_code", length = 10)
+    private String mediumCategoryCode;
+
+    @Column(name = "small_category_code", length = 10)
+    private String smallCategoryCode;
+
+    @Column(name = "sido_code", length = 10)
+    private String sidoCode;
+
+    @Column(name = "sigungu_code", length = 10)
+    private String sigunguCode;
+
+    @Column(length = 30)
+    private String sido;
+
+    @Column(length = 30)
+    private String sigungu;
+
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
+
+    @Column(name = "thumbnail_url", length = 500)
+    private String thumbnailUrl;
+
+    /** 공공누리 저작권 유형. Type3는 변경금지이므로 이미지 가공 전에 확인해야 한다. */
+    @Column(name = "copyright_type", length = 10)
+    private String copyrightType;
+
+    /** 관광공사가 콘텐츠를 갱신한 시점. 출처 표기와 변경 감지에 쓴다. */
+    @Column(name = "tour_api_modified_at")
+    private LocalDateTime tourApiModifiedAt;
+
+    // ------------------------------------------------------------------
+    // 반려동물 동반 조건 원문 (detailPetTour2)
+    // ------------------------------------------------------------------
+
+    /** 동반 구분. {@code 전구역 동반가능} / {@code 일부구역 동반가능} 두 값만 관측된다. */
+    @Column(name = "accompany_type", length = 200)
+    private String accompanyType;
+
+    /** 동반 가능 동물 원문. 체중 상한·소형견 한정을 여기서 추출한다. */
+    @Column(name = "allowed_animal_text", columnDefinition = "TEXT")
+    private String allowedAnimalText;
+
+    /** 동반 시 필요사항 원문. 콤마로 구분된 코드성 값이라 사전 매핑으로 처리한다. */
+    @Column(name = "required_matter_text", columnDefinition = "TEXT")
+    private String requiredMatterText;
+
+    /** 기타 동반 정보 원문. */
+    @Column(name = "etc_accompany_text", columnDefinition = "TEXT")
+    private String etcAccompanyText;
+
+    /** 사고 대비사항 원문. 파싱 입력으로만 쓰고 화면에는 노출하지 않는다. */
+    @Column(name = "accident_risk_text", columnDefinition = "TEXT")
+    private String accidentRiskText;
+
+    /** 위 원문들의 해시. 값이 그대로면 재파싱을 건너뛴다. */
+    @Column(name = "pet_condition_hash", length = 64)
+    private String petConditionHash;
+
+    // ------------------------------------------------------------------
+    // 파싱 결과
+    // ------------------------------------------------------------------
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "pet_allowed", nullable = false)
+    @Column(name = "pet_allowed", nullable = false, length = 20)
     private PetAllowed petAllowed;
 
-    @Column(name = "pet_condition_raw", columnDefinition = "TEXT", nullable = false)
-    private String petConditionRaw;
-
-    @Column(name = "max_weight", precision = 5, scale = 2, nullable = false)
+    /** 동반 가능한 최대 체중(kg). 원문에 상한이 명시된 경우에만 채워진다. */
+    @Column(name = "max_weight", precision = 5, scale = 2)
     private BigDecimal maxWeight;
 
-    @Column(name = "checked_at", nullable = false)
-    private LocalDateTime checkedAt;
+    /** 파싱 규칙 버전. 규칙을 고치면 올려서 전량 재파싱 대상으로 만든다. */
+    @Column(name = "parser_version", nullable = false)
+    private int parserVersion;
 
-    @Column(name = "content_id", length = 20, nullable = false)
-    private String contentId;
+    // ------------------------------------------------------------------
+    // 적재 메타
+    // ------------------------------------------------------------------
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private FacilitySource source;
+
+    /** 관광공사가 비표출로 내린 콘텐츠는 삭제하지 않고 이 값을 내린다. */
+    @Column(name = "is_active", nullable = false)
+    private boolean isActive;
+
+    /**
+     * 관광공사 반려동물 동반 목록에 등재된 시설인지 여부.
+     *
+     * <p>{@code PENDING}이 "조건이 비어 있음"에서 온 것인지 "정보 자체가 없음"에서 온 것인지
+     * 구분해두면, 신뢰도 차등 부여와 향후 정책 변경을 재적재 없이 처리할 수 있다.
+     */
+    @Column(name = "pet_tour_listed", nullable = false)
+    private boolean petTourListed;
+
+    // ------------------------------------------------------------------
+    // 우리 데이터 — 적재 배치가 건드리지 않는다
+    // ------------------------------------------------------------------
 
     @Column(name = "pet_score")
     private Integer petScore;
 
-    @Column(name = "space_rating", nullable = false)
-    private float spaceRating;
+    @Column(name = "space_rating")
+    private Float spaceRating;
 
-    @Column(name = "customer_service", nullable = false)
-    private float customerService;
+    @Column(name = "customer_service")
+    private Float customerService;
 
-    @Column(nullable = false)
-    private float amenities;
+    private Float amenities;
+
+    /** 사업자·사용자 확인으로 조건이 확정된 시점. */
+    @Column(name = "confirmed_at")
+    private LocalDateTime confirmedAt;
 
     @OneToMany(mappedBy = "facility", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CheckList> checkLists = new ArrayList<>();
@@ -88,37 +203,119 @@ public class Facility extends BaseEntity {
 
     @Builder
     private Facility(
+            String contentId,
             String name,
             FacilityCategory category,
             String address,
             BigDecimal lat,
             BigDecimal lng,
             String phone,
+            String largeCategoryCode,
+            String mediumCategoryCode,
+            String smallCategoryCode,
+            String sidoCode,
+            String sigunguCode,
+            String sido,
+            String sigungu,
+            String imageUrl,
+            String thumbnailUrl,
+            String copyrightType,
+            LocalDateTime tourApiModifiedAt,
+            String accompanyType,
+            String allowedAnimalText,
+            String requiredMatterText,
+            String etcAccompanyText,
+            String accidentRiskText,
+            String petConditionHash,
             PetAllowed petAllowed,
-            String petConditionRaw,
             BigDecimal maxWeight,
-            LocalDateTime checkedAt,
-            String contentId,
-            Integer petScore,
-            float spaceRating,
-            float customerService,
-            float amenities
+            int parserVersion,
+            FacilitySource source,
+            boolean isActive,
+            boolean petTourListed
     ) {
+        this.contentId = contentId;
         this.name = name;
         this.category = category;
         this.address = address;
         this.lat = lat;
         this.lng = lng;
         this.phone = phone;
+        this.largeCategoryCode = largeCategoryCode;
+        this.mediumCategoryCode = mediumCategoryCode;
+        this.smallCategoryCode = smallCategoryCode;
+        this.sidoCode = sidoCode;
+        this.sigunguCode = sigunguCode;
+        this.sido = sido;
+        this.sigungu = sigungu;
+        this.imageUrl = imageUrl;
+        this.thumbnailUrl = thumbnailUrl;
+        this.copyrightType = copyrightType;
+        this.tourApiModifiedAt = tourApiModifiedAt;
+        this.accompanyType = accompanyType;
+        this.allowedAnimalText = allowedAnimalText;
+        this.requiredMatterText = requiredMatterText;
+        this.etcAccompanyText = etcAccompanyText;
+        this.accidentRiskText = accidentRiskText;
+        this.petConditionHash = petConditionHash;
         this.petAllowed = petAllowed;
-        this.petConditionRaw = petConditionRaw;
         this.maxWeight = maxWeight;
-        this.checkedAt = checkedAt;
-        this.contentId = contentId;
-        this.petScore = petScore;
-        this.spaceRating = spaceRating;
-        this.customerService = customerService;
-        this.amenities = amenities;
+        this.parserVersion = parserVersion;
+        this.source = source;
+        this.isActive = isActive;
+        this.petTourListed = petTourListed;
+    }
+
+    /**
+     * 관광공사에서 다시 내려받은 값으로 갱신한다.
+     *
+     * <p>리뷰 집계·신뢰도 같은 우리 데이터는 건드리지 않는다.
+     * 전체 필드를 덮어쓰면 동기화 배치가 돌 때마다 그것들이 초기화된다.
+     */
+    public void updateFromTourApi(Facility fetched) {
+        this.name = fetched.name;
+        this.category = fetched.category;
+        this.address = fetched.address;
+        this.lat = fetched.lat;
+        this.lng = fetched.lng;
+        this.phone = fetched.phone;
+        this.largeCategoryCode = fetched.largeCategoryCode;
+        this.mediumCategoryCode = fetched.mediumCategoryCode;
+        this.smallCategoryCode = fetched.smallCategoryCode;
+        this.sidoCode = fetched.sidoCode;
+        this.sigunguCode = fetched.sigunguCode;
+        this.sido = fetched.sido;
+        this.sigungu = fetched.sigungu;
+        this.imageUrl = fetched.imageUrl;
+        this.thumbnailUrl = fetched.thumbnailUrl;
+        this.copyrightType = fetched.copyrightType;
+        this.tourApiModifiedAt = fetched.tourApiModifiedAt;
+        this.accompanyType = fetched.accompanyType;
+        this.allowedAnimalText = fetched.allowedAnimalText;
+        this.requiredMatterText = fetched.requiredMatterText;
+        this.etcAccompanyText = fetched.etcAccompanyText;
+        this.accidentRiskText = fetched.accidentRiskText;
+        this.petConditionHash = fetched.petConditionHash;
+        this.petAllowed = fetched.petAllowed;
+        this.maxWeight = fetched.maxWeight;
+        this.parserVersion = fetched.parserVersion;
+        this.petTourListed = fetched.petTourListed;
+        this.isActive = fetched.isActive;
+    }
+
+    public void deactivate() {
+        this.isActive = false;
+    }
+
+    public void replaceRequirements(List<Requirement> requirements) {
+        this.checkLists.clear();
+        requirements.forEach(requirement -> this.checkLists.add(
+                CheckList.builder()
+                        .facility(this)
+                        .type(requirement)
+                        .isChecked(false)
+                        .build()
+        ));
     }
 
 }

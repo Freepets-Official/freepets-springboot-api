@@ -37,4 +37,11 @@ public class UserQueryService {
 
         return UserConverter.toLoginResult(accessToken, refreshToken);
     }
+
+    public UserResponseDTO.AccountResult getAccount(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
+
+        return UserConverter.toAccountResult(user);
+    }
 }

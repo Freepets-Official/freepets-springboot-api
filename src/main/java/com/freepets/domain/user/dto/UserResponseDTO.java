@@ -10,4 +10,9 @@ public class UserResponseDTO {
             String accessToken,
             String refreshToken
     ) {}
+
+    public record AccountResult(
+            String nickname,
+            String avatarUri
+    ) {}
 }

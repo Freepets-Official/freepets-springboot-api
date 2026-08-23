@@ -2,7 +2,6 @@ package com.freepets.domain.review.service;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,7 +49,7 @@ public class ReviewCommandService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
 
-        validateEligiblePets(request.getPetIds(), facilityId);
+        validateFacilityEligibility(userId, facilityId);
 
         Review review = reviewRepository.findByFacilityFacilityIdAndUserId(facilityId, userId)
                 .orElse(null);
@@ -121,16 +120,14 @@ public class ReviewCommandService {
         return ReviewConverter.toReportResult(savedReport);
     }
 
-    private void validateEligiblePets(
-            List<Long> petIds,
+    // 반려동물 단위가 아니라 시설 단위로 확인한다 — 새·토끼처럼 개별 판별 자체가 없는 종도
+    // petIds에 자유롭게 포함할 수 있어야 하므로, "이 유저가 이 시설에서 판별을 받은 적이 있는지"만 본다.
+    private void validateFacilityEligibility(
+            Long userId,
             Long facilityId
     ) {
-        List<Long> ineligiblePetIds = petIds.stream()
-                .filter(petId -> !petCheckRepository.existsByPetPetIdAndFacilityFacilityId(petId, facilityId))
-                .toList();
-
-        if (!ineligiblePetIds.isEmpty()) {
-            throw new GeneralException(ErrorStatus.REVIEW4001, Map.of("ineligiblePetIds", ineligiblePetIds));
+        if (!petCheckRepository.existsByUserIdAndFacilityFacilityId(userId, facilityId)) {
+            throw new GeneralException(ErrorStatus.REVIEW4001);
         }
     }
 

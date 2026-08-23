@@ -4,7 +4,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -65,7 +65,7 @@ public class ReviewQueryService {
         List<Review> reviews = reviewRepository.findAllByFacilityFacilityId(facilityId);
 
         Set<Long> excludedReviewIds = reviewReportRepository
-                .findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.APPROVED, facilityId)
+                .findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, facilityId)
                 .stream()
                 .map(reviewReport -> reviewReport.getReview().getReviewId())
                 .collect(Collectors.toSet());
@@ -94,15 +94,9 @@ public class ReviewQueryService {
         return new ReviewResponseDTO.ReviewListResult(grade, categoryAverages, topTags, reviewDetails);
     }
 
-    private long weightedCount(List<Review> reviews) {
-        return reviews.stream()
-                .mapToLong(review -> review.getReviewPets().size())
-                .sum();
-    }
-
     private ReviewResponseDTO.Grade calculateGrade(List<Review> eligibleReviews) {
-        long count = weightedCount(eligibleReviews);
-        double score = count == 0 ? 0 : weightedScore(eligibleReviews, count);
+        long count = eligibleReviews.size();
+        double score = count == 0 ? 0 : average(eligibleReviews, ReviewConverter::toScore100);
         long needMore = Math.max(0, MIN_REVIEW_COUNT_FOR_ANY_GRADE - count);
 
         GradeTier tier = GRADE_TIERS.stream()
@@ -117,50 +111,42 @@ public class ReviewQueryService {
         return new ReviewResponseDTO.Grade(tier.level(), tier.label(), roundToOneDecimal(score), count, needMore);
     }
 
-    private double weightedScore(
-            List<Review> reviews,
-            long count
-    ) {
-        double weightedScoreSum = reviews.stream()
-                .mapToDouble(review -> ReviewConverter.toScore100(review) * review.getReviewPets().size())
-                .sum();
-        return weightedScoreSum / count;
-    }
-
     private ReviewResponseDTO.CategoryAverages calculateCategoryAverages(List<Review> eligibleReviews) {
-        long count = weightedCount(eligibleReviews);
-        if (count == 0) {
+        if (eligibleReviews.isEmpty()) {
             return new ReviewResponseDTO.CategoryAverages(0, 0, 0);
         }
 
-        double space = weightedAverage(eligibleReviews, Review::getRatingSpace, count);
-        double staff = weightedAverage(eligibleReviews, Review::getRatingStaff, count);
-        double amenity = weightedAverage(eligibleReviews, Review::getRatingAmenity, count);
+        double space = roundToOneDecimal(average(eligibleReviews, Review::getRatingSpace));
+        double staff = roundToOneDecimal(average(eligibleReviews, Review::getRatingStaff));
+        double amenity = roundToOneDecimal(average(eligibleReviews, Review::getRatingAmenity));
 
         return new ReviewResponseDTO.CategoryAverages(space, staff, amenity);
     }
 
-    private double weightedAverage(
+    private double average(
             List<Review> reviews,
-            Function<Review, Integer> ratingExtractor,
-            long count
+            ToIntFunction<Review> valueExtractor
     ) {
-        double sum = reviews.stream()
-                .mapToDouble(review -> ratingExtractor.apply(review) * review.getReviewPets().size())
-                .sum();
-        return roundToOneDecimal(sum / count);
+        return reviews.stream()
+                .mapToInt(valueExtractor)
+                .average()
+                .orElse(0);
     }
 
     private double roundToOneDecimal(double value) {
         return Math.round(value * 10) / 10.0;
     }
 
+    // topTags/categoryAverages/grade는 review_pets(반려동물 수)가 아니라 리뷰 1건당 1로 집계한다.
+    // 한 리뷰에 반려동물을 여러 마리 포함해도 통계에는 1건으로만 반영된다.
     private List<ReviewResponseDTO.TagCount> calculateTopTags(List<Review> eligibleReviews) {
         Map<Tag, Long> tagCounts = new EnumMap<>(Tag.class);
         for (Review review : eligibleReviews) {
-            long weight = review.getReviewPets().size();
-            for (ReviewTag reviewTag : review.getTags()) {
-                tagCounts.merge(reviewTag.getTag(), weight, Long::sum);
+            Set<Tag> tagsInReview = review.getTags().stream()
+                    .map(ReviewTag::getTag)
+                    .collect(Collectors.toSet());
+            for (Tag tag : tagsInReview) {
+                tagCounts.merge(tag, 1L, Long::sum);
             }
         }
 

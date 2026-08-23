@@ -1,14 +1,14 @@
 package com.freepets.domain.review.entity;
 
 public enum Tag {
-    LARGE_SPACE,
-    WATER_EXIST,
-    WASTE_BAG_PLACED,
-    OUTDOOR,
-    LARGE_DOG,
-    OFF_LEASED_AVAILABLE,
-    PET_MENU_EXIST,
-    PARKING_CONVENIENT,
-    QUIET_ATMOSPHERE,
-    STAFF_WELCOMING
+    SPACIOUS,
+    WATER_BOWL,
+    POOP_BAG,
+    OUTDOOR_SEAT,
+    LARGE_DOG_OK,
+    OFF_LEASH_OK,
+    PET_MENU,
+    PARKING,
+    QUIET,
+    STAFF_LOVES_PETS
 }

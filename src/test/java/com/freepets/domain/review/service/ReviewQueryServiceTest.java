@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -136,7 +137,7 @@ class ReviewQueryServiceTest {
     void getReviews_리뷰가_없으면_집계_전_기본값을_반환한다() {
         when(facilityRepository.existsById(7L)).thenReturn(true);
         when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(List.of());
-        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.APPROVED, 7L))
+        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of())).thenReturn(List.of());
 
@@ -150,54 +151,53 @@ class ReviewQueryServiceTest {
     }
 
     @Test
-    void getReviews_review_pets_단위로_가중_집계한다() {
+    void getReviews_다중_반려동물_리뷰도_리뷰_1건으로만_집계한다() {
         Facility facility = createFacility(7L);
         User author = createUser(100L);
 
-        // 2마리 동반 리뷰: 공간4, 직원5, 편의3 -> score100 = round(avg(4,5,3)*20) = 80
+        // 2마리를 같이 남긴 리뷰: 공간4, 직원5, 편의3 -> score100 = round((4*0.35+5*0.35+3*0.30)/5*100) = 81
         Review review1 = createReview(
                 7001L, facility, author, 4, 5, 3,
                 List.of(createPet(1L), createPet(2L)),
-                List.of(Tag.LARGE_SPACE)
+                List.of(Tag.SPACIOUS)
         );
-        // 1마리 동반 리뷰: 공간5, 직원5, 편의5 -> score100 = 100
+        // 1마리 리뷰: 공간5, 직원5, 편의5 -> score100 = 100
         Review review2 = createReview(
                 7002L, facility, author, 5, 5, 5,
                 List.of(createPet(3L)),
-                List.of(Tag.LARGE_SPACE, Tag.WATER_EXIST)
+                List.of(Tag.SPACIOUS, Tag.WATER_BOWL)
         );
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
         when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(List.of(review1, review2));
-        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.APPROVED, 7L))
+        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L, 7002L)))
                 .thenReturn(List.of());
 
         ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
 
-        // count = 2(review1) + 1(review2) = 3
-        assertThat(result.grade().count()).isEqualTo(3);
-        // score = (80*2 + 100*1) / 3 = 86.7
-        assertThat(result.grade().score()).isEqualTo(86.7);
-        // 점수는 레벨1 기준(60점)을 넘지만 리뷰 수(3건)가 레벨1 최소 표본(10건)에 못 미쳐 등급 미부여
+        // count는 review_pets(3마리)가 아니라 리뷰 건수 그대로 -> 2건 (review1이 2마리를 포함해도 1건)
+        assertThat(result.grade().count()).isEqualTo(2);
+        // score = avg(81, 100) = 90.5 (review1이 2마리라고 가중되지 않음)
+        assertThat(result.grade().score()).isEqualTo(90.5);
         assertThat(result.grade().level()).isEqualTo(0);
-        assertThat(result.grade().label()).isEqualTo("리뷰 수집 중 (3/10)");
-        assertThat(result.grade().needMore()).isEqualTo(7);
+        assertThat(result.grade().label()).isEqualTo("리뷰 수집 중 (2/10)");
+        assertThat(result.grade().needMore()).isEqualTo(8);
 
-        // space = (4*2 + 5*1)/3 = 4.3, staff = (5*2+5*1)/3 = 5.0, amenity = (3*2+5*1)/3 = 3.7
-        assertThat(result.categoryAverages().space()).isEqualTo(4.3);
+        assertThat(result.categoryAverages().space()).isEqualTo(4.5);
         assertThat(result.categoryAverages().staff()).isEqualTo(5.0);
-        assertThat(result.categoryAverages().amenity()).isEqualTo(3.7);
+        assertThat(result.categoryAverages().amenity()).isEqualTo(4.0);
 
-        // LARGE_SPACE: 2(review1) + 1(review2) = 3, WATER_EXIST: 1(review2)
+        // SPACIOUS: review1, review2 각각 1건씩 -> 2 (review1의 반려동물 2마리와 무관하게 1로만 카운트)
         assertThat(result.topTags()).hasSize(2);
-        assertThat(result.topTags().get(0).tag()).isEqualTo(Tag.LARGE_SPACE);
-        assertThat(result.topTags().get(0).count()).isEqualTo(3);
-        assertThat(result.topTags().get(1).tag()).isEqualTo(Tag.WATER_EXIST);
+        assertThat(result.topTags().get(0).tag()).isEqualTo(Tag.SPACIOUS);
+        assertThat(result.topTags().get(0).count()).isEqualTo(2);
+        assertThat(result.topTags().get(1).tag()).isEqualTo(Tag.WATER_BOWL);
         assertThat(result.topTags().get(1).count()).isEqualTo(1);
 
         assertThat(result.reviews()).hasSize(2);
+        assertThat(result.reviews().get(0).pets()).hasSize(2);
     }
 
     @Test
@@ -205,25 +205,24 @@ class ReviewQueryServiceTest {
         Facility facility = createFacility(7L);
         User author = createUser(100L);
 
-        List<Pet> group1 = List.of(createPet(1L), createPet(2L), createPet(3L), createPet(4L), createPet(5L));
-        List<Pet> group2 = List.of(createPet(6L), createPet(7L), createPet(8L), createPet(9L), createPet(10L));
-
-        // 리뷰 2건, 각각 5마리씩 -> review_pets 10건, score100 = round(avg(4,4,4)*20) = 80
-        Review review1 = createReview(7001L, facility, author, 4, 4, 4, group1, List.of());
-        Review review2 = createReview(7002L, facility, author, 4, 4, 4, group2, List.of());
+        // 리뷰 10건(각 1마리), 공간·직원·편의 전부 3점 -> score100 = round((3*0.35+3*0.35+3*0.30)/5*100) = 60
+        List<Review> reviews = IntStream.rangeClosed(1, 10)
+                .mapToObj(i -> createReview(7000L + i, facility, author, 3, 3, 3, List.of(createPet((long) i)), List.of()))
+                .toList();
+        List<Long> reviewIds = reviews.stream().map(Review::getReviewId).toList();
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(List.of(review1, review2));
-        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.APPROVED, 7L))
+        when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(reviews);
+        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
-        when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L, 7002L)))
+        when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, reviewIds))
                 .thenReturn(List.of());
 
         ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
 
-        // count=10, score=80 -> 레벨1(60점/10건)은 충족하지만 레벨2(70점/25건)는 리뷰 수 부족이라 레벨1에 머무름
+        // count=10, score=60 -> 레벨1(60점/10건) 정확히 충족
         assertThat(result.grade().count()).isEqualTo(10);
-        assertThat(result.grade().score()).isEqualTo(80.0);
+        assertThat(result.grade().score()).isEqualTo(60.0);
         assertThat(result.grade().level()).isEqualTo(1);
         assertThat(result.grade().label()).isEqualTo("동반 가능");
         assertThat(result.grade().needMore()).isEqualTo(0);
@@ -234,34 +233,26 @@ class ReviewQueryServiceTest {
         Facility facility = createFacility(7L);
         User author = createUser(100L);
 
-        Review reportedReview = createReview(
-                7001L, facility, author, 5, 5, 5,
-                List.of(createPet(1L)),
-                List.of(Tag.LARGE_SPACE)
-        );
-        Review normalReview = createReview(
-                7002L, facility, author, 3, 3, 3,
-                List.of(createPet(2L)),
-                List.of()
-        );
+        Review reportedReview = createReview(7001L, facility, author, 5, 5, 5, List.of(createPet(1L)), List.of(Tag.SPACIOUS));
+        Review normalReview = createReview(7002L, facility, author, 3, 3, 3, List.of(createPet(2L)), List.of());
 
-        ReviewReport approvedReport = ReviewReport.builder()
+        ReviewReport acceptedReport = ReviewReport.builder()
                 .review(reportedReview)
                 .user(author)
                 .reason(ReviewReportReason.SPAM)
-                .status(ReviewReportStatus.APPROVED)
+                .status(ReviewReportStatus.ACCEPTED)
                 .build();
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
         when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(List.of(reportedReview, normalReview));
-        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.APPROVED, 7L))
-                .thenReturn(List.of(approvedReport));
+        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
+                .thenReturn(List.of(acceptedReport));
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L, 7002L)))
                 .thenReturn(List.of());
 
         ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
 
-        // 집계에는 normalReview(1마리, score100=60)만 반영됨
+        // 집계에는 normalReview(score100=60)만 반영됨
         assertThat(result.grade().count()).isEqualTo(1);
         assertThat(result.grade().score()).isEqualTo(60.0);
         // 목록에는 신고된 리뷰도 그대로 남음
@@ -274,11 +265,7 @@ class ReviewQueryServiceTest {
         User author = createUser(100L);
         User viewer = createUser(1L);
 
-        Review review = createReview(
-                7001L, facility, author, 5, 5, 5,
-                List.of(createPet(1L)),
-                List.of()
-        );
+        Review review = createReview(7001L, facility, author, 5, 5, 5, List.of(createPet(1L)), List.of());
 
         ReviewReport myReport = ReviewReport.builder()
                 .review(review)
@@ -289,7 +276,7 @@ class ReviewQueryServiceTest {
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
         when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(List.of(review));
-        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.APPROVED, 7L))
+        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L)))
                 .thenReturn(List.of(myReport));

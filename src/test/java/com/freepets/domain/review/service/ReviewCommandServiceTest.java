@@ -11,7 +11,6 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -122,7 +121,7 @@ class ReviewCommandServiceTest {
         request.setRatingStaff(4);
         request.setRatingAmenity(5);
         request.setContent("좋았어요");
-        request.setTags(List.of(Tag.LARGE_SPACE, Tag.WATER_EXIST));
+        request.setTags(List.of(Tag.SPACIOUS, Tag.WATER_BOWL));
         return request;
     }
 
@@ -136,7 +135,7 @@ class ReviewCommandServiceTest {
 
         when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(petCheckRepository.existsByPetPetIdAndFacilityFacilityId(anyLong(), anyLong())).thenReturn(true);
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
         when(reviewRepository.findByFacilityFacilityIdAndUserId(7L, 1L)).thenReturn(Optional.empty());
         when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet1));
         when(petRepository.findByPetIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(pet2));
@@ -146,19 +145,18 @@ class ReviewCommandServiceTest {
 
         assertThat(result.petIds()).containsExactlyInAnyOrder(1L, 2L);
         assertThat(result.ratingSpace()).isEqualTo(5);
-        assertThat(result.tags()).containsExactlyInAnyOrder(Tag.LARGE_SPACE, Tag.WATER_EXIST);
+        assertThat(result.tags()).containsExactlyInAnyOrder(Tag.SPACIOUS, Tag.WATER_BOWL);
     }
 
     @Test
-    void upsertReview_판별_이력_없는_반려동물이_있으면_예외를_던진다() {
+    void upsertReview_이_시설에서_판별_이력이_없으면_예외를_던진다() {
         Facility facility = createFacility(7L);
         User user = createUser(1L);
         ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L, 2L));
 
         when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(petCheckRepository.existsByPetPetIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
-        when(petCheckRepository.existsByPetPetIdAndFacilityFacilityId(2L, 7L)).thenReturn(false);
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(false);
 
         GeneralException exception = assertThrows(
                 GeneralException.class,
@@ -166,8 +164,29 @@ class ReviewCommandServiceTest {
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4001);
-        assertThat(exception.getResult()).isEqualTo(Map.of("ineligiblePetIds", List.of(2L)));
         verify(reviewRepository, never()).save(any());
+    }
+
+    @Test
+    void upsertReview_시설_판별_이력만_있으면_개별_판별_없는_반려동물도_포함할_수_있다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        // 새/토끼처럼 개별 AI 판별 자체가 없는 반려동물이라고 가정 — pet_checks에 이 pet_id는 없다.
+        Pet bird = createPet(1L);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        // 시설 단위로는 판별 이력이 있다 (다른 반려동물로 판별받았을 수 있음)
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserId(7L, 1L)).thenReturn(Optional.empty());
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(bird));
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.upsertReview(1L, 7L, request);
+
+        assertThat(result.petIds()).containsExactly(1L);
+        verify(petCheckRepository, never()).existsByPetPetIdAndFacilityFacilityId(any(), any());
     }
 
     @Test
@@ -188,13 +207,13 @@ class ReviewCommandServiceTest {
                 .visitedAt(LocalDate.now().minusDays(10))
                 .build();
         existingReview.getReviewPets().add(ReviewConverter.toReviewPet(existingReview, oldPet));
-        existingReview.getTags().add(ReviewConverter.toReviewTag(existingReview, Tag.QUIET_ATMOSPHERE));
+        existingReview.getTags().add(ReviewConverter.toReviewTag(existingReview, Tag.QUIET));
 
         ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(2L));
 
         when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(petCheckRepository.existsByPetPetIdAndFacilityFacilityId(2L, 7L)).thenReturn(true);
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
         when(reviewRepository.findByFacilityFacilityIdAndUserId(7L, 1L)).thenReturn(Optional.of(existingReview));
         when(petRepository.findByPetIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(newPet));
         when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));

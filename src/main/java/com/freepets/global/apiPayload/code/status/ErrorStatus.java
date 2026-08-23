@@ -36,7 +36,7 @@ public enum ErrorStatus implements BaseErrorCode {
     FACILITY4041(NOT_FOUND, "FACILITY4041", "존재하지 않는 시설입니다."),
 
     // 리뷰 에러
-    REVIEW4001(BAD_REQUEST, "REVIEW4001", "선택한 반려동물 중 일부가 이 시설에서 판별을 받지 않았습니다."),
+    REVIEW4001(BAD_REQUEST, "REVIEW4001", "이 시설에서 반려동물 판별 이력이 없어 리뷰를 작성할 수 없습니다."),
     REVIEW4002(FORBIDDEN, "REVIEW4002", "본인 리뷰만 삭제할 수 있습니다."),
     REVIEW4003(CONFLICT, "REVIEW4003", "이미 신고한 리뷰입니다."),
     REVIEW4041(NOT_FOUND, "REVIEW4041", "존재하지 않는 리뷰입니다.");

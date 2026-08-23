@@ -61,6 +61,8 @@ public class Review extends BaseEntity {
     @Column(name = "visited_at", nullable = false)
     private LocalDate visitedAt;
 
+    // 앱 화면이 한 리뷰에 반려동물을 여러 마리 함께 선택할 수 있게 돼 있어 다대다로 둔다.
+    // 등급·태그 집계는 review_pets 개수가 아니라 리뷰 1건당 1로 계산한다(ReviewQueryService 참고).
     @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReviewPet> reviewPets = new ArrayList<>();
 

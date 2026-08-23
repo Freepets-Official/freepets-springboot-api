@@ -65,10 +65,12 @@ public class ReviewConverter {
         );
     }
 
-    // score100 = 카테고리 3개 별점(1~5)을 각각 20점 만점으로 환산한 뒤 평균 (별 1개 = 20점)
+    // 친화도 점수(0~100) = (공간×0.35 + 직원친절도×0.35 + 편의시설×0.30) / 5 * 100 (산출물4 공식)
     public static int toScore100(Review review) {
-        double average = (review.getRatingSpace() + review.getRatingStaff() + review.getRatingAmenity()) / 3.0;
-        return (int) Math.round(average * 20);
+        double weighted = review.getRatingSpace() * 0.35
+                + review.getRatingStaff() * 0.35
+                + review.getRatingAmenity() * 0.30;
+        return (int) Math.round(weighted / 5.0 * 100);
     }
 
     public static ReviewResponseDTO.ReviewDetail toReviewDetail(

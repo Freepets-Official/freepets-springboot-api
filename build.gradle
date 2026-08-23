@@ -53,3 +53,56 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+// 관광공사 API 탐사용 일회성 실행. 실제 외부 API를 호출하므로 test 태스크에서는 돌지 않는다.
+// 실행: ./gradlew tourApiProbe
+//      ./gradlew tourApiProbe --tests "*전체_규모*"
+tasks.register('tourApiProbe', Test) {
+	group = 'verification'
+	description = '한국관광공사 KorService2 탐사 (외부 API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.infra.tourapi.TourApiProbeTest'
+	}
+
+	systemProperty 'tourapi.probe', 'true'
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	// 매번 실제 호출 결과를 받아야 하므로 캐시된 성공 결과를 재사용하지 않는다.
+	outputs.upToDateWhen { false }
+}
+
+// 관광공사 시설 데이터 적재. 외부 API를 수백 회 호출하고 DB에 수만 건을 쓴다.
+// 실행: ./gradlew facilitySync
+tasks.register('facilitySync', Test) {
+	group = 'application'
+	description = '한국관광공사 시설 데이터를 DB에 적재한다 (외부 API 호출 + 대량 쓰기)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilitySyncRunner'
+	}
+
+	systemProperty 'facility.sync', 'true'
+
+	// 전량 적재는 수십 분이 걸릴 수 있다.
+	timeout = Duration.ofHours(3)
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}

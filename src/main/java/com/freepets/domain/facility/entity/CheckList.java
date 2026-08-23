@@ -33,7 +33,7 @@ public class CheckList {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private CheckListType type;
+    private Requirement type;
 
     @Column(name = "is_checked", nullable = false)
     private boolean isChecked;
@@ -41,7 +41,7 @@ public class CheckList {
     @Builder
     private CheckList(
             Facility facility,
-            CheckListType type,
+            Requirement type,
             boolean isChecked
     ) {
         this.facility = facility;

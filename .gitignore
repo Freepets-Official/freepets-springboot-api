@@ -38,3 +38,12 @@ out/
 
 ### .yml file
 application.yml
+
+### 공공데이터포털 '한국관광공사_반려동물_동반여행_서비스' API 명세서
+pet-travel-api-specification.md
+
+### 공공데이터포털 '한국관광공사_국문 관광정보 서비스_GW' API 명세서
+tourapi_4.4_manual_summary.md
+
+### 프리펫스 기능명세서
+기능명세서.md

@@ -144,7 +144,8 @@ class ReviewQueryServiceTest {
 
         assertThat(result.grade().level()).isEqualTo(0);
         assertThat(result.grade().count()).isEqualTo(0);
-        assertThat(result.grade().needMore()).isEqualTo(5);
+        assertThat(result.grade().label()).isEqualTo("리뷰 수집 중 (0/10)");
+        assertThat(result.grade().needMore()).isEqualTo(10);
         assertThat(result.reviews()).isEmpty();
     }
 
@@ -179,9 +180,10 @@ class ReviewQueryServiceTest {
         assertThat(result.grade().count()).isEqualTo(3);
         // score = (80*2 + 100*1) / 3 = 86.7
         assertThat(result.grade().score()).isEqualTo(86.7);
-        assertThat(result.grade().level()).isEqualTo(4);
-        assertThat(result.grade().label()).isEqualTo("동반 우수");
-        assertThat(result.grade().needMore()).isEqualTo(2);
+        // 점수는 레벨1 기준(60점)을 넘지만 리뷰 수(3건)가 레벨1 최소 표본(10건)에 못 미쳐 등급 미부여
+        assertThat(result.grade().level()).isEqualTo(0);
+        assertThat(result.grade().label()).isEqualTo("리뷰 수집 중 (3/10)");
+        assertThat(result.grade().needMore()).isEqualTo(7);
 
         // space = (4*2 + 5*1)/3 = 4.3, staff = (5*2+5*1)/3 = 5.0, amenity = (3*2+5*1)/3 = 3.7
         assertThat(result.categoryAverages().space()).isEqualTo(4.3);
@@ -196,6 +198,35 @@ class ReviewQueryServiceTest {
         assertThat(result.topTags().get(1).count()).isEqualTo(1);
 
         assertThat(result.reviews()).hasSize(2);
+    }
+
+    @Test
+    void getReviews_점수와_리뷰수_기준을_모두_만족해야_등급이_부여된다() {
+        Facility facility = createFacility(7L);
+        User author = createUser(100L);
+
+        List<Pet> group1 = List.of(createPet(1L), createPet(2L), createPet(3L), createPet(4L), createPet(5L));
+        List<Pet> group2 = List.of(createPet(6L), createPet(7L), createPet(8L), createPet(9L), createPet(10L));
+
+        // 리뷰 2건, 각각 5마리씩 -> review_pets 10건, score100 = round(avg(4,4,4)*20) = 80
+        Review review1 = createReview(7001L, facility, author, 4, 4, 4, group1, List.of());
+        Review review2 = createReview(7002L, facility, author, 4, 4, 4, group2, List.of());
+
+        when(facilityRepository.existsById(7L)).thenReturn(true);
+        when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(List.of(review1, review2));
+        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.APPROVED, 7L))
+                .thenReturn(List.of());
+        when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L, 7002L)))
+                .thenReturn(List.of());
+
+        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
+
+        // count=10, score=80 -> 레벨1(60점/10건)은 충족하지만 레벨2(70점/25건)는 리뷰 수 부족이라 레벨1에 머무름
+        assertThat(result.grade().count()).isEqualTo(10);
+        assertThat(result.grade().score()).isEqualTo(80.0);
+        assertThat(result.grade().level()).isEqualTo(1);
+        assertThat(result.grade().label()).isEqualTo("동반 가능");
+        assertThat(result.grade().needMore()).isEqualTo(0);
     }
 
     @Test

@@ -29,9 +29,26 @@ import lombok.RequiredArgsConstructor;
 @Transactional(readOnly = true)
 public class ReviewQueryService {
 
-    // 등급 집계가 의미를 가지려면 최소 이만큼의 review_pets 표본이 필요하다고 보는 기준선 (제안값)
-    private static final long MIN_SAMPLE_SIZE = 5;
     private static final int TOP_TAGS_LIMIT = 5;
+
+    // 등급 기준표(발자국). 점수·리뷰 수 둘 다 만족해야 그 등급이 되며, 높은 등급부터 확인한다.
+    private static final List<GradeTier> GRADE_TIERS = List.of(
+            new GradeTier(5, "최고 등급", 94, 150),
+            new GradeTier(4, "동반 우수", 88, 90),
+            new GradeTier(3, "동반 추천", 80, 50),
+            new GradeTier(2, "동반 편안", 70, 25),
+            new GradeTier(1, "동반 가능", 60, 10)
+    );
+
+    // 어떤 등급도 못 받았을 때 "리뷰 수집 중 (n/10)"의 분모 — 최하위 등급(레벨 1)의 필요 리뷰 수와 같다.
+    private static final long MIN_REVIEW_COUNT_FOR_ANY_GRADE = 10;
+
+    private record GradeTier(
+            int level,
+            String label,
+            int minScore,
+            long minCount
+    ) {}
 
     private final FacilityRepository facilityRepository;
     private final ReviewRepository reviewRepository;
@@ -85,49 +102,29 @@ public class ReviewQueryService {
 
     private ReviewResponseDTO.Grade calculateGrade(List<Review> eligibleReviews) {
         long count = weightedCount(eligibleReviews);
-        if (count == 0) {
-            return new ReviewResponseDTO.Grade(0, "집계 전", 0, 0, MIN_SAMPLE_SIZE);
+        double score = count == 0 ? 0 : weightedScore(eligibleReviews, count);
+        long needMore = Math.max(0, MIN_REVIEW_COUNT_FOR_ANY_GRADE - count);
+
+        GradeTier tier = GRADE_TIERS.stream()
+                .filter(candidate -> score >= candidate.minScore() && count >= candidate.minCount())
+                .findFirst()
+                .orElse(null);
+
+        if (tier == null) {
+            return new ReviewResponseDTO.Grade(0, "리뷰 수집 중 (%d/10)".formatted(count), roundToOneDecimal(score), count, needMore);
         }
 
-        double weightedScoreSum = eligibleReviews.stream()
+        return new ReviewResponseDTO.Grade(tier.level(), tier.label(), roundToOneDecimal(score), count, needMore);
+    }
+
+    private double weightedScore(
+            List<Review> reviews,
+            long count
+    ) {
+        double weightedScoreSum = reviews.stream()
                 .mapToDouble(review -> ReviewConverter.toScore100(review) * review.getReviewPets().size())
                 .sum();
-        double score = weightedScoreSum / count;
-        int level = gradeLevel(score);
-
-        return new ReviewResponseDTO.Grade(
-                level,
-                gradeLabel(level),
-                roundToOneDecimal(score),
-                count,
-                Math.max(0, MIN_SAMPLE_SIZE - count)
-        );
-    }
-
-    private int gradeLevel(double score) {
-        if (score >= 90) {
-            return 5;
-        }
-        if (score >= 80) {
-            return 4;
-        }
-        if (score >= 70) {
-            return 3;
-        }
-        if (score >= 60) {
-            return 2;
-        }
-        return 1;
-    }
-
-    private String gradeLabel(int level) {
-        return switch (level) {
-            case 5 -> "동반 최고";
-            case 4 -> "동반 우수";
-            case 3 -> "동반 양호";
-            case 2 -> "동반 보통";
-            default -> "동반 주의";
-        };
+        return weightedScoreSum / count;
     }
 
     private ReviewResponseDTO.CategoryAverages calculateCategoryAverages(List<Review> eligibleReviews) {

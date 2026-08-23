@@ -51,11 +51,17 @@ public class ReviewCommandService {
 
         validateFacilityEligibility(userId, facilityId);
 
-        Review review = reviewRepository.findByFacilityFacilityIdAndUserId(facilityId, userId)
+        Review review = reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facilityId, userId)
                 .orElse(null);
 
+        // 방문일을 안 보내면 신규는 오늘, 수정은 기존 방문일을 그대로 둔다 — 매번 오늘로 덮어써서
+        // 과거 방문일이 사라지지 않게 한다.
+        LocalDate visitedAt = request.getVisitedAt() != null
+                ? request.getVisitedAt()
+                : (review == null ? LocalDate.now() : review.getVisitedAt());
+
         if (review == null) {
-            review = ReviewConverter.toReview(request, facility, user, LocalDate.now());
+            review = ReviewConverter.toReview(request, facility, user, visitedAt);
         } else {
             review.update(
                     request.getRatingSpace(),
@@ -63,15 +69,14 @@ public class ReviewCommandService {
                     request.getRatingAmenity(),
                     request.getContent(),
                     request.isShowPetInfo(),
-                    LocalDate.now()
+                    visitedAt
             );
             review.getReviewPets().clear();
             review.getTags().clear();
         }
 
         for (Long petId : request.getPetIds()) {
-            Pet pet = petRepository.findByPetIdAndDeletedAtIsNull(petId)
-                    .orElseThrow(() -> new GeneralException(ErrorStatus.PET4001));
+            Pet pet = findOwnedPet(userId, petId);
             review.getReviewPets().add(ReviewConverter.toReviewPet(review, pet));
         }
 
@@ -90,7 +95,7 @@ public class ReviewCommandService {
             Long reviewId
     ) {
         Review review = findOwnedReview(userId, reviewId);
-        reviewRepository.delete(review);
+        review.delete();
 
         return ReviewConverter.toDeleteResult(review);
     }
@@ -100,7 +105,7 @@ public class ReviewCommandService {
             Long reviewId,
             ReviewRequestDTO.ReportRequest request
     ) {
-        Review review = reviewRepository.findById(reviewId)
+        Review review = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
@@ -131,11 +136,26 @@ public class ReviewCommandService {
         }
     }
 
+    // petId만 믿고 조회하면 남의 반려동물을 내 리뷰에 붙일 수 있어(IDOR) 소유자 검증까지 한다.
+    private Pet findOwnedPet(
+            Long userId,
+            Long petId
+    ) {
+        Pet pet = petRepository.findByPetIdAndDeletedAtIsNull(petId)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.PET4001));
+
+        if (!pet.isOwnedBy(userId)) {
+            throw new GeneralException(ErrorStatus.PET4002);
+        }
+
+        return pet;
+    }
+
     private Review findOwnedReview(
             Long userId,
             Long reviewId
     ) {
-        Review review = reviewRepository.findById(reviewId)
+        Review review = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
 
         if (!review.isOwnedBy(userId)) {

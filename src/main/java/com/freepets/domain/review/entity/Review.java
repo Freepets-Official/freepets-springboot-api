@@ -1,8 +1,11 @@
 package com.freepets.domain.review.entity;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.hibernate.annotations.BatchSize;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.user.entity.User;
@@ -61,11 +64,18 @@ public class Review extends BaseEntity {
     @Column(name = "visited_at", nullable = false)
     private LocalDate visitedAt;
 
+    // Pet과 동일하게 소프트 삭제로 둔다 — 하드 삭제로 지우면 신고 이력(reports)까지
+    // cascade로 함께 사라져서 운영·감사 기록이 날아간다. Review.delete() 참고.
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     // 앱 화면이 한 리뷰에 반려동물을 여러 마리 함께 선택할 수 있게 돼 있어 다대다로 둔다.
     // 등급·태그 집계는 review_pets 개수가 아니라 리뷰 1건당 1로 계산한다(ReviewQueryService 참고).
+    @BatchSize(size = 100)
     @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReviewPet> reviewPets = new ArrayList<>();
 
+    @BatchSize(size = 100)
     @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReviewTag> tags = new ArrayList<>();
 
@@ -107,6 +117,14 @@ public class Review extends BaseEntity {
         this.content = content;
         this.isShowPetInfo = isShowPetInfo;
         this.visitedAt = visitedAt;
+    }
+
+    public void delete() {
+        this.deletedAt = LocalDateTime.now();
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 
     public boolean isOwnedBy(Long userId) {

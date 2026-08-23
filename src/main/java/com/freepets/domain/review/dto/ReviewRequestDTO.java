@@ -1,5 +1,6 @@
 package com.freepets.domain.review.dto;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import com.freepets.domain.review.entity.ReviewReportReason;
@@ -10,6 +11,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PastOrPresent;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -47,6 +49,10 @@ public class ReviewRequestDTO {
         private String content;
 
         private List<Tag> tags;
+
+        // 생략하면 신규 작성 시 오늘 날짜, 수정 시 기존 방문일을 그대로 유지한다.
+        @PastOrPresent(message = "방문일은 오늘 이전 날짜여야 합니다.")
+        private LocalDate visitedAt;
     }
 
     @Getter

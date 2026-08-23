@@ -136,7 +136,7 @@ class ReviewQueryServiceTest {
     @Test
     void getReviews_리뷰가_없으면_집계_전_기본값을_반환한다() {
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(List.of());
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of());
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of())).thenReturn(List.of());
@@ -169,7 +169,7 @@ class ReviewQueryServiceTest {
         );
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(List.of(review1, review2));
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of(review1, review2));
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L, 7002L)))
@@ -212,7 +212,7 @@ class ReviewQueryServiceTest {
         List<Long> reviewIds = reviews.stream().map(Review::getReviewId).toList();
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(reviews);
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(reviews);
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, reviewIds))
@@ -244,7 +244,7 @@ class ReviewQueryServiceTest {
                 .build();
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(List.of(reportedReview, normalReview));
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of(reportedReview, normalReview));
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of(acceptedReport));
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L, 7002L)))
@@ -275,7 +275,7 @@ class ReviewQueryServiceTest {
                 .build();
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityId(7L)).thenReturn(List.of(review));
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of(review));
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L)))
@@ -284,5 +284,38 @@ class ReviewQueryServiceTest {
         ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
 
         assertThat(result.reviews().get(0).reportedByMe()).isTrue();
+    }
+
+    @Test
+    void getReviews_showPetInfo가_false면_반려동물_정보를_내려주지_않는다() {
+        Facility facility = createFacility(7L);
+        User author = createUser(100L);
+
+        Review review = Review.builder()
+                .facility(facility)
+                .user(author)
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+        review.getReviewPets().add(ReviewConverter.toReviewPet(review, createPet(1L)));
+
+        when(facilityRepository.existsById(7L)).thenReturn(true);
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of(review));
+        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
+                .thenReturn(List.of());
+        when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L)))
+                .thenReturn(List.of());
+
+        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
+
+        // isShowPetInfo=false면 실제로 붙어있는 반려동물이 있어도 응답 자체에서 빠져야 한다
+        // (클라이언트가 플래그만 보고 화면에서만 가리는 방식이 되면 안 됨).
+        assertThat(result.reviews().get(0).isShowPetInfo()).isFalse();
+        assertThat(result.reviews().get(0).pets()).isEmpty();
     }
 }

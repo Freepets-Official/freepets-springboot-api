@@ -77,9 +77,11 @@ public class ReviewConverter {
             Review review,
             boolean reportedByMe
     ) {
-        List<ReviewResponseDTO.PetInfo> pets = review.getReviewPets().stream()
-                .map(reviewPet -> toPetInfo(reviewPet.getPet()))
-                .toList();
+        // showPetInfo=false면 서버 응답 자체에서 반려동물 정보를 빼서, 클라이언트가 플래그만 보고
+        // 숨기는 방식(이미 노출된 데이터를 화면에서만 가리는 것)이 되지 않게 한다.
+        List<ReviewResponseDTO.PetInfo> pets = review.isShowPetInfo()
+                ? review.getReviewPets().stream().map(reviewPet -> toPetInfo(reviewPet.getPet())).toList()
+                : List.of();
         List<Tag> tags = review.getTags().stream()
                 .map(ReviewTag::getTag)
                 .toList();

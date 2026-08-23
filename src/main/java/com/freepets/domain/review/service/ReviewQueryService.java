@@ -62,7 +62,7 @@ public class ReviewQueryService {
             throw new GeneralException(ErrorStatus.FACILITY4041);
         }
 
-        List<Review> reviews = reviewRepository.findAllByFacilityFacilityId(facilityId);
+        List<Review> reviews = reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(facilityId);
 
         Set<Long> excludedReviewIds = reviewReportRepository
                 .findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, facilityId)

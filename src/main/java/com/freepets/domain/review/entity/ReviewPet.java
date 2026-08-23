@@ -27,6 +27,7 @@ public class ReviewPet {
     @Column(name = "review_pet_id")
     private Long reviewPetId;
 
+    // Pet 클래스에 @BatchSize를 걸어 목록 조회에서 리뷰마다 따로 조회되지 않게 한다 (Pet.java 참고).
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "pet_id", nullable = false)
     private Pet pet;

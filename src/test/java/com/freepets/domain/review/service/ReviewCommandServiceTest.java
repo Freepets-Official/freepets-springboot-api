@@ -101,8 +101,9 @@ class ReviewCommandServiceTest {
         return user;
     }
 
-    private Pet createPet(Long petId) {
+    private Pet createPet(Long petId, User owner) {
         Pet pet = Pet.builder()
+                .user(owner)
                 .name("몽이")
                 .kind(Kind.DOG)
                 .species("말티즈")
@@ -129,14 +130,14 @@ class ReviewCommandServiceTest {
     void upsertReview_신규_리뷰를_생성한다() {
         Facility facility = createFacility(7L);
         User user = createUser(1L);
-        Pet pet1 = createPet(1L);
-        Pet pet2 = createPet(2L);
+        Pet pet1 = createPet(1L, user);
+        Pet pet2 = createPet(2L, user);
         ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L, 2L));
 
         when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
-        when(reviewRepository.findByFacilityFacilityIdAndUserId(7L, 1L)).thenReturn(Optional.empty());
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
         when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet1));
         when(petRepository.findByPetIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(pet2));
         when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -172,14 +173,14 @@ class ReviewCommandServiceTest {
         Facility facility = createFacility(7L);
         User user = createUser(1L);
         // 새/토끼처럼 개별 AI 판별 자체가 없는 반려동물이라고 가정 — pet_checks에 이 pet_id는 없다.
-        Pet bird = createPet(1L);
+        Pet bird = createPet(1L, user);
         ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
 
         when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         // 시설 단위로는 판별 이력이 있다 (다른 반려동물로 판별받았을 수 있음)
         when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
-        when(reviewRepository.findByFacilityFacilityIdAndUserId(7L, 1L)).thenReturn(Optional.empty());
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
         when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(bird));
         when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -193,8 +194,8 @@ class ReviewCommandServiceTest {
     void upsertReview_기존_리뷰가_있으면_반려동물과_태그를_교체한다() {
         Facility facility = createFacility(7L);
         User user = createUser(1L);
-        Pet oldPet = createPet(1L);
-        Pet newPet = createPet(2L);
+        Pet oldPet = createPet(1L, user);
+        Pet newPet = createPet(2L, user);
 
         Review existingReview = Review.builder()
                 .facility(facility)
@@ -214,7 +215,7 @@ class ReviewCommandServiceTest {
         when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
-        when(reviewRepository.findByFacilityFacilityIdAndUserId(7L, 1L)).thenReturn(Optional.of(existingReview));
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.of(existingReview));
         when(petRepository.findByPetIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(newPet));
         when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -224,6 +225,31 @@ class ReviewCommandServiceTest {
         assertThat(result.ratingSpace()).isEqualTo(5);
         assertThat(existingReview.getReviewPets()).hasSize(1);
         assertThat(existingReview.getTags()).hasSize(2);
+        // 요청에 visitedAt을 안 보내면 기존 방문일을 그대로 유지해야 한다.
+        assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
+    }
+
+    @Test
+    void upsertReview_다른_사용자의_반려동물이면_예외를_던진다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        User strangerOwner = createUser(2L);
+        Pet strangerPet = createPet(1L, strangerOwner);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(strangerPet));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.upsertReview(1L, 7L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.PET4002);
+        verify(reviewRepository, never()).save(any());
     }
 
     @Test
@@ -242,12 +268,14 @@ class ReviewCommandServiceTest {
                 .build();
         ReflectionTestUtils.setField(review, "reviewId", 7001L);
 
-        when(reviewRepository.findById(7001L)).thenReturn(Optional.of(review));
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
 
         ReviewResponseDTO.DeleteResult result = reviewCommandService.deleteReview(1L, 7001L);
 
         assertThat(result.reviewId()).isEqualTo(7001L);
-        verify(reviewRepository).delete(review);
+        // 신고 이력을 남겨야 해서 하드 삭제 대신 deletedAt만 채우는 소프트 삭제를 쓴다.
+        assertThat(review.isDeleted()).isTrue();
+        verify(reviewRepository, never()).delete(any());
     }
 
     @Test
@@ -266,7 +294,7 @@ class ReviewCommandServiceTest {
                 .build();
         ReflectionTestUtils.setField(review, "reviewId", 7001L);
 
-        when(reviewRepository.findById(7001L)).thenReturn(Optional.of(review));
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
 
         GeneralException exception = assertThrows(
                 GeneralException.class,
@@ -274,12 +302,12 @@ class ReviewCommandServiceTest {
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4002);
-        verify(reviewRepository, never()).delete(any());
+        assertThat(review.isDeleted()).isFalse();
     }
 
     @Test
     void deleteReview_존재하지_않으면_예외를_던진다() {
-        when(reviewRepository.findById(7001L)).thenReturn(Optional.empty());
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.empty());
 
         GeneralException exception = assertThrows(
                 GeneralException.class,
@@ -309,7 +337,7 @@ class ReviewCommandServiceTest {
         ReviewRequestDTO.ReportRequest request = new ReviewRequestDTO.ReportRequest();
         request.setReason(ReviewReportReason.SPAM);
 
-        when(reviewRepository.findById(7001L)).thenReturn(Optional.of(review));
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
         when(userRepository.findById(1L)).thenReturn(Optional.of(reporter));
         when(reviewReportRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(false);
         when(reviewReportRepository.save(any(ReviewReport.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -341,7 +369,7 @@ class ReviewCommandServiceTest {
         ReviewRequestDTO.ReportRequest request = new ReviewRequestDTO.ReportRequest();
         request.setReason(ReviewReportReason.SPAM);
 
-        when(reviewRepository.findById(7001L)).thenReturn(Optional.of(review));
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
         when(userRepository.findById(1L)).thenReturn(Optional.of(createUser(1L)));
         when(reviewReportRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(true);
 
@@ -359,7 +387,7 @@ class ReviewCommandServiceTest {
         ReviewRequestDTO.ReportRequest request = new ReviewRequestDTO.ReportRequest();
         request.setReason(ReviewReportReason.SPAM);
 
-        when(reviewRepository.findById(7001L)).thenReturn(Optional.empty());
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.empty());
 
         GeneralException exception = assertThrows(
                 GeneralException.class,

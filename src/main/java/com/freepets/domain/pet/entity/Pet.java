@@ -28,12 +28,16 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.ColumnDefault;
 
+// @BatchSize: 리뷰 목록처럼 여러 Pet 지연 프록시가 한 세션에서 동시에 초기화될 때
+// 건별 쿼리 대신 IN절로 묶어서 가져오게 한다 (다른 도메인 조회 방식엔 영향 없음).
 @Getter
 @Entity
 @Table(name = "pets")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@BatchSize(size = 100)
 public class Pet extends BaseEntity {
 
     @Id

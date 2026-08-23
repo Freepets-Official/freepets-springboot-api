@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.hibernate.annotations.BatchSize;
+
 import com.freepets.global.entity.BaseEntity;
 
 import jakarta.persistence.CascadeType;
@@ -195,6 +197,12 @@ public class Facility extends BaseEntity {
     @Column(name = "confirmed_at")
     private LocalDateTime confirmedAt;
 
+    /**
+     * 목록 조회는 시설마다 요구조건을 함께 내려준다. 지연 로딩만 두면 시설 수만큼 쿼리가 나가므로
+     * 묶어서 가져온다. 페이징 쿼리에 join fetch를 걸면 Hibernate가 전체를 메모리로 올리기 때문에
+     * 이 경우에는 batch fetch가 맞는 해법이다.
+     */
+    @BatchSize(size = 100)
     @OneToMany(mappedBy = "facility", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CheckList> checkLists = new ArrayList<>();
 

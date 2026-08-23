@@ -23,7 +23,6 @@ import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
-import com.freepets.domain.review.converter.ReviewConverter;
 import com.freepets.domain.review.dto.ReviewResponseDTO;
 import com.freepets.domain.review.entity.Review;
 import com.freepets.domain.review.entity.ReviewReport;
@@ -116,8 +115,8 @@ class ReviewQueryServiceTest {
                 .visitedAt(LocalDate.now())
                 .build();
         ReflectionTestUtils.setField(review, "reviewId", reviewId);
-        pets.forEach(pet -> review.getReviewPets().add(ReviewConverter.toReviewPet(review, pet)));
-        tags.forEach(tag -> review.getTags().add(ReviewConverter.toReviewTag(review, tag)));
+        review.replacePets(pets);
+        review.replaceTags(tags);
         return review;
     }
 
@@ -302,7 +301,7 @@ class ReviewQueryServiceTest {
                 .visitedAt(LocalDate.now())
                 .build();
         ReflectionTestUtils.setField(review, "reviewId", 7001L);
-        review.getReviewPets().add(ReviewConverter.toReviewPet(review, createPet(1L)));
+        review.replacePets(List.of(createPet(1L)));
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
         when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of(review));

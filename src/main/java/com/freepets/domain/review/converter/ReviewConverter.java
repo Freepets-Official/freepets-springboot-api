@@ -8,7 +8,6 @@ import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.review.dto.ReviewRequestDTO;
 import com.freepets.domain.review.dto.ReviewResponseDTO;
 import com.freepets.domain.review.entity.Review;
-import com.freepets.domain.review.entity.ReviewPet;
 import com.freepets.domain.review.entity.ReviewReport;
 import com.freepets.domain.review.entity.ReviewTag;
 import com.freepets.domain.review.entity.Tag;
@@ -36,26 +35,6 @@ public class ReviewConverter {
                 .build();
     }
 
-    public static ReviewPet toReviewPet(
-            Review review,
-            Pet pet
-    ) {
-        return ReviewPet.builder()
-                .review(review)
-                .pet(pet)
-                .build();
-    }
-
-    public static ReviewTag toReviewTag(
-            Review review,
-            Tag tag
-    ) {
-        return ReviewTag.builder()
-                .review(review)
-                .tag(tag)
-                .build();
-    }
-
     public static ReviewResponseDTO.PetInfo toPetInfo(Pet pet) {
         return new ReviewResponseDTO.PetInfo(
                 pet.getPetId(),
@@ -63,14 +42,6 @@ public class ReviewConverter {
                 pet.getSpecies(),
                 pet.getWeight()
         );
-    }
-
-    // 친화도 점수(0~100) = (공간×0.35 + 직원친절도×0.35 + 편의시설×0.30) / 5 * 100 (산출물4 공식)
-    public static int toScore100(Review review) {
-        double weighted = review.getRatingSpace() * 0.35
-                + review.getRatingStaff() * 0.35
-                + review.getRatingAmenity() * 0.30;
-        return (int) Math.round(weighted / 5.0 * 100);
     }
 
     public static ReviewResponseDTO.ReviewDetail toReviewDetail(
@@ -96,7 +67,7 @@ public class ReviewConverter {
                 review.getRatingSpace(),
                 review.getRatingStaff(),
                 review.getRatingAmenity(),
-                toScore100(review),
+                review.toScore100(),
                 review.getContent(),
                 tags,
                 review.getVisitedAt(),

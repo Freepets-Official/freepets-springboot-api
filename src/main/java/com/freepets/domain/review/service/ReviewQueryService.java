@@ -96,7 +96,7 @@ public class ReviewQueryService {
 
     private ReviewResponseDTO.Grade calculateGrade(List<Review> eligibleReviews) {
         long count = eligibleReviews.size();
-        double score = count == 0 ? 0 : average(eligibleReviews, ReviewConverter::toScore100);
+        double score = count == 0 ? 0 : average(eligibleReviews, Review::toScore100);
         long needMore = Math.max(0, MIN_REVIEW_COUNT_FOR_ANY_GRADE - count);
 
         GradeTier tier = GRADE_TIERS.stream()

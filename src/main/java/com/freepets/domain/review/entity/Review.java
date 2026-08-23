@@ -8,6 +8,7 @@ import java.util.List;
 import org.hibernate.annotations.BatchSize;
 
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.user.entity.User;
 import com.freepets.global.entity.BaseEntity;
 
@@ -103,20 +104,37 @@ public class Review extends BaseEntity {
         this.visitedAt = visitedAt;
     }
 
+    // visitedAt은 실제 방문한 날짜라 수정 시 함께 바뀌면 안 된다 — 여기서 받지 않고
+    // 생성자에서만 정해서 이후로는 고정한다.
     public void update(
             Integer ratingSpace,
             Integer ratingStaff,
             Integer ratingAmenity,
             String content,
-            boolean isShowPetInfo,
-            LocalDate visitedAt
+            boolean isShowPetInfo
     ) {
         this.ratingSpace = ratingSpace;
         this.ratingStaff = ratingStaff;
         this.ratingAmenity = ratingAmenity;
         this.content = content;
         this.isShowPetInfo = isShowPetInfo;
-        this.visitedAt = visitedAt;
+    }
+
+    // 기존 반려동물 연결을 통째로 교체한다 — 서비스가 reviewPets 컬렉션을 직접 clear/add하지
+    // 않고 이 메소드로만 바꾸도록 캡슐화한다.
+    public void replacePets(List<Pet> pets) {
+        this.reviewPets.clear();
+        for (Pet pet : pets) {
+            this.reviewPets.add(ReviewPet.builder().review(this).pet(pet).build());
+        }
+    }
+
+    // tags도 reviewPets와 동일한 이유로 컬렉션을 직접 건드리지 않고 이 메소드로만 교체한다.
+    public void replaceTags(List<Tag> tags) {
+        this.tags.clear();
+        for (Tag tag : tags) {
+            this.tags.add(ReviewTag.builder().review(this).tag(tag).build());
+        }
     }
 
     public void delete() {
@@ -129,6 +147,14 @@ public class Review extends BaseEntity {
 
     public boolean isOwnedBy(Long userId) {
         return user != null && user.getId().equals(userId);
+    }
+
+    // 친화도 점수(0~100) = (공간×0.35 + 직원친절도×0.35 + 편의시설×0.30) / 5 * 100 (산출물4 공식)
+    public int toScore100() {
+        double weighted = ratingSpace * 0.35
+                + ratingStaff * 0.35
+                + ratingAmenity * 0.30;
+        return (int) Math.round(weighted / 5.0 * 100);
     }
 
 }

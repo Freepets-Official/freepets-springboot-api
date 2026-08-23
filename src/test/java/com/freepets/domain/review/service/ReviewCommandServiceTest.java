@@ -30,7 +30,6 @@ import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
-import com.freepets.domain.review.converter.ReviewConverter;
 import com.freepets.domain.review.dto.ReviewRequestDTO;
 import com.freepets.domain.review.dto.ReviewResponseDTO;
 import com.freepets.domain.review.entity.Review;
@@ -207,8 +206,8 @@ class ReviewCommandServiceTest {
                 .isShowPetInfo(false)
                 .visitedAt(LocalDate.now().minusDays(10))
                 .build();
-        existingReview.getReviewPets().add(ReviewConverter.toReviewPet(existingReview, oldPet));
-        existingReview.getTags().add(ReviewConverter.toReviewTag(existingReview, Tag.QUIET));
+        existingReview.replacePets(List.of(oldPet));
+        existingReview.replaceTags(List.of(Tag.QUIET));
 
         ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(2L));
 
@@ -226,6 +225,40 @@ class ReviewCommandServiceTest {
         assertThat(existingReview.getReviewPets()).hasSize(1);
         assertThat(existingReview.getTags()).hasSize(2);
         // 요청에 visitedAt을 안 보내면 기존 방문일을 그대로 유지해야 한다.
+        assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
+    }
+
+    @Test
+    void upsertReview_기존_리뷰_수정시_방문일을_요청에_담아도_바뀌지_않는다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+
+        Review existingReview = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .build();
+        existingReview.replacePets(List.of(pet));
+
+        // 방문일은 실제로 다녀온 날짜라 수정 화면에서 다른 값을 보내도 무시되어야 한다.
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+        request.setVisitedAt(LocalDate.now());
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.of(existingReview));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.upsertReview(1L, 7L, request);
+
         assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
     }
 

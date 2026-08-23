@@ -54,13 +54,14 @@ public class ReviewCommandService {
         Review review = reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facilityId, userId)
                 .orElse(null);
 
-        // 방문일을 안 보내면 신규는 오늘, 수정은 기존 방문일을 그대로 둔다 — 매번 오늘로 덮어써서
-        // 과거 방문일이 사라지지 않게 한다.
-        LocalDate visitedAt = request.getVisitedAt() != null
-                ? request.getVisitedAt()
-                : (review == null ? LocalDate.now() : review.getVisitedAt());
+        List<Pet> pets = request.getPetIds().stream()
+                .map(petId -> findOwnedPet(userId, petId))
+                .toList();
+        List<Tag> tags = request.getTags() == null ? List.of() : request.getTags();
 
         if (review == null) {
+            // 방문일은 실제로 다녀온 날짜라 최초 작성 시에만 정하고, 그 뒤로는 수정해도 바뀌지 않는다.
+            LocalDate visitedAt = request.getVisitedAt() != null ? request.getVisitedAt() : LocalDate.now();
             review = ReviewConverter.toReview(request, facility, user, visitedAt);
         } else {
             review.update(
@@ -68,22 +69,12 @@ public class ReviewCommandService {
                     request.getRatingStaff(),
                     request.getRatingAmenity(),
                     request.getContent(),
-                    request.isShowPetInfo(),
-                    visitedAt
+                    request.isShowPetInfo()
             );
-            review.getReviewPets().clear();
-            review.getTags().clear();
         }
 
-        for (Long petId : request.getPetIds()) {
-            Pet pet = findOwnedPet(userId, petId);
-            review.getReviewPets().add(ReviewConverter.toReviewPet(review, pet));
-        }
-
-        List<Tag> tags = request.getTags() == null ? List.of() : request.getTags();
-        for (Tag tag : tags) {
-            review.getTags().add(ReviewConverter.toReviewTag(review, tag));
-        }
+        review.replacePets(pets);
+        review.replaceTags(tags);
 
         Review savedReview = reviewRepository.save(review);
 

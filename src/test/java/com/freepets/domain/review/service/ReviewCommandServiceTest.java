@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.facility.entity.Facility;
@@ -146,6 +148,54 @@ class ReviewCommandServiceTest {
         assertThat(result.petIds()).containsExactlyInAnyOrder(1L, 2L);
         assertThat(result.ratingSpace()).isEqualTo(5);
         assertThat(result.tags()).containsExactlyInAnyOrder(Tag.SPACIOUS, Tag.WATER_BOWL);
+    }
+
+    @Test
+    void upsertReview_petIds와_tags에_중복이_있으면_한_번만_반영한다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L, 1L, 1L));
+        request.setTags(List.of(Tag.SPACIOUS, Tag.SPACIOUS, Tag.WATER_BOWL));
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.upsertReview(1L, 7L, request);
+
+        // 중복 petId만큼 소유자 검증 쿼리가 반복 실행되지 않아야 하고, 결과에도 중복이 남지 않아야 한다.
+        assertThat(result.petIds()).containsExactly(1L);
+        assertThat(result.tags()).containsExactlyInAnyOrder(Tag.SPACIOUS, Tag.WATER_BOWL);
+        verify(petRepository, times(1)).findByPetIdAndDeletedAtIsNull(1L);
+    }
+
+    @Test
+    void upsertReview_저장중_DB_유니크_제약에_걸리면_충돌_에러를_던진다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        // 동시에 두 번 제출되면 둘 다 "기존 리뷰 없음"으로 보고 insert를 시도할 수 있는데,
+        // DB의 부분 유니크 인덱스(시설+유저, 삭제되지 않은 리뷰)가 뒤늦은 쪽을 막아준다.
+        when(reviewRepository.save(any(Review.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.upsertReview(1L, 7L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4004);
     }
 
     @Test

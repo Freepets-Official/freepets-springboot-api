@@ -39,6 +39,7 @@ public enum ErrorStatus implements BaseErrorCode {
     REVIEW4001(BAD_REQUEST, "REVIEW4001", "이 시설에서 반려동물 판별 이력이 없어 리뷰를 작성할 수 없습니다."),
     REVIEW4002(FORBIDDEN, "REVIEW4002", "본인 리뷰만 삭제할 수 있습니다."),
     REVIEW4003(CONFLICT, "REVIEW4003", "이미 신고한 리뷰입니다."),
+    REVIEW4004(CONFLICT, "REVIEW4004", "리뷰 저장 중 충돌이 발생했습니다. 다시 시도해주세요."),
     REVIEW4041(NOT_FOUND, "REVIEW4041", "존재하지 않는 리뷰입니다.");
 
     private final HttpStatus httpStatus;

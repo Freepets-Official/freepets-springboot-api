@@ -3,6 +3,7 @@ package com.freepets.domain.review.service;
 import java.time.LocalDate;
 import java.util.List;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,10 +55,15 @@ public class ReviewCommandService {
         Review review = reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facilityId, userId)
                 .orElse(null);
 
+        // petIds/tags에 중복이 섞여 오면 소유자 검증 쿼리가 그만큼 반복 실행되고
+        // review_pets/review_tags에도 중복 행이 쌓이므로 미리 걸러낸다.
         List<Pet> pets = request.getPetIds().stream()
+                .distinct()
                 .map(petId -> findOwnedPet(userId, petId))
                 .toList();
-        List<Tag> tags = request.getTags() == null ? List.of() : request.getTags();
+        List<Tag> tags = request.getTags() == null
+                ? List.of()
+                : request.getTags().stream().distinct().toList();
 
         if (review == null) {
             // 방문일은 실제로 다녀온 날짜라 최초 작성 시에만 정하고, 그 뒤로는 수정해도 바뀌지 않는다.
@@ -76,7 +82,14 @@ public class ReviewCommandService {
         review.replacePets(pets);
         review.replaceTags(tags);
 
-        Review savedReview = reviewRepository.save(review);
+        Review savedReview;
+        try {
+            savedReview = reviewRepository.save(review);
+        } catch (DataIntegrityViolationException exception) {
+            // 동시에 두 번 제출되면 둘 다 "기존 리뷰 없음"으로 보고 insert를 시도할 수 있다.
+            // DB의 부분 유니크 인덱스(시설+유저, 삭제되지 않은 리뷰)가 뒤늦은 쪽을 막아준다.
+            throw new GeneralException(ErrorStatus.REVIEW4004);
+        }
 
         return ReviewConverter.toUpsertResult(savedReview);
     }

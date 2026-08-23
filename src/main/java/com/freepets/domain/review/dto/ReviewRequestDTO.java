@@ -12,6 +12,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PastOrPresent;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -48,6 +49,8 @@ public class ReviewRequestDTO {
         @NotBlank(message = "리뷰 내용은 필수입니다.")
         private String content;
 
+        // Tag는 10종뿐이라 이보다 많이 오면 잘못된 요청이다.
+        @Size(max = 10, message = "태그는 최대 10개까지 선택할 수 있습니다.")
         private List<Tag> tags;
 
         // 생략하면 신규 작성 시 오늘 날짜, 수정 시 기존 방문일을 그대로 유지한다.

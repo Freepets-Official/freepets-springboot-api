@@ -31,10 +31,11 @@ public class ReviewController {
     public ApiResponse<ReviewResponseDTO.ReviewListResult> getReviews(
             @AuthenticationPrincipal Long userId,
             @PathVariable("facilityId") Long facilityId,
-            @RequestParam(name = "page", defaultValue = "0") int page
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size
     ) {
         return ApiResponse.onSuccess(
-                reviewQueryService.getReviews(facilityId, userId, page)
+                reviewQueryService.getReviews(facilityId, userId, page, size)
         );
     }
 

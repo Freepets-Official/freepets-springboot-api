@@ -31,8 +31,11 @@ public class ReviewQueryService {
 
     private static final int TOP_TAGS_LIMIT = 5;
 
-    // 한 페이지에 10건씩 내려준다.
-    private static final int PAGE_SIZE = 10;
+    // size를 안 보내면 10건씩 내려준다.
+    private static final int DEFAULT_PAGE_SIZE = 10;
+
+    // 한 번에 너무 많이 긁어가지 못하게 상한을 둔다.
+    private static final int MAX_PAGE_SIZE = 50;
 
     // 등급 기준표(발자국). 점수·리뷰 수 둘 다 만족해야 그 등급이 되며, 높은 등급부터 확인한다.
     private static final List<GradeTier> GRADE_TIERS = List.of(
@@ -60,13 +63,16 @@ public class ReviewQueryService {
     public ReviewResponseDTO.ReviewListResult getReviews(
             Long facilityId,
             Long userId,
-            int page
+            int page,
+            int size
     ) {
         if (!facilityRepository.existsById(facilityId)) {
             throw new GeneralException(ErrorStatus.FACILITY4041);
         }
 
         int safePage = Math.max(page, 0);
+        // 0 이하로 오면 기본값으로, 상한을 넘으면 MAX_PAGE_SIZE로 잘라낸다.
+        int safeSize = size <= 0 ? DEFAULT_PAGE_SIZE : Math.min(size, MAX_PAGE_SIZE);
         List<Review> reviews = reviewRepository
                 .findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(facilityId);
 
@@ -93,25 +99,27 @@ public class ReviewQueryService {
         ReviewResponseDTO.CategoryAverages categoryAverages = calculateCategoryAverages(eligibleReviews);
         List<ReviewResponseDTO.TagCount> topTags = calculateTopTags(eligibleReviews);
 
-        List<Review> pageContent = paginate(reviews, safePage);
+        List<Review> pageContent = paginate(reviews, safePage, safeSize);
         List<ReviewResponseDTO.ReviewDetail> reviewDetails = pageContent.stream()
                 .map(review -> ReviewConverter.toReviewDetail(review, reportedByMeReviewIds.contains(review.getReviewId())))
                 .toList();
 
-        boolean hasNext = (long) (safePage + 1) * PAGE_SIZE < reviews.size();
-        ReviewResponseDTO.PageInfo pageInfo = new ReviewResponseDTO.PageInfo(safePage, PAGE_SIZE, reviews.size(), hasNext);
+        boolean hasNext = (long) (safePage + 1) * safeSize < reviews.size();
+        ReviewResponseDTO.PageInfo pageInfo = new ReviewResponseDTO.PageInfo(safePage, safeSize, reviews.size(), hasNext);
 
         return new ReviewResponseDTO.ReviewListResult(grade, categoryAverages, topTags, reviewDetails, pageInfo);
     }
 
     // 등급 집계는 시설 전체 리뷰가 필요해서 페이지네이션 없이 다 불러온 뒤, 화면에 내려줄
-    // 목록만 여기서 10건 단위로 잘라낸다. page가 범위를 벗어나면 빈 목록을 반환한다.
+    // 목록만 여기서 요청받은 size 단위로 잘라낸다. page가 범위를 벗어나면 빈 목록을 반환한다.
     private List<Review> paginate(
             List<Review> reviews,
-            int page
+            int page,
+            int size
     ) {
-        int fromIndex = Math.min(page * PAGE_SIZE, reviews.size());
-        int toIndex = Math.min(fromIndex + PAGE_SIZE, reviews.size());
+        // page가 아주 크면 page * size가 int 범위를 넘길 수 있어 long으로 계산한다.
+        int fromIndex = (int) Math.min((long) page * size, reviews.size());
+        int toIndex = (int) Math.min((long) fromIndex + size, reviews.size());
         return reviews.subList(fromIndex, toIndex);
     }
 

@@ -31,6 +31,9 @@ public class ReviewQueryService {
 
     private static final int TOP_TAGS_LIMIT = 5;
 
+    // 한 페이지에 10건씩 내려준다.
+    private static final int PAGE_SIZE = 10;
+
     // 등급 기준표(발자국). 점수·리뷰 수 둘 다 만족해야 그 등급이 되며, 높은 등급부터 확인한다.
     private static final List<GradeTier> GRADE_TIERS = List.of(
             new GradeTier(5, "최고 등급", 94, 150),
@@ -56,13 +59,16 @@ public class ReviewQueryService {
 
     public ReviewResponseDTO.ReviewListResult getReviews(
             Long facilityId,
-            Long userId
+            Long userId,
+            int page
     ) {
         if (!facilityRepository.existsById(facilityId)) {
             throw new GeneralException(ErrorStatus.FACILITY4041);
         }
 
-        List<Review> reviews = reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(facilityId);
+        int safePage = Math.max(page, 0);
+        List<Review> reviews = reviewRepository
+                .findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(facilityId);
 
         Set<Long> excludedReviewIds = reviewReportRepository
                 .findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, facilityId)
@@ -87,11 +93,26 @@ public class ReviewQueryService {
         ReviewResponseDTO.CategoryAverages categoryAverages = calculateCategoryAverages(eligibleReviews);
         List<ReviewResponseDTO.TagCount> topTags = calculateTopTags(eligibleReviews);
 
-        List<ReviewResponseDTO.ReviewDetail> reviewDetails = reviews.stream()
+        List<Review> pageContent = paginate(reviews, safePage);
+        List<ReviewResponseDTO.ReviewDetail> reviewDetails = pageContent.stream()
                 .map(review -> ReviewConverter.toReviewDetail(review, reportedByMeReviewIds.contains(review.getReviewId())))
                 .toList();
 
-        return new ReviewResponseDTO.ReviewListResult(grade, categoryAverages, topTags, reviewDetails);
+        boolean hasNext = (long) (safePage + 1) * PAGE_SIZE < reviews.size();
+        ReviewResponseDTO.PageInfo pageInfo = new ReviewResponseDTO.PageInfo(safePage, PAGE_SIZE, reviews.size(), hasNext);
+
+        return new ReviewResponseDTO.ReviewListResult(grade, categoryAverages, topTags, reviewDetails, pageInfo);
+    }
+
+    // 등급 집계는 시설 전체 리뷰가 필요해서 페이지네이션 없이 다 불러온 뒤, 화면에 내려줄
+    // 목록만 여기서 10건 단위로 잘라낸다. page가 범위를 벗어나면 빈 목록을 반환한다.
+    private List<Review> paginate(
+            List<Review> reviews,
+            int page
+    ) {
+        int fromIndex = Math.min(page * PAGE_SIZE, reviews.size());
+        int toIndex = Math.min(fromIndex + PAGE_SIZE, reviews.size());
+        return reviews.subList(fromIndex, toIndex);
     }
 
     private ReviewResponseDTO.Grade calculateGrade(List<Review> eligibleReviews) {

@@ -126,7 +126,7 @@ class ReviewQueryServiceTest {
 
         GeneralException exception = assertThrows(
                 GeneralException.class,
-                () -> reviewQueryService.getReviews(7L, 1L)
+                () -> reviewQueryService.getReviews(7L, 1L, 0)
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.FACILITY4041);
@@ -135,12 +135,12 @@ class ReviewQueryServiceTest {
     @Test
     void getReviews_리뷰가_없으면_집계_전_기본값을_반환한다() {
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of());
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(7L)).thenReturn(List.of());
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of())).thenReturn(List.of());
 
-        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
+        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L, 0);
 
         assertThat(result.grade().level()).isEqualTo(0);
         assertThat(result.grade().count()).isEqualTo(0);
@@ -168,13 +168,13 @@ class ReviewQueryServiceTest {
         );
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of(review1, review2));
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(7L)).thenReturn(List.of(review1, review2));
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L, 7002L)))
                 .thenReturn(List.of());
 
-        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
+        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L, 0);
 
         // count는 review_pets(3마리)가 아니라 리뷰 건수 그대로 -> 2건 (review1이 2마리를 포함해도 1건)
         assertThat(result.grade().count()).isEqualTo(2);
@@ -211,13 +211,13 @@ class ReviewQueryServiceTest {
         List<Long> reviewIds = reviews.stream().map(Review::getReviewId).toList();
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(reviews);
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(7L)).thenReturn(reviews);
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, reviewIds))
                 .thenReturn(List.of());
 
-        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
+        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L, 0);
 
         // count=10, score=60 -> 레벨1(60점/10건) 정확히 충족
         assertThat(result.grade().count()).isEqualTo(10);
@@ -243,13 +243,13 @@ class ReviewQueryServiceTest {
                 .build();
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of(reportedReview, normalReview));
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(7L)).thenReturn(List.of(reportedReview, normalReview));
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of(acceptedReport));
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L, 7002L)))
                 .thenReturn(List.of());
 
-        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
+        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L, 0);
 
         // 집계에는 normalReview(score100=60)만 반영됨
         assertThat(result.grade().count()).isEqualTo(1);
@@ -274,13 +274,13 @@ class ReviewQueryServiceTest {
                 .build();
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of(review));
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(7L)).thenReturn(List.of(review));
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L)))
                 .thenReturn(List.of(myReport));
 
-        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
+        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L, 0);
 
         assertThat(result.reviews().get(0).reportedByMe()).isTrue();
     }
@@ -304,17 +304,72 @@ class ReviewQueryServiceTest {
         review.replacePets(List.of(createPet(1L)));
 
         when(facilityRepository.existsById(7L)).thenReturn(true);
-        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNull(7L)).thenReturn(List.of(review));
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(7L)).thenReturn(List.of(review));
         when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
                 .thenReturn(List.of());
         when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L)))
                 .thenReturn(List.of());
 
-        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L);
+        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L, 0);
 
         // isShowPetInfo=false면 실제로 붙어있는 반려동물이 있어도 응답 자체에서 빠져야 한다
         // (클라이언트가 플래그만 보고 화면에서만 가리는 방식이 되면 안 됨).
         assertThat(result.reviews().get(0).isShowPetInfo()).isFalse();
         assertThat(result.reviews().get(0).pets()).isEmpty();
+    }
+
+    @Test
+    void getReviews_리뷰가_10건_넘으면_페이지당_10건씩만_내려주고_등급집계는_전체를_반영한다() {
+        Facility facility = createFacility(7L);
+        User author = createUser(100L);
+
+        // 12건 전부 등급 집계에는 반영되지만, 화면 목록은 페이지당 10건으로 잘라야 한다.
+        List<Review> reviews = IntStream.rangeClosed(1, 12)
+                .mapToObj(i -> createReview(7000L + i, facility, author, 5, 5, 5, List.of(createPet((long) i)), List.of()))
+                .toList();
+        List<Long> reviewIds = reviews.stream().map(Review::getReviewId).toList();
+
+        when(facilityRepository.existsById(7L)).thenReturn(true);
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(7L))
+                .thenReturn(reviews);
+        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
+                .thenReturn(List.of());
+        when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, reviewIds))
+                .thenReturn(List.of());
+
+        ReviewResponseDTO.ReviewListResult firstPage = reviewQueryService.getReviews(7L, 1L, 0);
+
+        assertThat(firstPage.reviews()).hasSize(10);
+        assertThat(firstPage.pageInfo().page()).isEqualTo(0);
+        assertThat(firstPage.pageInfo().size()).isEqualTo(10);
+        assertThat(firstPage.pageInfo().totalElements()).isEqualTo(12);
+        assertThat(firstPage.pageInfo().hasNext()).isTrue();
+        // 등급 집계(count)는 페이지 크기와 무관하게 12건 전부를 반영해야 한다.
+        assertThat(firstPage.grade().count()).isEqualTo(12);
+
+        ReviewResponseDTO.ReviewListResult secondPage = reviewQueryService.getReviews(7L, 1L, 1);
+
+        assertThat(secondPage.reviews()).hasSize(2);
+        assertThat(secondPage.pageInfo().hasNext()).isFalse();
+    }
+
+    @Test
+    void getReviews_음수_페이지는_0페이지로_취급한다() {
+        Facility facility = createFacility(7L);
+        User author = createUser(100L);
+        Review review = createReview(7001L, facility, author, 5, 5, 5, List.of(createPet(1L)), List.of());
+
+        when(facilityRepository.existsById(7L)).thenReturn(true);
+        when(reviewRepository.findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(7L))
+                .thenReturn(List.of(review));
+        when(reviewReportRepository.findAllByStatusAndReviewFacilityFacilityId(ReviewReportStatus.ACCEPTED, 7L))
+                .thenReturn(List.of());
+        when(reviewReportRepository.findAllByUserIdAndReviewReviewIdIn(1L, List.of(7001L)))
+                .thenReturn(List.of());
+
+        ReviewResponseDTO.ReviewListResult result = reviewQueryService.getReviews(7L, 1L, -5);
+
+        assertThat(result.pageInfo().page()).isEqualTo(0);
+        assertThat(result.reviews()).hasSize(1);
     }
 }

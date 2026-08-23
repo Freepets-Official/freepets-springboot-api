@@ -58,11 +58,19 @@ public class ReviewResponseDTO {
             boolean reportedByMe
     ) {}
 
+    public record PageInfo(
+            int page,
+            int size,
+            long totalElements,
+            boolean hasNext
+    ) {}
+
     public record ReviewListResult(
             Grade grade,
             CategoryAverages categoryAverages,
             List<TagCount> topTags,
-            List<ReviewDetail> reviews
+            List<ReviewDetail> reviews,
+            PageInfo pageInfo
     ) {}
 
     public record UpsertResult(

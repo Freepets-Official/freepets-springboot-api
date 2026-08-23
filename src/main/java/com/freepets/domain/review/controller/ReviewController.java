@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.freepets.domain.review.dto.ReviewRequestDTO;
@@ -29,10 +30,11 @@ public class ReviewController {
     @GetMapping("/facilities/{facilityId}/reviews")
     public ApiResponse<ReviewResponseDTO.ReviewListResult> getReviews(
             @AuthenticationPrincipal Long userId,
-            @PathVariable("facilityId") Long facilityId
+            @PathVariable("facilityId") Long facilityId,
+            @RequestParam(name = "page", defaultValue = "0") int page
     ) {
         return ApiResponse.onSuccess(
-                reviewQueryService.getReviews(facilityId, userId)
+                reviewQueryService.getReviews(facilityId, userId, page)
         );
     }
 

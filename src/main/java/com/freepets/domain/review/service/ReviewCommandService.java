@@ -52,46 +52,72 @@ public class ReviewCommandService {
 
         validateFacilityEligibility(userId, facilityId);
 
-        Review review = reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facilityId, userId)
+        List<Pet> pets = findOwnedPets(userId, request.getPetIds());
+        List<Tag> tags = distinctTags(request.getTags());
+
+        Review existingReview = reviewRepository
+                .findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facilityId, userId)
                 .orElse(null);
-
-        // petIds/tags에 중복이 섞여 오면 소유자 검증 쿼리가 그만큼 반복 실행되고
-        // review_pets/review_tags에도 중복 행이 쌓이므로 미리 걸러낸다.
-        List<Pet> pets = request.getPetIds().stream()
-                .distinct()
-                .map(petId -> findOwnedPet(userId, petId))
-                .toList();
-        List<Tag> tags = request.getTags() == null
-                ? List.of()
-                : request.getTags().stream().distinct().toList();
-
-        if (review == null) {
-            // 방문일은 실제로 다녀온 날짜라 최초 작성 시에만 정하고, 그 뒤로는 수정해도 바뀌지 않는다.
-            LocalDate visitedAt = request.getVisitedAt() != null ? request.getVisitedAt() : LocalDate.now();
-            review = ReviewConverter.toReview(request, facility, user, visitedAt);
-        } else {
-            review.update(
-                    request.getRatingSpace(),
-                    request.getRatingStaff(),
-                    request.getRatingAmenity(),
-                    request.getContent(),
-                    request.isShowPetInfo()
-            );
-        }
+        Review review = existingReview == null
+                ? createReview(request, facility, user)
+                : updateReview(existingReview, request);
 
         review.replacePets(pets);
         review.replaceTags(tags);
 
-        Review savedReview;
+        Review savedReview = saveReview(review);
+
+        return ReviewConverter.toUpsertResult(savedReview);
+    }
+
+    private Review createReview(
+            ReviewRequestDTO.UpsertRequest request,
+            Facility facility,
+            User user
+    ) {
+        // 방문일은 실제로 다녀온 날짜라 최초 작성 시에만 정하고, 그 뒤로는 수정해도 바뀌지 않는다.
+        LocalDate visitedAt = request.getVisitedAt() != null ? request.getVisitedAt() : LocalDate.now();
+        return ReviewConverter.toReview(request, facility, user, visitedAt);
+    }
+
+    private Review updateReview(
+            Review review,
+            ReviewRequestDTO.UpsertRequest request
+    ) {
+        review.update(
+                request.getRatingSpace(),
+                request.getRatingStaff(),
+                request.getRatingAmenity(),
+                request.getContent(),
+                request.isShowPetInfo()
+        );
+        return review;
+    }
+
+    private Review saveReview(Review review) {
         try {
-            savedReview = reviewRepository.save(review);
+            return reviewRepository.save(review);
         } catch (DataIntegrityViolationException exception) {
             // 동시에 두 번 제출되면 둘 다 "기존 리뷰 없음"으로 보고 insert를 시도할 수 있다.
             // DB의 부분 유니크 인덱스(시설+유저, 삭제되지 않은 리뷰)가 뒤늦은 쪽을 막아준다.
             throw new GeneralException(ErrorStatus.REVIEW4004);
         }
+    }
 
-        return ReviewConverter.toUpsertResult(savedReview);
+    // petIds에 중복이 섞여 오면 소유자 검증 쿼리가 그만큼 반복 실행되고
+    // review_pets에도 중복 행이 쌓이므로 미리 걸러낸다.
+    private List<Pet> findOwnedPets(
+            Long userId,
+            List<Long> petIds
+    ) {
+        return petIds.stream()
+                .distinct()
+                .map(petId -> findOwnedPet(userId, petId))
+                .toList();
+    }
+
+    private List<Tag> distinctTags(List<Tag> tags) {
+        return tags == null ? List.of() : tags.stream().distinct().toList();
     }
 
     public ReviewResponseDTO.DeleteResult deleteReview(

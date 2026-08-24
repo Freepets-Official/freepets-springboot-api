@@ -25,6 +25,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.pet.entity.BreedSize;
@@ -82,10 +83,9 @@ class ReviewCommandServiceTest {
                 .petAllowed(PetAllowed.ALLOWED)
                 .maxWeight(BigDecimal.TEN)
                 .contentId("12345")
-                .petScore(80)
-                .spaceRating(4.5f)
-                .customerService(4.5f)
-                .amenities(4.5f)
+                .source(FacilitySource.TOUR_API)
+                .isActive(true)
+                .petTourListed(true)
                 .build();
         ReflectionTestUtils.setField(facility, "facilityId", facilityId);
         return facility;
@@ -323,7 +323,6 @@ class ReviewCommandServiceTest {
         when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
-        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
         when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(strangerPet));
 
         GeneralException exception = assertThrows(

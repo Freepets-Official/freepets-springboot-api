@@ -7,9 +7,18 @@ import lombok.Getter;
 public class GeneralException extends RuntimeException {
 
     private final BaseErrorCode errorCode;
+    private final Object result;
 
     public GeneralException(BaseErrorCode errorCode) {
+        this(errorCode, null);
+    }
+
+    public GeneralException(
+            BaseErrorCode errorCode,
+            Object result
+    ) {
         super(errorCode.getMessage());
         this.errorCode = errorCode;
+        this.result = result;
     }
 }

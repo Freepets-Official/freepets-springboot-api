@@ -1,9 +1,9 @@
 package com.freepets.domain.review.entity;
 
-import com.freepets.domain.pet.entity.Pet;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -18,31 +18,30 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Entity
-@Table(name = "review_pets")
+@Table(name = "review_tags")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class ReviewPet {
+public class ReviewTag {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "review_pet_id")
-    private Long reviewPetId;
-
-    // Pet 클래스에 @BatchSize를 걸어 목록 조회에서 리뷰마다 따로 조회되지 않게 한다 (Pet.java 참고).
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "pet_id", nullable = false)
-    private Pet pet;
+    @Column(name = "review_tag_id")
+    private Long reviewTagId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "review_id", nullable = false)
     private Review review;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private Tag tag;
+
     @Builder
-    private ReviewPet(
-            Pet pet,
-            Review review
+    private ReviewTag(
+            Review review,
+            Tag tag
     ) {
-        this.pet = pet;
         this.review = review;
+        this.tag = tag;
     }
 
 }

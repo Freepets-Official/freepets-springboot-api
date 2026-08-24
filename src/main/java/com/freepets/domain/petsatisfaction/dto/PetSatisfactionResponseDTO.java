@@ -2,6 +2,7 @@ package com.freepets.domain.petsatisfaction.dto;
 
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.freepets.domain.facility.entity.FacilityCategory;
 
 public class PetSatisfactionResponseDTO {
@@ -19,6 +20,9 @@ public class PetSatisfactionResponseDTO {
             Long petId,
             String petName,
             Float score,
+
+            // record 접근자가 isRecorded()이므로 JSON 프로퍼티명을 recorded로 명시 고정
+            @JsonProperty("recorded")
             boolean isRecorded
     ) {}
 

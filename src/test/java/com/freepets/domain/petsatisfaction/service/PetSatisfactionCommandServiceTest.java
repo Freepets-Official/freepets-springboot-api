@@ -8,8 +8,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.util.Optional;
 
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -200,8 +202,13 @@ class PetSatisfactionCommandServiceTest {
         when(petSatisfactionRepository.findByPetPetIdAndFacilityFacilityId(1L, 7L)).thenReturn(Optional.empty());
         // 슬라이더 조작 등으로 거의 동시에 두 번 제출되면 둘 다 "기존 기록 없음"으로 보고
         // insert를 시도할 수 있는데, DB의 유니크 제약(pet_id, facility_id)이 뒤늦은 쪽을 막아준다.
+        ConstraintViolationException uniqueConstraintViolation = new ConstraintViolationException(
+                "duplicate key value violates unique constraint",
+                new SQLException("duplicate key"),
+                "uq_pet_satisfaction_pet_facility"
+        );
         when(petSatisfactionRepository.save(any(PetSatisfaction.class)))
-                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+                .thenThrow(new DataIntegrityViolationException("duplicate key", uniqueConstraintViolation));
 
         GeneralException exception = assertThrows(
                 GeneralException.class,
@@ -209,6 +216,28 @@ class PetSatisfactionCommandServiceTest {
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.SATISFACTION4001);
+    }
+
+    @Test
+    void upsertSatisfaction_다른_원인의_무결성_위반이면_변환하지_않고_그대로_던진다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(petSatisfactionRepository.findByPetPetIdAndFacilityFacilityId(1L, 7L)).thenReturn(Optional.empty());
+        // 우리가 기대한 유니크 제약이 아닌 다른 무결성 위반(FK, not-null 등)까지 409로
+        // 뭉뚱그리면 실제 원인을 놓치게 되므로, 이 경우엔 변환하지 않고 그대로 올려야 한다.
+        DataIntegrityViolationException otherViolation = new DataIntegrityViolationException("not-null violation");
+        when(petSatisfactionRepository.save(any(PetSatisfaction.class))).thenThrow(otherViolation);
+
+        DataIntegrityViolationException exception = assertThrows(
+                DataIntegrityViolationException.class,
+                () -> petSatisfactionCommandService.upsertSatisfaction(1L, 7L, 1L, createRequest(9.8f))
+        );
+
+        assertThat(exception).isSameAs(otherViolation);
     }
 
     @Test

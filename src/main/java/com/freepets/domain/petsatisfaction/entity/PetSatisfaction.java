@@ -55,11 +55,16 @@ public class PetSatisfaction {
     ) {
         this.pet = pet;
         this.facility = facility;
-        this.score = score;
+        this.score = roundToOneDecimal(score);
     }
 
     public void update(float score) {
-        this.score = score;
+        this.score = roundToOneDecimal(score);
+    }
+
+    // 화면이 슬라이더 값을 소수점 첫째 자리로만 보여줘서, 저장 시점에 맞춰 잘라둔다.
+    private static float roundToOneDecimal(float score) {
+        return Math.round(score * 10) / 10.0f;
     }
 
 }

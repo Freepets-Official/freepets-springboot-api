@@ -1,5 +1,6 @@
 package com.freepets.domain.petsatisfaction.service;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,7 +47,15 @@ public class PetSatisfactionCommandService {
             petSatisfaction.update(request.getScore());
         }
 
-        PetSatisfaction saved = petSatisfactionRepository.save(petSatisfaction);
+        PetSatisfaction saved;
+        try {
+            saved = petSatisfactionRepository.save(petSatisfaction);
+        } catch (DataIntegrityViolationException exception) {
+            // 슬라이더를 빠르게 여러 번 조작하는 등 거의 동시에 두 번 제출되면 둘 다
+            // "기존 기록 없음"으로 보고 insert를 시도할 수 있다. DB의 유니크 제약
+            // (pet_id, facility_id)이 뒤늦은 쪽을 막아준다.
+            throw new GeneralException(ErrorStatus.SATISFACTION4001);
+        }
 
         return PetSatisfactionConverter.toUpsertResult(saved);
     }

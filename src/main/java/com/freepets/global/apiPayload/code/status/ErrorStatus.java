@@ -33,7 +33,10 @@ public enum ErrorStatus implements BaseErrorCode {
     IMAGE5001(INTERNAL_SERVER_ERROR, "IMAGE5001", "이미지 업로드 중 오류가 발생했습니다."),
 
     // 시설 에러
-    FACILITY4041(NOT_FOUND, "FACILITY4041", "존재하지 않는 시설입니다.");
+    FACILITY4041(NOT_FOUND, "FACILITY4041", "존재하지 않는 시설입니다."),
+
+    // 반려동물 만족도 에러
+    SATISFACTION4001(CONFLICT, "SATISFACTION4001", "만족도 저장 중 충돌이 발생했습니다. 다시 시도해주세요.");
 
     private final HttpStatus httpStatus;
     private final String code;

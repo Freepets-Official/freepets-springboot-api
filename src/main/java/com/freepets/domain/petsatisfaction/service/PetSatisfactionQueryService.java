@@ -1,5 +1,6 @@
 package com.freepets.domain.petsatisfaction.service;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -24,6 +25,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class PetSatisfactionQueryService {
+
+    private static final int TOP_FACILITIES_LIMIT = 3;
 
     private final FacilityRepository facilityRepository;
     private final PetRepository petRepository;
@@ -57,5 +60,32 @@ public class PetSatisfactionQueryService {
                 .toList();
 
         return new PetSatisfactionResponseDTO.FacilitySatisfactionList(items);
+    }
+
+    // 홈 "아이별 좋아한 곳 TOP" 카드용 — 반려동물별로 묶어서 점수 높은 순 상위 3개 시설만 미리
+    // 잘라 내려준다. 카드가 여러 마리를 스택으로 한 번에 보여줘서, 반려동물마다 따로 요청하지
+    // 않도록 한 번에 전부 계산한다. 기록이 하나도 없는 반려동물은 결과에서 빠진다.
+    public PetSatisfactionResponseDTO.MySatisfactionList getMySatisfactions(Long userId) {
+        List<PetSatisfaction> satisfactions = petSatisfactionRepository
+                .findAllByPetUserIdAndPetDeletedAtIsNull(userId);
+
+        Map<Long, List<PetSatisfaction>> byPetId = satisfactions.stream()
+                .collect(Collectors.groupingBy(petSatisfaction -> petSatisfaction.getPet().getPetId()));
+
+        List<PetSatisfactionResponseDTO.PetTopFacilities> pets = byPetId.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> {
+                    List<PetSatisfaction> top = entry.getValue().stream()
+                            .sorted(Comparator.comparingDouble(PetSatisfaction::getScore).reversed()
+                                    .thenComparing(petSatisfaction -> petSatisfaction.getFacility().getFacilityId()))
+                            .limit(TOP_FACILITIES_LIMIT)
+                            .toList();
+                    String petName = top.get(0).getPet().getName();
+
+                    return PetSatisfactionConverter.toPetTopFacilities(entry.getKey(), petName, top);
+                })
+                .toList();
+
+        return new PetSatisfactionResponseDTO.MySatisfactionList(pets);
     }
 }

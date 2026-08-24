@@ -142,4 +142,66 @@ class PetSatisfactionQueryServiceTest {
         assertThat(result.items().get(1).score()).isNull();
         assertThat(result.items().get(1).isRecorded()).isFalse();
     }
+
+    @Test
+    void getMySatisfactions_반려동물별로_점수_높은_순_상위_3개_시설만_반환한다() {
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user, "몽이");
+        Facility facility1 = createFacility(1L, "헤이도그 애견호텔&카페");
+        Facility facility2 = createFacility(2L, "안목해변 솔숲 산책로");
+        Facility facility3 = createFacility(3L, "카페 파도살롱");
+        Facility facility4 = createFacility(4L, "네번째로 좋아한 곳");
+
+        List<PetSatisfaction> satisfactions = List.of(
+                PetSatisfaction.builder().pet(pet).facility(facility4).score(5.0f).build(),
+                PetSatisfaction.builder().pet(pet).facility(facility1).score(9.4f).build(),
+                PetSatisfaction.builder().pet(pet).facility(facility3).score(8.1f).build(),
+                PetSatisfaction.builder().pet(pet).facility(facility2).score(8.7f).build()
+        );
+
+        when(petSatisfactionRepository.findAllByPetUserIdAndPetDeletedAtIsNull(1L)).thenReturn(satisfactions);
+
+        PetSatisfactionResponseDTO.MySatisfactionList result = petSatisfactionQueryService.getMySatisfactions(1L);
+
+        assertThat(result.pets()).hasSize(1);
+        PetSatisfactionResponseDTO.PetTopFacilities petResult = result.pets().get(0);
+        assertThat(petResult.petId()).isEqualTo(1L);
+        assertThat(petResult.petName()).isEqualTo("몽이");
+        // 4개 중 상위 3개만, 점수 높은 순으로 남아야 한다 (5.0점짜리 네 번째는 제외).
+        assertThat(petResult.topFacilities()).hasSize(3);
+        assertThat(petResult.topFacilities()).extracting("score")
+                .containsExactly(9.4f, 8.7f, 8.1f);
+        assertThat(petResult.topFacilities()).extracting("facilityName")
+                .containsExactly("헤이도그 애견호텔&카페", "안목해변 솔숲 산책로", "카페 파도살롱");
+    }
+
+    @Test
+    void getMySatisfactions_기록이_없는_반려동물은_결과에서_빠진다() {
+        when(petSatisfactionRepository.findAllByPetUserIdAndPetDeletedAtIsNull(1L)).thenReturn(List.of());
+
+        PetSatisfactionResponseDTO.MySatisfactionList result = petSatisfactionQueryService.getMySatisfactions(1L);
+
+        assertThat(result.pets()).isEmpty();
+    }
+
+    @Test
+    void getMySatisfactions_반려동물이_여러_마리면_각각_묶어서_반환한다() {
+        User user = createUser(1L);
+        Pet dog = createPet(1L, user, "몽이");
+        Pet cat = createPet(2L, user, "보리");
+        Facility facility = createFacility(7L, "헤이도그 애견호텔&카페");
+
+        List<PetSatisfaction> satisfactions = List.of(
+                PetSatisfaction.builder().pet(dog).facility(facility).score(9.4f).build(),
+                PetSatisfaction.builder().pet(cat).facility(facility).score(6.2f).build()
+        );
+
+        when(petSatisfactionRepository.findAllByPetUserIdAndPetDeletedAtIsNull(1L)).thenReturn(satisfactions);
+
+        PetSatisfactionResponseDTO.MySatisfactionList result = petSatisfactionQueryService.getMySatisfactions(1L);
+
+        assertThat(result.pets()).hasSize(2);
+        assertThat(result.pets().get(0).petId()).isEqualTo(1L);
+        assertThat(result.pets().get(1).petId()).isEqualTo(2L);
+    }
 }

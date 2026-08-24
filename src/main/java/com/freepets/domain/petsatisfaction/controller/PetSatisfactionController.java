@@ -46,4 +46,13 @@ public class PetSatisfactionController {
                 petSatisfactionQueryService.getFacilitySatisfactions(userId, facilityId)
         );
     }
+
+    @GetMapping("/pets/satisfactions")
+    public ApiResponse<PetSatisfactionResponseDTO.MySatisfactionList> getMySatisfactions(
+            @AuthenticationPrincipal Long userId
+    ) {
+        return ApiResponse.onSuccess(
+                petSatisfactionQueryService.getMySatisfactions(userId)
+        );
+    }
 }

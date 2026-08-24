@@ -23,4 +23,8 @@ public interface PetSatisfactionRepository extends JpaRepository<PetSatisfaction
             Long facilityId,
             Collection<Long> petIds
     );
+
+    // 홈 "아이별 좋아한 곳 TOP" 계산용 — 삭제된 반려동물의 기록은 제외한다.
+    @EntityGraph(attributePaths = {"pet", "facility"})
+    List<PetSatisfaction> findAllByPetUserIdAndPetDeletedAtIsNull(Long userId);
 }

@@ -3,6 +3,7 @@ package com.freepets.domain.review.service;
 import java.time.LocalDate;
 import java.util.List;
 
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,11 +28,17 @@ import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class ReviewCommandService {
+
+    // Supabase에 수동으로 만든 부분 유니크 인덱스 이름과 맞춰둔다(엔티티에 @UniqueConstraint로
+    // 표현할 수 없는 partial index라 DDL로 직접 생성했다).
+    private static final String FACILITY_USER_UNIQUE_CONSTRAINT = "uq_reviews_facility_user_active";
 
     private final ReviewRepository reviewRepository;
     private final ReviewReportRepository reviewReportRepository;
@@ -94,14 +101,44 @@ public class ReviewCommandService {
         return review;
     }
 
+    // 신규 insert일 때는 Review가 GenerationType.IDENTITY라 save() 호출 시점에 바로 INSERT가
+    // 나가서 여기서 제약 위반을 잡을 수 있다. 나중에 시퀀스 전략으로 바뀌면 flush가 커밋
+    // 시점(이 메소드 밖)으로 밀려서 이 catch가 더는 못 잡게 되니 주의.
     private Review saveReview(Review review) {
         try {
             return reviewRepository.save(review);
         } catch (DataIntegrityViolationException exception) {
             // 동시에 두 번 제출되면 둘 다 "기존 리뷰 없음"으로 보고 insert를 시도할 수 있다.
             // DB의 부분 유니크 인덱스(시설+유저, 삭제되지 않은 리뷰)가 뒤늦은 쪽을 막아준다.
+            //
+            // 다만 DataIntegrityViolationException은 FK 위반·not-null 위반 등 다른 무결성
+            // 오류도 함께 잡히므로, 실제로 이 유니크 인덱스가 원인일 때만 409로 바꾸고
+            // 그 외에는 원인을 숨기지 않고 그대로 올린다.
+            if (!isUniqueConstraintViolation(exception, FACILITY_USER_UNIQUE_CONSTRAINT)) {
+                throw exception;
+            }
+
+            log.warn(
+                    "리뷰 저장 중 유니크 인덱스({}) 충돌: reviewId={}",
+                    FACILITY_USER_UNIQUE_CONSTRAINT, review.getReviewId(), exception
+            );
             throw new GeneralException(ErrorStatus.REVIEW4004);
         }
+    }
+
+    // getMostSpecificCause()는 원인 체인의 가장 아래(SQLException)까지 내려가버려서
+    // 중간에 있는 Hibernate의 ConstraintViolationException을 지나쳐버린다. 제약 이름은
+    // 그 예외가 들고 있으므로, 체인을 직접 순회하며 처음 만나는 걸 찾는다.
+    private boolean isUniqueConstraintViolation(
+            DataIntegrityViolationException exception,
+            String constraintName
+    ) {
+        for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException constraintViolation) {
+                return constraintName.equals(constraintViolation.getConstraintName());
+            }
+        }
+        return false;
     }
 
     // petIds에 중복이 섞여 오면 소유자 검증 쿼리가 그만큼 반복 실행되고

@@ -10,10 +10,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -187,8 +189,13 @@ class ReviewCommandServiceTest {
         when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
         // 동시에 두 번 제출되면 둘 다 "기존 리뷰 없음"으로 보고 insert를 시도할 수 있는데,
         // DB의 부분 유니크 인덱스(시설+유저, 삭제되지 않은 리뷰)가 뒤늦은 쪽을 막아준다.
+        ConstraintViolationException uniqueConstraintViolation = new ConstraintViolationException(
+                "duplicate key value violates unique constraint",
+                new SQLException("duplicate key"),
+                "uq_reviews_facility_user_active"
+        );
         when(reviewRepository.save(any(Review.class)))
-                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+                .thenThrow(new DataIntegrityViolationException("duplicate key", uniqueConstraintViolation));
 
         GeneralException exception = assertThrows(
                 GeneralException.class,
@@ -196,6 +203,31 @@ class ReviewCommandServiceTest {
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4004);
+    }
+
+    @Test
+    void upsertReview_다른_원인의_무결성_위반이면_변환하지_않고_그대로_던진다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        // 우리가 기대한 유니크 인덱스가 아닌 다른 무결성 위반(FK, not-null 등)까지 409로
+        // 뭉뚱그리면 실제 원인을 놓치게 되므로, 이 경우엔 변환하지 않고 그대로 올려야 한다.
+        DataIntegrityViolationException otherViolation = new DataIntegrityViolationException("not-null violation");
+        when(reviewRepository.save(any(Review.class))).thenThrow(otherViolation);
+
+        DataIntegrityViolationException exception = assertThrows(
+                DataIntegrityViolationException.class,
+                () -> reviewCommandService.upsertReview(1L, 7L, request)
+        );
+
+        assertThat(exception).isSameAs(otherViolation);
     }
 
     @Test

@@ -2,7 +2,9 @@ package com.freepets.domain.review.repository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -10,6 +12,19 @@ import org.springframework.data.repository.query.Param;
 import com.freepets.domain.review.entity.Review;
 
 public interface ReviewRepository extends JpaRepository<Review, Long> {
+
+    // 목록 조회에서 리뷰마다 작성자를 따로 불러오면 리뷰 수만큼 쿼리가 늘어나므로 함께 가져온다.
+    // 등급·태그 집계가 시설 전체 리뷰를 대상으로 해야 해서 페이지네이션 없이 전부 가져오고,
+    // 화면에 내려줄 목록만 서비스에서 10건씩 잘라 쓴다(ReviewQueryService 참고).
+    @EntityGraph(attributePaths = "user")
+    List<Review> findAllByFacilityFacilityIdAndDeletedAtIsNullOrderByCreatedAtDescReviewIdDesc(Long facilityId);
+
+    Optional<Review> findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(
+            Long facilityId,
+            Long userId
+    );
+
+    Optional<Review> findByReviewIdAndDeletedAtIsNull(Long reviewId);
 
     /**
      * 시설별 리뷰 수를 한 번에 센다.
@@ -21,6 +36,7 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             + "review.facility.facilityId, count(review)) "
             + "from Review review "
             + "where review.facility.facilityId in :facilityIds "
+            + "and review.deletedAt is null "
             + "group by review.facility.facilityId")
     List<FacilityReviewCount> countByFacilityIds(@Param("facilityIds") Collection<Long> facilityIds);
 

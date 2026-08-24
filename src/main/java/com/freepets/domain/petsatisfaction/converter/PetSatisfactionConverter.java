@@ -28,4 +28,22 @@ public class PetSatisfactionConverter {
                 petSatisfaction.getScore()
         );
     }
+
+    public static PetSatisfactionResponseDTO.FacilityItem toFacilityItemRecorded(PetSatisfaction petSatisfaction) {
+        return new PetSatisfactionResponseDTO.FacilityItem(
+                petSatisfaction.getPet().getPetId(),
+                petSatisfaction.getPet().getName(),
+                petSatisfaction.getScore(),
+                true
+        );
+    }
+
+    public static PetSatisfactionResponseDTO.FacilityItem toFacilityItemUnrecorded(Pet pet) {
+        return new PetSatisfactionResponseDTO.FacilityItem(
+                pet.getPetId(),
+                pet.getName(),
+                null,
+                false
+        );
+    }
 }

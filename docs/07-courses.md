@@ -42,34 +42,54 @@ DB: `courses`, `course_stops` — **신규 엔티티, 현재 코드에 전혀 �
 ]
 ```
 
-## `GET /api/v1/courses/recommended` (mode=liked)
+## `GET /api/v1/courses/recommended` (F3)
 
-- Query: `petIds` (콤마 구분)
-- 로직:
-  1. `petIds` 각각에 대해 `PetSatisfaction.score >= 6.5`인 `facility` 조회, distinct
-  2. distinct facility 수 `< 2` → **204 No Content**
-  3. 점수 desc 상위 4곳 내외로 임시 `Course`(source=`RECOMMENDED`, id=`"recommended-liked"`)를 즉석 조립해 반환 — **DB에 저장하지 않고 매 요청마다 재계산**
+> **[정정]** `freepets-docs/docs/02-api-design.md` 확인 결과, `recommended-similar`는 별도 경로가 아니라
+> **이 엔드포인트의 `mode` 쿼리 파라미터**다. 응답도 배열이 아니라 **단일 코스 객체**. 이전 버전(별도 경로 +
+> 배열 응답)은 폐기.
 
-## `GET /api/v1/courses/recommended-similar` (mode=similar)
+- Query: `petIds`(콤마 구분), `mode`(`liked` | `similar`, 기본 `liked`)
 
-- Query: `petIds`
-- **[변경] 카테고리 근사 방식 폐기, 리뷰 태그 기반 가중 스코어링으로 확정.** 상세 알고리즘은 [`docs/planning/similar-course-scoring.md`](planning/similar-course-scoring.md) 참고. 임베딩/pgvector 없이 순수 가중합 연산이라 인프라 추가 없이 구현 가능.
-- 선행 스키마 변경 (Review 도메인):
-  - `Review`에 `tags`(신규 컬럼/테이블, `@ElementCollection Set<ReviewTag>` 또는 `review_tags` 조인 테이블) 추가
-  - `ReviewTag` enum 신규: `LARGE_SPACE, LARGE_DOG, OFF_LEASED_AVAILABLE, PET_MENU_EXIST, STAFF_WELCOMING, WATER_EXIST, WASTE_BAG_PLACED`(경험, ×2.0) / `PARKING_CONVENIENT, QUIET_ATMOSPHERE, OUTDOOR`(일반, ×1.0)
-  - 리뷰 작성 API(Request Body validation)에서 `tags` 최소 3개 필수 — 신규 리뷰부터 적용, 소급 없음
-  - `Review`에 `visitedAt`(방문 시점) 컬럼 필요 — 최신성 가중치 계산용. 현재 엔티티에 없으면 추가
-- 로직 (요약 — 전체는 planning 문서):
-  1. liked 로직으로 "좋아한 곳" 집합 확보 (2곳 미만이면 여기서도 **204**) — `LIKED_THRESHOLD=6.5f` 그대로 재사용
-  2. 좋아한 곳들에 **내가 남긴** 리뷰 태그 집합 = 취향 프로필
-  3. 해당 pet의 `PetSatisfaction`/`Review` 기록이 **없는** facility 중 `petAllowed != NOT_ALLOWED`인 곳을 후보로, 후보에 달린 모든 리뷰에 대해 태그 겹침(그룹 가중치) × 최신성 × kind/breedSize 보너스를 합산한 시설 점수로 정렬해 상위 `MAX_RECOMMENDED_STOPS`개 선택
-  4. 조건 충족 후보가 2곳 미만이면 **204**
+### `mode=liked` — "우리 아이 취향 코스"
 
-**Response**: presets와 동일 형태 + `matchedTags`/`matchedByKind`/`matchedByBreedSize`/`reason`(추천 근거, planning 문서 4절 참고), `id: "recommended-similar"`, `source: "RECOMMENDED"`
+1. `petIds` 각각에 대해 `PetSatisfaction.score >= 6.5`인 `facility` 조회, distinct (`LIKED_THRESHOLD=6.5f` 상수화)
+2. distinct facility 수 `< 2` → **204 No Content**
+3. 점수 desc 상위 `MAX_RECOMMENDED_STOPS`(=4)곳으로 코스를 즉석 조립해 반환 — **DB에 저장하지 않고 매 요청마다 재계산**
+
+### `mode=similar` — "취향 비슷한 새 곳 탐험"
+
+**공식 스펙(02-api-design.md) 기준 알고리즘**:
+1. 취향 프로필 = 좋아한 곳들의 `category` 집합 + 그 곳들의 `review_tags` 집합
+2. 후보 = 아직 방문(만족도 기록) 없는 시설 중 데려갈 아이들이 갈 수 있는 곳(판별 결과 ≠ DENIED)
+3. 유사도 점수 = `카테고리 일치(가중 3)` + `리뷰 태그 겹침 수`
+4. 점수순 정렬 → 카테고리 다양성 확보(같은 카테고리 최고점 1곳) → 상위 N, 거리순 정렬
+
+**[확장안, 팀 확정 전]** [`docs/planning/similar-course-scoring.md`](planning/similar-course-scoring.md)에 위 3번 스코어링을 훨씬 정교화한 초안이 있음 — 태그 그룹별 가중치(경험 ×2.0/일반 ×1.0) + kind·breedSize 보너스 + 리뷰 최신성 감쇠. 공식 스펙과 다른 팀원이 검토 전이라, 최종 채택 전까진 **공식 스펙(카테고리 가중3 + 태그 겹침수)을 기본으로 구현하고, 확장안은 팀 합의 후 교체**하는 걸 권장.
+
+- 선행 스키마 변경 (Review 도메인, 두 알고리즘 공통으로 필요):
+  - `Review`에 `tags`(신규, `review_tags` 테이블 또는 `@ElementCollection Set<ReviewTag>`)
+  - `ReviewTag` enum: `LARGE_SPACE, LARGE_DOG, OFF_LEASED_AVAILABLE, PET_MENU_EXIST, STAFF_WELCOMING, WATER_EXIST, WASTE_BAG_PLACED, PARKING_CONVENIENT, QUIET_ATMOSPHERE, OUTDOOR`
+  - 확장안 채택 시에만 추가로 필요: 태그 최소 3개 검증, `Review.visitedAt`
+- 후보 판정: "안 가본 곳"은 `PetCheck`가 아니라 `PetSatisfaction`/`Review`(실제 방문 기록) 기준
+
+**Response** (단일 객체, 조건 미달 시 **204 No Content**)
+```json
+{ "id": "recommended-similar", "name": "취향 비슷한 새 곳 탐험", "source": "RECOMMENDED", "stopFacilityIds": [12, 13, 14] }
+```
 
 ## `GET /api/v1/courses` (내 코스)
 
-- 로그인 사용자의 `source=CUSTOM` 코스 목록. ⚠️ 페이지네이션 필요 여부 미결.
+- 로그인 사용자의 코스 목록(스톱·순서 포함). ⚠️ 페이지네이션 필요 여부 미결.
+
+## `POST /api/v1/courses` — 코스 저장 (CUSTOM)
+
+- Body: `name`, `stopFacilityIds`(순서 있는 배열)
+
+## `PUT /api/v1/courses/{courseId}` — 코스 수정
+
+- Body: POST와 동일 필드(이름·스톱·순서)
+
+## `DELETE /api/v1/courses/{courseId}` — 코스 삭제
 
 ## 결정된 사항
 
@@ -116,5 +136,7 @@ public class CourseRequestDTO {
 }
 ```
 
-- `GET /courses/presets`, `GET /courses/recommended`, `GET /courses/recommended-similar` → `List<CoursePreview>` (recommended류는 조건 미달 시 바디 없이 204)
+- `GET /courses/presets` → `List<CoursePreview>`
+- `GET /courses/recommended` → **단일 `CoursePreview`** (배열 아님, `mode` 무관하게 동일 타입). 조건 미달(대상 2곳 미만) 시 바디 없이 **204**
 - `GET /courses` → `List<MyCourse>`
+- `POST /courses` → `MyCourse`, `PUT /courses/{courseId}` → `MyCourse`

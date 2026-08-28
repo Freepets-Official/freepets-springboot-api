@@ -6,8 +6,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import com.freepets.global.entity.BaseEntity;
+import com.freepets.global.util.JsonListUtil;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -158,6 +162,38 @@ public class Facility extends BaseEntity {
     private int parserVersion;
 
     // ------------------------------------------------------------------
+    // LLM 조건 파싱 결과 (FacilityConditionLlmParser) — pet_allowed/maxWeight/checkLists와는
+    // 별개 축. "조건 원문을 얼마나 구조화했는지"를 나타내며, 판별 엔진이 직접 읽는 값은 아니다.
+    // ------------------------------------------------------------------
+
+    /** 적재 직후 기본값은 NOT_PROCESSED — 라이브 DB엔 이미 시설이 있어 컬럼 추가 시 기본값이 필요하다. */
+    @ColumnDefault("'NOT_PROCESSED'")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pet_condition_status", nullable = false, length = 20)
+    private PetConditionStatus petConditionStatus;
+
+    @ColumnDefault("false")
+    @Column(name = "is_dangerous_breed_excluded", nullable = false)
+    private boolean isDangerousBreedExcluded;
+
+    /**
+     * ["목줄 착용", ...] — 화면 표시용 문구. 판별 엔진이 쓰는 requirements(Requirement 목록)와는 별개.
+     * 저장은 JSON 문자열, 읽기는 {@link #getRequiredItems()}로 List&lt;String&gt; 반환 — Lombok
+     * 기본 getter는 끄고 아래 커스텀 getter만 노출한다.
+     */
+    @Getter(AccessLevel.NONE)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "required_items", columnDefinition = "json")
+    private String requiredItems;
+
+    @Column(name = "partial_area_note", columnDefinition = "TEXT")
+    private String partialAreaNote;
+
+    /** 컬럼으로 못 담은 잔여 원문. 비어있지 않으면 petConditionStatus가 AMBIGUOUS다. */
+    @Column(name = "unmapped_condition_text", columnDefinition = "TEXT")
+    private String unmappedConditionText;
+
+    // ------------------------------------------------------------------
     // 적재 메타
     // ------------------------------------------------------------------
 
@@ -238,6 +274,7 @@ public class Facility extends BaseEntity {
             PetAllowed petAllowed,
             BigDecimal maxWeight,
             int parserVersion,
+            PetConditionStatus petConditionStatus,
             FacilitySource source,
             boolean isActive,
             boolean petTourListed
@@ -269,6 +306,7 @@ public class Facility extends BaseEntity {
         this.petAllowed = petAllowed;
         this.maxWeight = maxWeight;
         this.parserVersion = parserVersion;
+        this.petConditionStatus = petConditionStatus != null ? petConditionStatus : PetConditionStatus.NOT_PROCESSED;
         this.source = source;
         this.isActive = isActive;
         this.petTourListed = petTourListed;
@@ -324,6 +362,30 @@ public class Facility extends BaseEntity {
                         .isChecked(false)
                         .build()
         ));
+    }
+
+    /**
+     * {@code FacilityConditionLlmParser}(LLM 조건 파싱)의 결과를 반영한다. 언제 호출할지(신규 시설
+     * lazy-sync 등)는 이 엔티티 범위 밖 — 서비스 레이어에서 결정한다.
+     */
+    public void applyParsedCondition(
+            PetConditionStatus petConditionStatus,
+            BigDecimal maxWeight,
+            boolean dangerousBreedExcluded,
+            List<String> requiredItems,
+            String partialAreaNote,
+            String unmappedConditionText
+    ) {
+        this.petConditionStatus = petConditionStatus;
+        this.maxWeight = maxWeight;
+        this.isDangerousBreedExcluded = dangerousBreedExcluded;
+        this.requiredItems = JsonListUtil.toJson(requiredItems);
+        this.partialAreaNote = partialAreaNote;
+        this.unmappedConditionText = unmappedConditionText;
+    }
+
+    public List<String> getRequiredItems() {
+        return JsonListUtil.fromJson(requiredItems);
     }
 
 }

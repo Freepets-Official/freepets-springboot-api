@@ -24,6 +24,11 @@ import lombok.extern.slf4j.Slf4j;
  *     scheduling:
  *       enabled: true
  * </pre>
+ *
+ * <p><b>주의(현재 미해결):</b> 분산 락(예: ShedLock)이 없다 — 애플리케이션을 인스턴스 여러 대로
+ * 띄우면 각 인스턴스가 매일 새벽 3시에 독립적으로 동기화·파싱을 돌려 Claude를 중복 호출하고
+ * 저장이 경합할 수 있다. 지금은 단일 인스턴스 배포를 전제로 한다 — 여러 대로 확장하게 되면
+ * 이 클래스에 분산 락을 추가해야 한다.
  */
 @Slf4j
 @Component

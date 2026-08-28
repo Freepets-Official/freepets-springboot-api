@@ -47,6 +47,17 @@ class PetCheckJudgeServiceTest {
     }
 
     @Test
+    void 시설의_동반_정책이_확인_안_됐으면_CONDITIONAL() {
+        Facility facility = facility(PetAllowed.PENDING, null, List.of());
+        Pet pet = pet("몽이", "말티즈", "3.2", true);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.CONDITIONAL, verdict.result());
+        assertTrue(verdict.reason().contains("확인"));
+    }
+
+    @Test
     void 체중이_최대_허용치를_초과하면_DENIED() {
         Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("10.0"), List.of());
         Pet pet = pet("보리", "골든리트리버", "27.5", true);
@@ -90,6 +101,26 @@ class PetCheckJudgeServiceTest {
     }
 
     @Test
+    void 소형견_전용_시설에_대형견이면_DENIED() {
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of(Requirement.SMALL_ONLY));
+        Pet pet = pet("두목", "골든리트리버", "30.0", true, BreedSize.LARGE);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.DENIED, verdict.result());
+    }
+
+    @Test
+    void 소형견_전용_시설에_소형견이면_CONDITIONAL() {
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of(Requirement.SMALL_ONLY));
+        Pet pet = pet("몽이", "말티즈", "3.2", true, BreedSize.SMALL);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.CONDITIONAL, verdict.result());
+    }
+
+    @Test
     void 그룹_판별은_하나라도_DENIED면_overall이_DENIED() {
         Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("10.0"), List.of(Requirement.LEASH));
         Pet 몽이 = pet("몽이", "말티즈", "3.2", true);
@@ -125,12 +156,22 @@ class PetCheckJudgeServiceTest {
             String weight,
             boolean vaccinated
     ) {
+        return pet(name, species, weight, vaccinated, BreedSize.SMALL);
+    }
+
+    private Pet pet(
+            String name,
+            String species,
+            String weight,
+            boolean vaccinated,
+            BreedSize breedSize
+    ) {
         return Pet.builder()
                 .name(name)
                 .kind(Kind.DOG)
                 .species(species)
                 .weight(new BigDecimal(weight))
-                .breedSize(BreedSize.SMALL)
+                .breedSize(breedSize)
                 .vaccinationDate(vaccinated ? LocalDate.now().minusMonths(3) : null)
                 .isVaccinated(vaccinated)
                 .build();

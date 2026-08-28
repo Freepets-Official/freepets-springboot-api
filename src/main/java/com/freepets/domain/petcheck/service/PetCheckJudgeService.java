@@ -11,6 +11,7 @@ import com.freepets.domain.facility.entity.CheckList;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
+import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.petcheck.entity.PetCheckResult;
 
@@ -57,6 +58,16 @@ public class PetCheckJudgeService {
             return denied(pet, "이 시설은 반려동물 동반이 불가능합니다");
         }
 
+        // 관광공사 반려동물 동반 목록에 없어 조건 자체가 확인 안 된 시설 — "조건 없음"과
+        // "확인 안 됨"은 다른 신호라 ALLOWED로 단정하지 않고 확인이 필요하다고 알린다.
+        if (facility.getPetAllowed() == PetAllowed.PENDING) {
+            return conditional(
+                    pet,
+                    "이 시설의 반려동물 동반 정책이 아직 확인되지 않았습니다 — 방문 전 시설에 직접 확인해 주세요",
+                    List.of()
+            );
+        }
+
         BigDecimal maxWeight = facility.getMaxWeight();
         List<Requirement> requirements = requirementsOf(facility);
 
@@ -75,6 +86,11 @@ public class PetCheckJudgeService {
 
         if (requirements.contains(Requirement.VACCINATION) && !pet.isVaccinated()) {
             return denied(pet, "이 시설은 예방접종 완료를 요구하는데 접종 기록이 없습니다");
+        }
+
+        if (requirements.contains(Requirement.SMALL_ONLY) && pet.getBreedSize() != BreedSize.SMALL) {
+            return denied(pet, "이 시설은 소형견만 동반 가능한데 %s은(는) 소형견이 아닙니다"
+                    .formatted(pet.getName()));
         }
 
         if (!requirements.isEmpty()) {

@@ -1,5 +1,7 @@
 package com.freepets.domain.petcheck.service;
 
+import java.util.Map;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -9,6 +11,8 @@ import com.freepets.domain.petcheck.converter.PetCheckConverter;
 import com.freepets.domain.petcheck.dto.PetCheckResponseDTO;
 import com.freepets.domain.petcheck.entity.PetCheck;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
+import com.freepets.global.apiPayload.code.status.ErrorStatus;
+import com.freepets.global.apiPayload.exception.GeneralException;
 
 import lombok.RequiredArgsConstructor;
 
@@ -27,6 +31,10 @@ public class PetCheckQueryService {
             int limit,
             int offset
     ) {
+        if (limit <= 0) {
+            throw new GeneralException(ErrorStatus.COMMON400, Map.of("limit", "1 이상이어야 합니다."));
+        }
+
         PageRequest pageRequest = PageRequest.of(offset / limit, limit);
 
         Page<PetCheck> page = (facilityId != null)

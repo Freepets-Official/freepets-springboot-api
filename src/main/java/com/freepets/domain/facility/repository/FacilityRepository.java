@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,6 +14,7 @@ import org.springframework.data.repository.query.Param;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
+import com.freepets.domain.facility.entity.PetConditionStatus;
 
 public interface FacilityRepository extends JpaRepository<Facility, Long> {
 
@@ -83,6 +85,16 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
     List<Facility> findByContentIdIn(Collection<String> contentIds);
 
     boolean existsByContentId(String contentId);
+
+    /**
+     * {@code FacilityConditionLlmBatchService}가 배치 파싱 대상을 페이지 단위로 훑는 데 쓴다.
+     * 처리된 행은 상태가 바뀌어 다음 조회에서 자연히 빠지므로, 항상 {@code Pageable.ofSize(N)}
+     * (0페이지)로만 호출해도 전량을 순회할 수 있다.
+     */
+    Slice<Facility> findByPetConditionStatus(
+            PetConditionStatus petConditionStatus,
+            Pageable pageable
+    );
 
     @Query(SELECT_WITH_DISTANCE + SEARCH_FILTER + ORDER_BY_DISTANCE)
     List<FacilityWithDistance> search(

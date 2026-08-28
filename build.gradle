@@ -109,3 +109,29 @@ tasks.register('facilitySync', Test) {
 
 	outputs.upToDateWhen { false }
 }
+
+// 시설 조건 원문 LLM 파싱. 조건 원문이 있는 시설(약 10%)마다 Claude를 호출한다.
+// 실행: ./gradlew facilityConditionParse
+tasks.register('facilityConditionParse', Test) {
+	group = 'application'
+	description = '조건 미처리(NOT_PROCESSED) 시설을 LLM으로 파싱한다 (Claude API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionLlmParseRunner'
+	}
+
+	systemProperty 'facility.condition.parse', 'true'
+
+	timeout = Duration.ofHours(3)
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}

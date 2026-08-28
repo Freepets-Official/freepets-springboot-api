@@ -7,6 +7,8 @@ import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.user.entity.User;
 import com.freepets.global.entity.BaseEntity;
 
+import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -50,6 +52,8 @@ public class PetCheck extends BaseEntity {
     private Facility facility;
 
     // 그룹 종합 결과 — 아이들 result 중 최댓값(하나라도 DENIED면 DENIED)
+    // 라이브 DB에 이미 pet_checks 행이 쌓여있어 컬럼 추가 시 기본값이 필요하다(NOT_PROCESSED와 같은 이유).
+    @ColumnDefault("'ALLOWED'")
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private PetCheckResult overall;
@@ -68,6 +72,9 @@ public class PetCheck extends BaseEntity {
     @Column(length = 50)
     private String model;
 
+    // 이력 목록 조회가 판별 세션마다 아이별 결과를 함께 내려주므로, 지연 로딩만 두면 N+1이 난다 —
+    // Facility.checkLists와 같은 이유로 batch fetch를 건다.
+    @BatchSize(size = 100)
     @OneToMany(mappedBy = "petCheck", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PetCheckVerdict> verdicts = new ArrayList<>();
 
@@ -91,18 +98,6 @@ public class PetCheck extends BaseEntity {
     public void addVerdict(PetCheckVerdict verdict) {
         verdicts.add(verdict);
         verdict.assignPetCheck(this);
-    }
-
-    public void updateChecklist(
-            String checklist,
-            String tips
-    ) {
-        this.checklist = checklist;
-        this.tips = tips;
-    }
-
-    public boolean isOwnedBy(Long userId) {
-        return user != null && user.getId().equals(userId);
     }
 
 }

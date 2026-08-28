@@ -69,16 +69,34 @@ public class PetCheckJudgeService {
             );
         }
 
-        if (facility.isDangerousBreedExcluded() && pet.isDangerousBreed()) {
-            return denied(pet, "이 시설은 맹견(동물보호법 시행규칙상 맹견 품종)의 동반을 제한합니다");
-        }
-
         BigDecimal maxWeight = facility.getMaxWeight();
         List<Requirement> requirements = requirementsOf(facility);
 
+        // DENIED급 사유는 하나 찾자마자 바로 끊지 않고 전부 모은다 — 체중초과만 알려주고
+        // 고쳐서 다시 왔더니 예방접종 문제로 또 막히는 식의 반복 확인을 막기 위함.
+        List<String> denialReasons = new ArrayList<>();
+
+        if (facility.isDangerousBreedExcluded() && pet.isDangerousBreed()) {
+            denialReasons.add("%s(%s)은(는) 법정 맹견 품종으로 이 시설의 동반이 제한됩니다"
+                    .formatted(pet.getName(), pet.getSpecies()));
+        }
+
         if (maxWeight != null && pet.getWeight().compareTo(maxWeight) > 0) {
-            return denied(pet, "%s은(는) %skg으로 최대 허용 체중 %skg을 초과합니다"
+            denialReasons.add("%s은(는) %skg으로 최대 허용 체중 %skg을 초과합니다"
                     .formatted(pet.getName(), pet.getWeight(), maxWeight));
+        }
+
+        if (requirements.contains(Requirement.VACCINATION) && !pet.isVaccinated()) {
+            denialReasons.add("이 시설은 예방접종 완료를 요구하는데 접종 기록이 없습니다");
+        }
+
+        if (requirements.contains(Requirement.SMALL_ONLY) && pet.getBreedSize() != BreedSize.SMALL) {
+            denialReasons.add("이 시설은 소형견만 동반 가능한데 %s은(는) 소형견이 아닙니다"
+                    .formatted(pet.getName()));
+        }
+
+        if (!denialReasons.isEmpty()) {
+            return denied(pet, String.join(" / ", denialReasons));
         }
 
         if (maxWeight != null && pet.getWeight().compareTo(maxWeight) == 0) {
@@ -87,15 +105,6 @@ public class PetCheckJudgeService {
                     "체중이 허용 한도와 정확히 일치합니다 — 현장 확인을 권장합니다",
                     conditionTexts(requirements)
             );
-        }
-
-        if (requirements.contains(Requirement.VACCINATION) && !pet.isVaccinated()) {
-            return denied(pet, "이 시설은 예방접종 완료를 요구하는데 접종 기록이 없습니다");
-        }
-
-        if (requirements.contains(Requirement.SMALL_ONLY) && pet.getBreedSize() != BreedSize.SMALL) {
-            return denied(pet, "이 시설은 소형견만 동반 가능한데 %s은(는) 소형견이 아닙니다"
-                    .formatted(pet.getName()));
         }
 
         if (!requirements.isEmpty()) {

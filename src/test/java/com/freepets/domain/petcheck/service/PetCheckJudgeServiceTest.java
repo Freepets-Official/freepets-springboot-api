@@ -130,6 +130,19 @@ class PetCheckJudgeServiceTest {
         PetVerdict verdict = judgeService.judgePet(pet, facility);
 
         assertEquals(PetCheckResult.DENIED, verdict.result());
+        assertTrue(verdict.reason().contains("두목"));
+        assertTrue(verdict.reason().contains("로트와일러"));
+    }
+
+    @Test
+    void 맹견_영문_품종명도_DENIED() {
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of());
+        ReflectionTestUtils.setField(facility, "isDangerousBreedExcluded", true);
+        Pet pet = pet("두목", "Rottweiler", "40.0", true, BreedSize.LARGE);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.DENIED, verdict.result());
     }
 
     @Test
@@ -151,6 +164,21 @@ class PetCheckJudgeServiceTest {
         PetVerdict verdict = judgeService.judgePet(pet, facility);
 
         assertEquals(PetCheckResult.ALLOWED, verdict.result());
+    }
+
+    @Test
+    void 거부_사유가_여러_개면_전부_한번에_담긴다() {
+        Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("10.0"), List.of(Requirement.VACCINATION));
+        ReflectionTestUtils.setField(facility, "isDangerousBreedExcluded", true);
+        // 체중초과 + 미접종 + 맹견, 세 가지 DENIED 사유를 동시에 유발한다.
+        Pet pet = pet("두목", "로트와일러", "40.0", false, BreedSize.LARGE);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.DENIED, verdict.result());
+        assertTrue(verdict.reason().contains("초과"));
+        assertTrue(verdict.reason().contains("접종"));
+        assertTrue(verdict.reason().contains("맹견"));
     }
 
     @Test

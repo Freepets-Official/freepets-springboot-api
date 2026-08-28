@@ -22,6 +22,14 @@ class DangerousDogBreedTest {
     }
 
     @Test
+    void 영문_품종명도_대소문자_구분없이_true() {
+        assertThat(DangerousDogBreed.matches("Rottweiler")).isTrue();
+        assertThat(DangerousDogBreed.matches("ROTTWEILER")).isTrue();
+        assertThat(DangerousDogBreed.matches("pitbull")).isTrue();
+        assertThat(DangerousDogBreed.matches("Pit Bull mix")).isTrue();
+    }
+
+    @Test
     void 맹견이_아니면_false() {
         assertThat(DangerousDogBreed.matches("말티즈")).isFalse();
         assertThat(DangerousDogBreed.matches("골든리트리버")).isFalse();

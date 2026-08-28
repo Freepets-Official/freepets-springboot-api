@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.freepets.domain.petcheck.entity.PetCheck;
+import com.freepets.domain.petcheck.entity.PetCheckVerdict;
 import com.freepets.domain.petsatisfaction.entity.PetSatisfaction;
 import com.freepets.domain.user.entity.User;
 import com.freepets.global.entity.BaseEntity;
@@ -84,8 +84,11 @@ public class Pet extends BaseEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
-    @OneToMany(mappedBy = "pet", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<PetCheck> petChecks = new ArrayList<>();
+    // 판별 세션(PetCheck) 자체가 아니라 그 안의 아이별 결과(PetCheckVerdict)에 걸린다.
+    // 펫이 삭제되면 orphanRemoval 없이 verdict.pet만 NULL로 남는다(fk_verdict_pet ON DELETE SET NULL,
+    // db/schema.sql) — 판별 기록 자체는 유지해야 하므로 cascade/orphanRemoval을 걸지 않는다.
+    @OneToMany(mappedBy = "pet")
+    private List<PetCheckVerdict> petCheckVerdicts = new ArrayList<>();
 
     @OneToMany(mappedBy = "pet", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PetSatisfaction> petSatisfactions = new ArrayList<>();

@@ -90,26 +90,30 @@ public class FacilityConditionLlmBatchService {
     }
 
     /**
-     * 규칙 엔진(PetConditionParser, #22)이 이미 maxWeight나 요구조건(checkLists)을 뽑아낸
-     * 시설은 정형화가 이미 끝난 것으로 보고 LLM을 호출하지 않는다 — 안 그러면 이미 정확한
-     * Facility.maxWeight를 LLM의 별도 판독값으로 조건 없이 덮어써버리게 된다. 원문은 있는데
-     * 규칙 엔진이 아무것도 못 뽑아낸(진짜 애매한) 경우에만 실제로 Claude를 호출한다.
+     * LLM은 항상 호출한다 — 규칙 엔진(PetConditionParser, #22)이 maxWeight나 요구조건 일부를
+     * 뽑아냈다고 해서 원문 전체를 다 처리했다는 뜻은 아니기 때문이다. 예를 들어 체중 제한과
+     * "맹견 제외"가 같은 원문에 같이 있으면, 규칙 엔진은 체중만 뽑고 맹견 배제 여부는 규칙
+     * 엔진 자체가 다루지 않는 개념이라 LLM을 건너뛰면 그 정보가 영영 사라진다(다음 배치도
+     * 같은 이유로 다시 건너뛰기 때문에 복구가 안 됨).
+     *
+     * <p>다만 maxWeight만큼은 규칙 엔진 값을 우선한다 — 실측 데이터로 검증된 정규식 결과가
+     * 매번 새로 읽는 LLM 결과보다 신뢰도가 높고, 판별 엔진(PetCheckJudgeService)이 그 값을
+     * 그대로 읽으므로 실행할 때마다 결과가 흔들리면 안 된다.
      */
     private FacilityConditionLlmParseResult resolve(Facility facility) {
-        boolean alreadyResolvedByRuleEngine = facility.getMaxWeight() != null
-                || !facility.getCheckLists().isEmpty();
-
-        if (alreadyResolvedByRuleEngine) {
-            return FacilityConditionLlmParseResult.alreadyResolvedByRuleEngine(facility.getMaxWeight());
-        }
-
-        return facilityConditionLlmParser.parse(
+        FacilityConditionLlmParseResult parsed = facilityConditionLlmParser.parse(
                 facility.getAccompanyType(),
                 facility.getAllowedAnimalText(),
                 facility.getRequiredMatterText(),
                 facility.getEtcAccompanyText(),
                 facility.getAccidentRiskText()
         );
+
+        if (facility.getMaxWeight() != null) {
+            return parsed.withMaxWeight(facility.getMaxWeight());
+        }
+
+        return parsed;
     }
 
 }

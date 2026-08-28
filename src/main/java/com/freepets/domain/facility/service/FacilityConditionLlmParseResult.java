@@ -26,13 +26,13 @@ public record FacilityConditionLlmParseResult(
     }
 
     /**
-     * 규칙 엔진(PetConditionParser, #22)이 이미 maxWeight나 요구조건을 뽑아낸 시설 — 정형화
-     * 가능한 케이스는 LLM을 아예 호출하지 않고 이 결과로 대체한다. {@code FacilityConditionLlmBatchService}
-     * 참고.
+     * maxWeight만 교체한 복사본을 만든다. 규칙 엔진(PetConditionParser, #22)이 이미 뽑아낸
+     * maxWeight가 있으면 이 값으로 LLM의 판독값을 대체해서 우선시킨다 — 나머지 필드(맹견 배제,
+     * 요구조건, 잔여 텍스트)는 LLM이 채운 그대로 둔다. {@code FacilityConditionLlmBatchService} 참고.
      */
-    public static FacilityConditionLlmParseResult alreadyResolvedByRuleEngine(BigDecimal maxWeight) {
+    public FacilityConditionLlmParseResult withMaxWeight(BigDecimal overrideMaxWeight) {
         return new FacilityConditionLlmParseResult(
-                PetConditionStatus.PARSED, maxWeight, false, List.of(), null, null
+                status, overrideMaxWeight, isDangerousBreedExcluded(), requiredItems(), partialAreaNote(), unmappedConditionText()
         );
     }
 

@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -89,21 +88,31 @@ class FacilityConditionLlmBatchServiceTest {
     }
 
     @Test
-    void 규칙_엔진이_이미_maxWeight를_뽑아낸_시설은_LLM을_호출하지_않는다() {
-        Facility alreadyResolved = facility(1L);
+    void 규칙_엔진이_이미_maxWeight를_뽑아낸_시설도_LLM은_호출하되_maxWeight는_규칙_엔진_값을_유지한다() {
+        // CodeRabbit 리뷰 지적 — maxWeight 하나 뽑았다고 LLM을 통째로 건너뛰면, 같은 원문에 같이
+        // 있을 수 있는 맹견 배제/구역 제한 같은 다른 조건이 영영 사라진다. LLM은 항상 부르되
+        // maxWeight만 규칙 엔진 값으로 덮어써야 한다.
+        Facility alreadyHasWeight = facility(1L);
         org.springframework.test.util.ReflectionTestUtils.setField(
-                alreadyResolved, "maxWeight", new BigDecimal("10.0")
+                alreadyHasWeight, "maxWeight", new BigDecimal("10.0")
         );
 
         when(facilityRepository.findByPetConditionStatus(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
-                .thenReturn(new SliceImpl<>(List.of(alreadyResolved)))
+                .thenReturn(new SliceImpl<>(List.of(alreadyHasWeight)))
                 .thenReturn(new SliceImpl<>(List.of()));
+
+        // LLM은 (규칙 엔진이 못 보는) 맹견 배제를 찾아내지만, maxWeight는 임의로 다르게 읽었다고 가정.
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+                .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
+                        new FacilityConditionExtraction(new BigDecimal("999.0"), true, List.of(), null, null)
+                ));
 
         FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
 
         assertThat(result.getProcessed()).isEqualTo(1);
-        assertThat(result.countOf(PetConditionStatus.PARSED)).isEqualTo(1);
-        verifyNoInteractions(facilityConditionLlmParser);
+        verify(facilityConditionLlmParser, times(1)).parse(any(), any(), any(), any(), any());
+        assertThat(alreadyHasWeight.getMaxWeight()).isEqualByComparingTo(new BigDecimal("10.0"));
+        assertThat(alreadyHasWeight.isDangerousBreedExcluded()).isTrue();
     }
 
     @Test

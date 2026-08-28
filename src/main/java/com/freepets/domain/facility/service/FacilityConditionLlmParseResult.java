@@ -13,7 +13,7 @@ import com.freepets.domain.facility.entity.PetConditionStatus;
 public record FacilityConditionLlmParseResult(
         PetConditionStatus status,
         BigDecimal maxWeight,
-        boolean dangerousBreedExcluded,
+        boolean isDangerousBreedExcluded,
         List<String> requiredItems,
         String partialAreaNote,
         String unmappedConditionText
@@ -25,6 +25,17 @@ public record FacilityConditionLlmParseResult(
         );
     }
 
+    /**
+     * 규칙 엔진(PetConditionParser, #22)이 이미 maxWeight나 요구조건을 뽑아낸 시설 — 정형화
+     * 가능한 케이스는 LLM을 아예 호출하지 않고 이 결과로 대체한다. {@code FacilityConditionLlmBatchService}
+     * 참고.
+     */
+    public static FacilityConditionLlmParseResult alreadyResolvedByRuleEngine(BigDecimal maxWeight) {
+        return new FacilityConditionLlmParseResult(
+                PetConditionStatus.PARSED, maxWeight, false, List.of(), null, null
+        );
+    }
+
     public static FacilityConditionLlmParseResult fromExtraction(FacilityConditionExtraction extraction) {
         boolean hasUnmapped = extraction.unmappedConditionText() != null
                 && !extraction.unmappedConditionText().isBlank();
@@ -32,7 +43,7 @@ public record FacilityConditionLlmParseResult(
         return new FacilityConditionLlmParseResult(
                 hasUnmapped ? PetConditionStatus.AMBIGUOUS : PetConditionStatus.PARSED,
                 extraction.maxWeight(),
-                extraction.dangerousBreedExcluded(),
+                extraction.isDangerousBreedExcluded(),
                 extraction.requiredItems() != null ? extraction.requiredItems() : List.of(),
                 extraction.partialAreaNote(),
                 hasUnmapped ? extraction.unmappedConditionText() : null

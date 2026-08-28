@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -85,6 +86,24 @@ class FacilityConditionLlmBatchServiceTest {
         assertThat(result.getProcessed()).isEqualTo(1);
         assertThat(result.getFailed()).isEqualTo(1);
         verify(facilityRepository, times(1)).save(any(Facility.class));
+    }
+
+    @Test
+    void 규칙_엔진이_이미_maxWeight를_뽑아낸_시설은_LLM을_호출하지_않는다() {
+        Facility alreadyResolved = facility(1L);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                alreadyResolved, "maxWeight", new BigDecimal("10.0")
+        );
+
+        when(facilityRepository.findByPetConditionStatus(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of(alreadyResolved)))
+                .thenReturn(new SliceImpl<>(List.of()));
+
+        FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
+
+        assertThat(result.getProcessed()).isEqualTo(1);
+        assertThat(result.countOf(PetConditionStatus.PARSED)).isEqualTo(1);
+        verifyNoInteractions(facilityConditionLlmParser);
     }
 
     @Test

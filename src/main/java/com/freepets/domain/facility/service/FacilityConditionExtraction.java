@@ -24,7 +24,7 @@ public record FacilityConditionExtraction(
         @JsonPropertyDescription(
                 "맹견(도사견, 핏불 등 동물보호법상 위험 품종) 동반이 원문에 명시적으로 제외돼 있으면 true."
         )
-        boolean dangerousBreedExcluded,
+        boolean isDangerousBreedExcluded,
 
         @JsonPropertyDescription(
                 "출입 시 지켜야 할 준비물·행동 조건을 사람이 읽을 수 있는 한국어 문구로 나열. "

@@ -70,18 +70,12 @@ public class FacilityConditionLlmBatchService {
             FacilityConditionLlmBatchResult result
     ) {
         try {
-            FacilityConditionLlmParseResult parsed = facilityConditionLlmParser.parse(
-                    facility.getAccompanyType(),
-                    facility.getAllowedAnimalText(),
-                    facility.getRequiredMatterText(),
-                    facility.getEtcAccompanyText(),
-                    facility.getAccidentRiskText()
-            );
+            FacilityConditionLlmParseResult parsed = resolve(facility);
 
             facility.applyParsedCondition(
                     parsed.status(),
                     parsed.maxWeight(),
-                    parsed.dangerousBreedExcluded(),
+                    parsed.isDangerousBreedExcluded(),
                     parsed.requiredItems(),
                     parsed.partialAreaNote(),
                     parsed.unmappedConditionText()
@@ -93,6 +87,29 @@ public class FacilityConditionLlmBatchService {
             log.warn("시설 {} 조건 파싱 실패 — 건너뜁니다: {}", facility.getFacilityId(), e.getMessage());
             result.addFailed();
         }
+    }
+
+    /**
+     * 규칙 엔진(PetConditionParser, #22)이 이미 maxWeight나 요구조건(checkLists)을 뽑아낸
+     * 시설은 정형화가 이미 끝난 것으로 보고 LLM을 호출하지 않는다 — 안 그러면 이미 정확한
+     * Facility.maxWeight를 LLM의 별도 판독값으로 조건 없이 덮어써버리게 된다. 원문은 있는데
+     * 규칙 엔진이 아무것도 못 뽑아낸(진짜 애매한) 경우에만 실제로 Claude를 호출한다.
+     */
+    private FacilityConditionLlmParseResult resolve(Facility facility) {
+        boolean alreadyResolvedByRuleEngine = facility.getMaxWeight() != null
+                || !facility.getCheckLists().isEmpty();
+
+        if (alreadyResolvedByRuleEngine) {
+            return FacilityConditionLlmParseResult.alreadyResolvedByRuleEngine(facility.getMaxWeight());
+        }
+
+        return facilityConditionLlmParser.parse(
+                facility.getAccompanyType(),
+                facility.getAllowedAnimalText(),
+                facility.getRequiredMatterText(),
+                facility.getEtcAccompanyText(),
+                facility.getAccidentRiskText()
+        );
     }
 
 }

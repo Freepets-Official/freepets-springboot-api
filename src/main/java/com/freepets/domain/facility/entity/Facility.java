@@ -319,6 +319,11 @@ public class Facility extends BaseEntity {
      * 전체 필드를 덮어쓰면 동기화 배치가 돌 때마다 그것들이 초기화된다.
      */
     public void updateFromTourApi(Facility fetched) {
+        // petConditionHash가 실제로 바뀌었다면 조건 원문이 바뀐 것 — LLM 조건 파싱이 새 원문으로
+        // 다시 돌게 NOT_PROCESSED로 되돌린다. 최초 적재(petConditionHash가 아직 없음)는 제외한다.
+        boolean conditionTextChanged = this.petConditionHash != null
+                && !this.petConditionHash.equals(fetched.petConditionHash);
+
         this.name = fetched.name;
         this.category = fetched.category;
         this.address = fetched.address;
@@ -347,6 +352,10 @@ public class Facility extends BaseEntity {
         this.parserVersion = fetched.parserVersion;
         this.petTourListed = fetched.petTourListed;
         this.isActive = fetched.isActive;
+
+        if (conditionTextChanged) {
+            this.petConditionStatus = PetConditionStatus.NOT_PROCESSED;
+        }
     }
 
     public void deactivate() {
@@ -371,14 +380,14 @@ public class Facility extends BaseEntity {
     public void applyParsedCondition(
             PetConditionStatus petConditionStatus,
             BigDecimal maxWeight,
-            boolean dangerousBreedExcluded,
+            boolean isDangerousBreedExcluded,
             List<String> requiredItems,
             String partialAreaNote,
             String unmappedConditionText
     ) {
         this.petConditionStatus = petConditionStatus;
         this.maxWeight = maxWeight;
-        this.isDangerousBreedExcluded = dangerousBreedExcluded;
+        this.isDangerousBreedExcluded = isDangerousBreedExcluded;
         this.requiredItems = JsonListUtil.toJson(requiredItems);
         this.partialAreaNote = partialAreaNote;
         this.unmappedConditionText = unmappedConditionText;

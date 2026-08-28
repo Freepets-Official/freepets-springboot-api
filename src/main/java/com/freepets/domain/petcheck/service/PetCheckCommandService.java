@@ -71,9 +71,12 @@ public class PetCheckCommandService {
             Long userId,
             List<Long> petIds
     ) {
-        List<Pet> pets = petRepository.findAllByPetIdInAndDeletedAtIsNull(petIds);
+        // petIds에 중복이 섞여 오면(더블 탭 등) IN 조회 결과가 중복 제거되어 개수가 안 맞아
+        // 정상 소유 펫도 PET4001로 오판되므로, 비교 전에 먼저 중복을 없앤다.
+        List<Long> distinctPetIds = petIds.stream().distinct().toList();
+        List<Pet> pets = petRepository.findAllByPetIdInAndDeletedAtIsNull(distinctPetIds);
 
-        if (pets.size() != petIds.size()) {
+        if (pets.size() != distinctPetIds.size()) {
             throw new GeneralException(ErrorStatus.PET4001);
         }
 

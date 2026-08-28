@@ -19,8 +19,9 @@ import com.freepets.domain.petcheck.entity.PetCheckResult;
 // judgePet/judgeGroup 이름은 프론트 목(judge.ts의 judgeGroup)과 기준을 맞추기 위해 그대로 썼다.
 //
 // 시설 조건은 Facility.petAllowed/maxWeight/checkLists를 그대로 읽는다 — 이 값들은 #22에서 이미
-// 들어온 PetConditionParser가 채워둔 것이라 여기서 원문을 다시 파싱하지 않는다. 맹견 배제처럼
-// 아직 컬럼 스키마가 미확정인 조건(별도 이슈, pet_condition_status 설계)은 이번 판별 범위 밖이다.
+// 들어온 PetConditionParser가 채워둔 것이라 여기서 원문을 다시 파싱하지 않는다.
+// 맹견 배제(isDangerousBreedExcluded)는 FacilityConditionLlmBatchService(#30)가 채우고,
+// 품종이 맹견인지는 Pet.isDangerousBreed()(동물보호법 시행규칙 기준)가 판단한다.
 @Service
 public class PetCheckJudgeService {
 
@@ -66,6 +67,10 @@ public class PetCheckJudgeService {
                     "이 시설의 반려동물 동반 정책이 아직 확인되지 않았습니다 — 방문 전 시설에 직접 확인해 주세요",
                     List.of()
             );
+        }
+
+        if (facility.isDangerousBreedExcluded() && pet.isDangerousBreed()) {
+            return denied(pet, "이 시설은 맹견(동물보호법 시행규칙상 맹견 품종)의 동반을 제한합니다");
         }
 
         BigDecimal maxWeight = facility.getMaxWeight();

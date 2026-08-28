@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
@@ -118,6 +119,38 @@ class PetCheckJudgeServiceTest {
         PetVerdict verdict = judgeService.judgePet(pet, facility);
 
         assertEquals(PetCheckResult.CONDITIONAL, verdict.result());
+    }
+
+    @Test
+    void 맹견_배제_시설에_맹견이면_DENIED() {
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of());
+        ReflectionTestUtils.setField(facility, "isDangerousBreedExcluded", true);
+        Pet pet = pet("두목", "로트와일러", "40.0", true, BreedSize.LARGE);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.DENIED, verdict.result());
+    }
+
+    @Test
+    void 맹견_배제_시설이어도_맹견이_아니면_DENIED_아님() {
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of());
+        ReflectionTestUtils.setField(facility, "isDangerousBreedExcluded", true);
+        Pet pet = pet("몽이", "말티즈", "3.2", true);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.ALLOWED, verdict.result());
+    }
+
+    @Test
+    void 맹견_배제가_아닌_시설이면_맹견이어도_DENIED_아님() {
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of());
+        Pet pet = pet("두목", "로트와일러", "40.0", true, BreedSize.LARGE);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.ALLOWED, verdict.result());
     }
 
     @Test

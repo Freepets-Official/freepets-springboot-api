@@ -152,4 +152,9 @@ public class Pet extends BaseEntity {
         return user != null && user.getId().equals(userId);
     }
 
+    /** 동물보호법 시행규칙상 맹견 품종 여부. {@link DangerousDogBreed} 참고. */
+    public boolean isDangerousBreed() {
+        return DangerousDogBreed.matches(species);
+    }
+
 }

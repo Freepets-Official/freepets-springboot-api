@@ -188,3 +188,29 @@ tasks.register('facilityConditionParseSampleWithCondition', Test) {
 
 	outputs.upToDateWhen { false }
 }
+
+// AMBIGUOUS로 판정된 시설의 원문과 unmapped_condition_text를 나란히 출력한다 — 조회 전용,
+// LLM 호출·DB 쓰기 없음. facilityConditionParseSampleWithCondition으로 몇 건 처리해본 뒤
+// 그 결과가 실제로 타당한지 원문과 대조해볼 때 쓴다.
+// 실행: ./gradlew facilityConditionInspectAmbiguous
+tasks.register('facilityConditionInspectAmbiguous', Test) {
+	group = 'application'
+	description = 'AMBIGUOUS 시설의 원문과 미매핑 텍스트를 출력한다 (조회 전용, API 호출 없음)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionInspectAmbiguousRunner'
+	}
+
+	systemProperty 'facility.condition.inspectAmbiguous', 'true'
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}

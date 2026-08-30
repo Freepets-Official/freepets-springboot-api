@@ -91,6 +91,16 @@ public class PetConditionParser {
             return new PetConditionParseResult(PetAllowed.DENIED, null, List.of());
         }
 
+        // "안내견만 가능"류는 "불가"처럼 완전히 거부하는 게 아니라 조건부 예외라 DENIED로
+        // 단정하지 않는다 — ALLOWED로 단정해서 일반 반려동물이 통과되는 것도 위험하므로,
+        // PetCheckJudgeService가 이미 "확인 필요"로 안내하는 PENDING을 그대로 쓴다. 원문
+        // 자체는 있으니 이후 LLM 조건 파싱 배치는 정상적으로 돌고, 스키마에 담을 컬럼이 없는
+        // "안내견만 가능" 문장은 unmappedConditionText로 남아 AMBIGUOUS가 된다 — 사람이
+        // 검토할 신호가 된다.
+        if (isGuideDogOnly(allowedAnimal)) {
+            return new PetConditionParseResult(PetAllowed.PENDING, null, List.of());
+        }
+
         return new PetConditionParseResult(
                 PetAllowed.ALLOWED,
                 extractMaxWeight(freeText),
@@ -101,16 +111,15 @@ public class PetConditionParser {
     /**
      * 원문에 명시적 불가 표현이 있는지 본다.
      *
-     * <p>실데이터에서 {@code 불가}, {@code 불가(보조견만 가능)}, {@code 맹인 안내견},
-     * {@code 안내견만 가능} 형태로 나타난다.
+     * <p>실데이터에서 {@code 불가}, {@code 불가(보조견만 가능)} 형태로 나타난다. "맹인 안내견",
+     * "안내견만 가능"처럼 안내견 전용 예외를 나타내는 표현은 {@link #isGuideDogOnly}가 따로
+     * 다룬다 — 완전 거부가 아니라 조건부 예외이기 때문이다.
      */
     private boolean isDenied(String allowedAnimal) {
-        if (allowedAnimal.isEmpty()) {
-            return false;
-        }
-        if (allowedAnimal.startsWith("불가")) {
-            return true;
-        }
+        return !allowedAnimal.isEmpty() && allowedAnimal.startsWith("불가");
+    }
+
+    private boolean isGuideDogOnly(String allowedAnimal) {
         if (GUIDE_DOG_ONLY.matcher(allowedAnimal).matches()) {
             return true;
         }

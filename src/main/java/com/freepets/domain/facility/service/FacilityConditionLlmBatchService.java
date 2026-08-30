@@ -7,6 +7,7 @@ import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
 
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.PetConditionStatus;
 import com.freepets.domain.facility.repository.FacilityRepository;
 
@@ -137,8 +138,17 @@ public class FacilityConditionLlmBatchService {
      * <p>다만 maxWeight만큼은 규칙 엔진 값을 우선한다 — 실측 데이터로 검증된 정규식 결과가
      * 매번 새로 읽는 LLM 결과보다 신뢰도가 높고, 판별 엔진(PetCheckJudgeService)이 그 값을
      * 그대로 읽으므로 실행할 때마다 결과가 흔들리면 안 된다.
+     *
+     * <p>{@code petAllowed == DENIED}("불가"만 해당 — 규칙 엔진이 "안내견만 가능"류는 조건부
+     * 예외로 보고 PENDING으로 따로 둔다)인 시설은 LLM을 아예 안 부른다. 구조화할 조건 자체가
+     * 없고, {@code PetCheckJudgeService}가 DENIED면 조건 텍스트를 안 읽으므로 결과가 어차피
+     * 안 쓰인다.
      */
     private FacilityConditionLlmParseResult resolve(Facility facility) {
+        if (facility.getPetAllowed() == PetAllowed.DENIED) {
+            return FacilityConditionLlmParseResult.noCondition();
+        }
+
         FacilityConditionLlmParseResult parsed = facilityConditionLlmParser.parse(
                 facility.getAccompanyType(),
                 facility.getAllowedAnimalText(),

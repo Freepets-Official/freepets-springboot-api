@@ -236,6 +236,31 @@ class FacilityConditionLlmBatchServiceTest {
     }
 
     @Test
+    void 과거_시설의_근거_없는_maxWeight를_청소한다() {
+        // facility 3283, 48346처럼 이미 PARSED/AMBIGUOUS로 저장된 뒤 원문이 안 바뀌어 배치가
+        // 다시는 안 건드리는 과거 오염 데이터 — LLM 호출 없이 이미 있는 값만 검사해서 지운다.
+        // 근거 있는 값은 그대로 두는지도 같이 확인한다.
+        Facility corrupted = facility(1L);
+        org.springframework.test.util.ReflectionTestUtils.setField(corrupted, "maxWeight", new BigDecimal("1.00"));
+
+        Facility legitimate = facilityWithPetAllowed(2L, PetAllowed.ALLOWED, "10kg 이하 동반 가능");
+        org.springframework.test.util.ReflectionTestUtils.setField(legitimate, "maxWeight", BigDecimal.TEN);
+
+        when(facilityRepository.findByMaxWeightIsNotNull(any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of(corrupted, legitimate)));
+
+        FacilityConditionCleanUpResult result =
+                facilityConditionLlmBatchService.cleanUpMaxWeightWithoutSourceEvidence(Integer.MAX_VALUE);
+
+        assertThat(result.getChecked()).isEqualTo(2);
+        assertThat(result.getCleaned()).isEqualTo(1);
+        assertThat(corrupted.getMaxWeight()).isNull();
+        assertThat(legitimate.getMaxWeight()).isEqualByComparingTo(BigDecimal.TEN);
+        verify(facilityRepository, times(1)).save(corrupted);
+        verify(facilityRepository, never()).save(legitimate);
+    }
+
+    @Test
     void 페이지_전체가_실패하면_무한루프_없이_중단한다() {
         Facility broken = facility(1L);
 

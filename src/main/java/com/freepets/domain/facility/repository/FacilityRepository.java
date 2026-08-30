@@ -119,6 +119,25 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
             Pageable pageable
     );
 
+    /**
+     * {@code facilityConditionInspectParsedWeight} 검증 실행에서 쓴다. 원문에 kg 언급이
+     * 없는데 LLM이 maxWeight를 지어내는 사례(facility 4996, 5211 등)를 막는 방어 코드를
+     * 넣은 뒤, 반대로 원문에 실제 체중 제한이 있는 정상 케이스는 여전히 잘 뽑히는지 실제
+     * 데이터로 확인할 때 쓴다.
+     */
+    Slice<Facility> findByPetConditionStatusAndMaxWeightIsNotNull(
+            PetConditionStatus petConditionStatus,
+            Pageable pageable
+    );
+
+    /**
+     * {@code FacilityConditionLlmBatchService.cleanUpMaxWeightWithoutSourceEvidence}가 이미
+     * 저장된 시설 중 원문에 kg 언급 없이 maxWeight만 채워진 과거 오염 데이터를 찾을 때 쓴다.
+     * petConditionStatus를 안 가려서 PARSED/AMBIGUOUS 어느 쪽이든 다 걸린다 — 상태가 뭐든
+     * 이미 재파싱 대상에서 빠진 시설이 청소 대상이기 때문이다.
+     */
+    Slice<Facility> findByMaxWeightIsNotNull(Pageable pageable);
+
     @Query(SELECT_WITH_DISTANCE + SEARCH_FILTER + ORDER_BY_DISTANCE)
     List<FacilityWithDistance> search(
             @Param("userLatitudeRadian") double userLatitudeRadian,

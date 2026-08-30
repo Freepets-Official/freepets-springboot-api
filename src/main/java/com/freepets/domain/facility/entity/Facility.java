@@ -397,4 +397,12 @@ public class Facility extends BaseEntity {
         return JsonListUtil.fromJson(requiredItems);
     }
 
+    /**
+     * 원문 근거 없이 저장된 maxWeight를 지운다 — {@code FacilityConditionLlmBatchService}의
+     * 과거 데이터 청소 전용. 다른 파싱 결과(petConditionStatus 등)는 그대로 둔다.
+     */
+    public void clearMaxWeight() {
+        this.maxWeight = null;
+    }
+
 }

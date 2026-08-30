@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
@@ -216,19 +217,7 @@ public class FacilityConditionLlmBatchService {
             Facility facility,
             FacilityConditionLlmParseResult parsed
     ) {
-        if (parsed.maxWeight() == null) {
-            return parsed;
-        }
-
-        String sourceText = String.join(" ",
-                nullToEmpty(facility.getAccompanyType()),
-                nullToEmpty(facility.getAllowedAnimalText()),
-                nullToEmpty(facility.getRequiredMatterText()),
-                nullToEmpty(facility.getEtcAccompanyText()),
-                nullToEmpty(facility.getAccidentRiskText())
-        );
-
-        if (WEIGHT_MENTION.matcher(sourceText).find()) {
+        if (parsed.maxWeight() == null || hasWeightMention(facility)) {
             return parsed;
         }
 
@@ -237,6 +226,77 @@ public class FacilityConditionLlmBatchService {
                 facility.getFacilityId(), parsed.maxWeight()
         );
         return parsed.withMaxWeight(null);
+    }
+
+    /**
+     * 이미 저장된 시설 중 원문에 kg 언급 없이 maxWeight만 채워진 것을 찾아 정리한다. LLM
+     * 호출도 재파싱도 없이, 이미 있는 값만 검사해서 지운다.
+     *
+     * <p>{@link #resolve}의 방어 코드는 그 시설이 배치에서 "다시" 처리될 때만 작동하는데,
+     * 배치는 {@code petConditionStatus = NOT_PROCESSED}만 훑는다. 이미 PARSED/AMBIGUOUS로
+     * 저장된 시설은 원문(관광공사 데이터)이 그대로면 재동기화를 해도 상태가 안 바뀌어
+     * ({@code Facility#updateFromTourApi} 참고) 배치가 절대 다시 안 건드린다 — 그런
+     * 과거 오염 데이터를 위한 일회성 청소 실행기다(예: facilityConditionCleanUpMaxWeight
+     * 태스크).
+     */
+    public FacilityConditionCleanUpResult cleanUpMaxWeightWithoutSourceEvidence(int limit) {
+        FacilityConditionCleanUpResult result = new FacilityConditionCleanUpResult();
+        int page = 0;
+
+        while (result.getChecked() < limit) {
+            Slice<Facility> slice = facilityRepository.findByMaxWeightIsNotNull(PageRequest.of(page, PAGE_SIZE));
+
+            if (slice.isEmpty()) {
+                break;
+            }
+
+            for (Facility facility : slice) {
+                if (result.getChecked() >= limit) {
+                    break;
+                }
+                checkAndClean(facility, result);
+            }
+
+            log.info("maxWeight 청소 진행 {}", result.summary());
+
+            if (!slice.hasNext()) {
+                break;
+            }
+            page++;
+        }
+
+        log.info("maxWeight 청소를 마쳤습니다. {}", result.summary());
+        return result;
+    }
+
+    private void checkAndClean(
+            Facility facility,
+            FacilityConditionCleanUpResult result
+    ) {
+        result.addChecked();
+
+        if (hasWeightMention(facility)) {
+            return;
+        }
+
+        log.warn(
+                "시설 {} maxWeight({})가 원문에 체중 언급 없이 저장돼 있어 정리합니다",
+                facility.getFacilityId(), facility.getMaxWeight()
+        );
+        facility.clearMaxWeight();
+        facilityRepository.save(facility);
+        result.addCleaned();
+    }
+
+    private boolean hasWeightMention(Facility facility) {
+        String sourceText = String.join(" ",
+                nullToEmpty(facility.getAccompanyType()),
+                nullToEmpty(facility.getAllowedAnimalText()),
+                nullToEmpty(facility.getRequiredMatterText()),
+                nullToEmpty(facility.getEtcAccompanyText()),
+                nullToEmpty(facility.getAccidentRiskText())
+        );
+        return WEIGHT_MENTION.matcher(sourceText).find();
     }
 
     private String nullToEmpty(String text) {

@@ -214,3 +214,85 @@ tasks.register('facilityConditionInspectAmbiguous', Test) {
 
 	outputs.upToDateWhen { false }
 }
+
+// 원문에 kg 언급 없이 LLM이 지어낸 maxWeight를 버리는 방어 코드를 넣은 뒤, 반대로 원문에
+// 실제 체중 제한이 있는 정상 케이스는 여전히 잘 뽑히는지 실제 데이터로 확인한다 — 조회
+// 전용, LLM 호출·DB 쓰기 없음.
+// 실행: ./gradlew facilityConditionInspectParsedWeight
+tasks.register('facilityConditionInspectParsedWeight', Test) {
+	group = 'application'
+	description = '체중 상한이 정상적으로 뽑힌 PARSED 시설을 출력한다 (조회 전용, API 호출 없음)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionInspectAmbiguousRunner'
+	}
+
+	systemProperty 'facility.condition.inspectAmbiguous', 'true'
+	systemProperty 'facility.condition.inspectAmbiguous.parsed', 'true'
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// 이미 저장된 시설 중 원문에 kg 언급 없이 maxWeight만 채워진 과거 오염 데이터를 찾아
+// 정리한다(예: facility 3283, 48346). petConditionStatus = NOT_PROCESSED만 훑는
+// facilityConditionParse* 배치는 이미 PARSED/AMBIGUOUS로 저장된 이런 시설을 절대 다시
+// 안 건드리므로 별도 청소가 필요하다. LLM 호출 없이 이미 있는 값만 검사해서 지우므로
+// 비용은 안 들지만 DB 쓰기는 실제로 일어난다.
+// 실행: ./gradlew facilityConditionCleanUpMaxWeight
+tasks.register('facilityConditionCleanUpMaxWeight', Test) {
+	group = 'application'
+	description = '원문에 체중 언급 없이 저장된 maxWeight를 정리한다 (LLM 호출 없음, DB 쓰기 있음)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionCleanUpMaxWeightRunner'
+	}
+
+	systemProperty 'facility.condition.cleanUpMaxWeight', 'true'
+
+	timeout = Duration.ofHours(3)
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// facilityConditionCleanUpMaxWeight의 50건 샘플 버전 — 전량 실행 전에 먼저 결과를 검증할 때 쓴다.
+// 실행: ./gradlew facilityConditionCleanUpMaxWeightSample
+tasks.register('facilityConditionCleanUpMaxWeightSample', Test) {
+	group = 'application'
+	description = '원문에 체중 언급 없이 저장된 maxWeight 중 50건만 정리한다 (LLM 호출 없음, DB 쓰기 있음)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionCleanUpMaxWeightRunner'
+	}
+
+	systemProperty 'facility.condition.cleanUpMaxWeight', 'true'
+	systemProperty 'facility.condition.cleanUpMaxWeight.limit', '50'
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}

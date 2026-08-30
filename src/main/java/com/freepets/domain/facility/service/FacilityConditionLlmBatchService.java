@@ -1,5 +1,7 @@
 package com.freepets.domain.facility.service;
 
+import java.util.function.Function;
+
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
@@ -34,19 +36,55 @@ public class FacilityConditionLlmBatchService {
     private final FacilityConditionLlmParser facilityConditionLlmParser;
 
     public FacilityConditionLlmBatchResult parseAll() {
+        return parseUpTo(Integer.MAX_VALUE);
+    }
+
+    /**
+     * {@code limit}건을 처리하면 NOT_PROCESSED가 남아 있어도 멈춘다 — 전량 실행 전에 소규모로
+     * 먼저 검증해볼 때 쓴다(예: {@code facilityConditionParseSample} 태스크).
+     *
+     * <p>facility_id 순서로 훑기 때문에, NOT_PROCESSED의 약 90%를 차지하는 조건없음 시설이
+     * 앞쪽에 몰려 있으면 이 메소드만으론 LLM이 실제로 호출되는 케이스를 못 볼 수 있다 — 그런
+     * 검증에는 {@link #parseSampleWithConditionText}를 쓴다.
+     */
+    public FacilityConditionLlmBatchResult parseUpTo(int limit) {
+        return run(limit, pageable -> facilityRepository.findByPetConditionStatus(
+                PetConditionStatus.NOT_PROCESSED, pageable
+        ));
+    }
+
+    /**
+     * 조건 원문이 하나라도 있는 NOT_PROCESSED 시설만 골라 {@code limit}건 처리한다 — LLM이
+     * 실제로 호출되는 케이스만 보장하는 검증용(예: {@code facilityConditionParseSampleWithCondition}
+     * 태스크). {@link #parseUpTo}는 facility_id 순서를 그대로 따르므로 조건없음 시설(약 90%)이
+     * 앞쪽에 몰려 있으면 검증에 못 쓸 수 있다.
+     */
+    public FacilityConditionLlmBatchResult parseSampleWithConditionText(int limit) {
+        return run(limit, pageable -> facilityRepository.findByPetConditionStatusWithConditionText(
+                PetConditionStatus.NOT_PROCESSED, pageable
+        ));
+    }
+
+    private FacilityConditionLlmBatchResult run(
+            int limit,
+            Function<Pageable, Slice<Facility>> fetchPage
+    ) {
         FacilityConditionLlmBatchResult result = new FacilityConditionLlmBatchResult();
 
-        while (true) {
-            Slice<Facility> slice = facilityRepository.findByPetConditionStatus(
-                    PetConditionStatus.NOT_PROCESSED, Pageable.ofSize(PAGE_SIZE)
-            );
+        while (result.getProcessed() < limit) {
+            Slice<Facility> slice = fetchPage.apply(Pageable.ofSize(PAGE_SIZE));
 
             if (slice.isEmpty()) {
                 break;
             }
 
             int succeededBefore = result.getProcessed();
-            slice.forEach(facility -> parseAndSave(facility, result));
+            for (Facility facility : slice) {
+                if (result.getProcessed() >= limit) {
+                    break;
+                }
+                parseAndSave(facility, result);
+            }
             int succeededThisPage = result.getProcessed() - succeededBefore;
 
             log.info("조건 파싱 진행 {}", result.summary());

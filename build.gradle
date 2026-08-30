@@ -135,3 +135,56 @@ tasks.register('facilityConditionParse', Test) {
 
 	outputs.upToDateWhen { false }
 }
+
+// facilityConditionParse의 50건 샘플 버전 — 전량 실행 전에 먼저 결과를 검증할 때 쓴다.
+// 실행: ./gradlew facilityConditionParseSample
+tasks.register('facilityConditionParseSample', Test) {
+	group = 'application'
+	description = '조건 미처리(NOT_PROCESSED) 시설 중 50건만 LLM으로 파싱한다 (Claude API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionLlmParseRunner'
+	}
+
+	systemProperty 'facility.condition.parse', 'true'
+	systemProperty 'facility.condition.parse.limit', '50'
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// facilityConditionParseSample과 달리 조건 원문이 있는 시설만 걸러 뽑는다 — facility_id 순서에
+// 조건없음(약 90%) 시설이 몰려 있으면 facilityConditionParseSample은 LLM을 한 번도 못 부를 수
+// 있어, 실제 파싱 결과를 검증하려면 이쪽을 쓴다.
+// 실행: ./gradlew facilityConditionParseSampleWithCondition
+tasks.register('facilityConditionParseSampleWithCondition', Test) {
+	group = 'application'
+	description = '조건 원문이 있는 NOT_PROCESSED 시설 중 50건만 골라 LLM으로 파싱한다 (Claude API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionLlmParseRunner'
+	}
+
+	systemProperty 'facility.condition.parse', 'true'
+	systemProperty 'facility.condition.parse.withCondition', 'true'
+	systemProperty 'facility.condition.parse.limit', '50'
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}

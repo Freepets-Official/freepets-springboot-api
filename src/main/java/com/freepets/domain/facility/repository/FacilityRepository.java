@@ -96,6 +96,29 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
             Pageable pageable
     );
 
+    /**
+     * {@code facilityConditionParseSample} 같은 소규모 검증 실행에서 쓴다. NOT_PROCESSED의
+     * 약 90%는 조건 원문 자체가 없어 LLM을 호출하지 않고 곧장 NO_CONDITION으로 빠지므로,
+     * {@code findByPetConditionStatus}로 뽑은 샘플은 파싱 결과를 검증하는 데 쓸모가 없을 수
+     * 있다 — facility_id 순서에 조건없음 시설이 몰려 있으면 특히 그렇다. 이 쿼리는 조건 원문이
+     * 하나라도 있는 시설만 걸러 실제로 LLM이 호출되는 케이스를 보장한다.
+     */
+    @Query("""
+            select facility from Facility facility
+            where facility.petConditionStatus = :petConditionStatus
+            and (
+                (facility.accompanyType is not null and length(trim(facility.accompanyType)) > 0) or
+                (facility.allowedAnimalText is not null and length(trim(facility.allowedAnimalText)) > 0) or
+                (facility.requiredMatterText is not null and length(trim(facility.requiredMatterText)) > 0) or
+                (facility.etcAccompanyText is not null and length(trim(facility.etcAccompanyText)) > 0) or
+                (facility.accidentRiskText is not null and length(trim(facility.accidentRiskText)) > 0)
+            )
+            """)
+    Slice<Facility> findByPetConditionStatusWithConditionText(
+            @Param("petConditionStatus") PetConditionStatus petConditionStatus,
+            Pageable pageable
+    );
+
     @Query(SELECT_WITH_DISTANCE + SEARCH_FILTER + ORDER_BY_DISTANCE)
     List<FacilityWithDistance> search(
             @Param("userLatitudeRadian") double userLatitudeRadian,

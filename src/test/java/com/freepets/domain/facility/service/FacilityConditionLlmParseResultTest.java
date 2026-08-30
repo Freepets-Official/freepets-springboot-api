@@ -17,7 +17,7 @@ class FacilityConditionLlmParseResultTest {
     @Test
     void unmappedConditionText가_없으면_PARSED() {
         FacilityConditionExtraction extraction = new FacilityConditionExtraction(
-                new BigDecimal("10.0"), false, List.of("목줄 착용"), null, null
+                new BigDecimal("10.0"), false, List.of("목줄 착용"), List.of(), null, null
         );
 
         FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
@@ -29,7 +29,7 @@ class FacilityConditionLlmParseResultTest {
     @Test
     void unmappedConditionText가_빈문자열이어도_PARSED() {
         FacilityConditionExtraction extraction = new FacilityConditionExtraction(
-                null, false, List.of(), null, "   "
+                null, false, List.of(), List.of(), null, "   "
         );
 
         FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
@@ -40,7 +40,7 @@ class FacilityConditionLlmParseResultTest {
     @Test
     void unmappedConditionText가_남아있으면_AMBIGUOUS() {
         FacilityConditionExtraction extraction = new FacilityConditionExtraction(
-                null, false, List.of(), null, "주말엔 사전 예약 필수(자세한 조건은 전화 문의)"
+                null, false, List.of(), List.of(), null, "주말엔 사전 예약 필수(자세한 조건은 전화 문의)"
         );
 
         FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
@@ -52,12 +52,13 @@ class FacilityConditionLlmParseResultTest {
     @Test
     void requiredItems가_null이면_빈리스트로_대체() {
         FacilityConditionExtraction extraction = new FacilityConditionExtraction(
-                null, false, null, null, null
+                null, false, null, null, null, null
         );
 
         FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
 
         assertThat(result.requiredItems()).isEmpty();
+        assertThat(result.dangerousBreedRequiredItems()).isEmpty();
     }
 
     @Test
@@ -66,5 +67,6 @@ class FacilityConditionLlmParseResultTest {
 
         assertThat(result.status()).isEqualTo(PetConditionStatus.NO_CONDITION);
         assertThat(result.requiredItems()).isEmpty();
+        assertThat(result.dangerousBreedRequiredItems()).isEmpty();
     }
 }

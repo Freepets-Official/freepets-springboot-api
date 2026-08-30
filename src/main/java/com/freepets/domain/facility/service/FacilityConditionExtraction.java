@@ -33,6 +33,13 @@ public record FacilityConditionExtraction(
         List<String> requiredItems,
 
         @JsonPropertyDescription(
+                "맹견(도사견, 핏불 등 동물보호법상 위험 품종)일 때만 추가로 지켜야 하는 조건 — "
+                        + "requiredItems(전체 방문객 대상)와 구분해서, 맹견이 아니면 안 지켜도 되는 것만 담는다. "
+                        + "예: 원문이 '맹견의 경우, 입마개 착용 필수'면 [\"입마개 착용\"]. 없으면 빈 배열."
+        )
+        List<String> dangerousBreedRequiredItems,
+
+        @JsonPropertyDescription(
                 "일부 구역에서만 동반 가능하다면 그 구역을 설명하는 문구(예: \"야외 테라스석에 한함\"). "
                         + "전 구역 동반 가능하거나 구역 제한 언급이 없으면 null."
         )

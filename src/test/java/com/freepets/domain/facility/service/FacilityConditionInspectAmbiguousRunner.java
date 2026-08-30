@@ -93,6 +93,7 @@ class FacilityConditionInspectAmbiguousRunner {
             System.out.println("petAllowed: " + facility.getPetAllowed());
             System.out.println("maxWeight: " + facility.getMaxWeight());
             System.out.println("맹견배제: " + facility.isDangerousBreedExcluded());
+            System.out.println("맹견전용요구사항: " + facility.getDangerousBreedRequiredItems());
             System.out.println("미매핑 텍스트: " + facility.getUnmappedConditionText());
         }
         System.out.println("========================================");

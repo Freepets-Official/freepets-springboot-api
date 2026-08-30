@@ -186,6 +186,18 @@ public class Facility extends BaseEntity {
     @Column(name = "required_items", columnDefinition = "json")
     private String requiredItems;
 
+    /**
+     * ["입마개 착용", ...] — 맹견(위험 품종)일 때만 추가로 지켜야 하는 조건. 원문에 "맹견의 경우
+     * 입마개 착용 필수"처럼 특정 품종에만 걸리는 조건이 있어도 {@link #requiredItems}(전체
+     * 방문객 대상)엔 안 담기고, {@code isDangerousBreedExcluded}도 "배제"가 아니라서 false로
+     * 남아 이 정보가 어디에도 안 남던 문제를 위해 추가했다. 지금은 판별 엔진(PetCheckJudgeService)이
+     * 아직 안 읽는다 — 나중에 맹견 조건부 판정 기능을 붙일 때 쓸 재료로 저장만 해둔다.
+     */
+    @Getter(AccessLevel.NONE)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "dangerous_breed_required_items", columnDefinition = "json")
+    private String dangerousBreedRequiredItems;
+
     @Column(name = "partial_area_note", columnDefinition = "TEXT")
     private String partialAreaNote;
 
@@ -382,6 +394,7 @@ public class Facility extends BaseEntity {
             BigDecimal maxWeight,
             boolean isDangerousBreedExcluded,
             List<String> requiredItems,
+            List<String> dangerousBreedRequiredItems,
             String partialAreaNote,
             String unmappedConditionText
     ) {
@@ -389,12 +402,17 @@ public class Facility extends BaseEntity {
         this.maxWeight = maxWeight;
         this.isDangerousBreedExcluded = isDangerousBreedExcluded;
         this.requiredItems = JsonListUtil.toJson(requiredItems);
+        this.dangerousBreedRequiredItems = JsonListUtil.toJson(dangerousBreedRequiredItems);
         this.partialAreaNote = partialAreaNote;
         this.unmappedConditionText = unmappedConditionText;
     }
 
     public List<String> getRequiredItems() {
         return JsonListUtil.fromJson(requiredItems);
+    }
+
+    public List<String> getDangerousBreedRequiredItems() {
+        return JsonListUtil.fromJson(dangerousBreedRequiredItems);
     }
 
     /**

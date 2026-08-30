@@ -15,13 +15,14 @@ public record FacilityConditionLlmParseResult(
         BigDecimal maxWeight,
         boolean isDangerousBreedExcluded,
         List<String> requiredItems,
+        List<String> dangerousBreedRequiredItems,
         String partialAreaNote,
         String unmappedConditionText
 ) {
 
     public static FacilityConditionLlmParseResult noCondition() {
         return new FacilityConditionLlmParseResult(
-                PetConditionStatus.NO_CONDITION, null, false, List.of(), null, null
+                PetConditionStatus.NO_CONDITION, null, false, List.of(), List.of(), null, null
         );
     }
 
@@ -32,7 +33,8 @@ public record FacilityConditionLlmParseResult(
      */
     public FacilityConditionLlmParseResult withMaxWeight(BigDecimal overrideMaxWeight) {
         return new FacilityConditionLlmParseResult(
-                status, overrideMaxWeight, isDangerousBreedExcluded(), requiredItems(), partialAreaNote(), unmappedConditionText()
+                status, overrideMaxWeight, isDangerousBreedExcluded(), requiredItems(),
+                dangerousBreedRequiredItems(), partialAreaNote(), unmappedConditionText()
         );
     }
 
@@ -45,6 +47,7 @@ public record FacilityConditionLlmParseResult(
                 extraction.maxWeight(),
                 extraction.isDangerousBreedExcluded(),
                 extraction.requiredItems() != null ? extraction.requiredItems() : List.of(),
+                extraction.dangerousBreedRequiredItems() != null ? extraction.dangerousBreedRequiredItems() : List.of(),
                 extraction.partialAreaNote(),
                 hasUnmapped ? extraction.unmappedConditionText() : null
         );

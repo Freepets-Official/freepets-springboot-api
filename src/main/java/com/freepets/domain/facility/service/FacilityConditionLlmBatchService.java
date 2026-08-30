@@ -136,6 +136,7 @@ public class FacilityConditionLlmBatchService {
                     parsed.maxWeight(),
                     parsed.isDangerousBreedExcluded(),
                     parsed.requiredItems(),
+                    parsed.dangerousBreedRequiredItems(),
                     parsed.partialAreaNote(),
                     parsed.unmappedConditionText()
             );

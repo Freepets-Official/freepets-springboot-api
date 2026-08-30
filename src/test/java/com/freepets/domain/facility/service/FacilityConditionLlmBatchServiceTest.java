@@ -77,7 +77,7 @@ class FacilityConditionLlmBatchServiceTest {
 
         when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
-                        new FacilityConditionExtraction(new BigDecimal("10.0"), false, List.of(), null, null)
+                        new FacilityConditionExtraction(new BigDecimal("10.0"), false, List.of(), List.of(), null, null)
                 ))
                 .thenThrow(new RuntimeException("Claude 호출 실패"));
 
@@ -105,7 +105,7 @@ class FacilityConditionLlmBatchServiceTest {
         // LLM은 (규칙 엔진이 못 보는) 맹견 배제를 찾아내지만, maxWeight는 임의로 다르게 읽었다고 가정.
         when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
-                        new FacilityConditionExtraction(new BigDecimal("999.0"), true, List.of(), null, null)
+                        new FacilityConditionExtraction(new BigDecimal("999.0"), true, List.of(), List.of(), null, null)
                 ));
 
         FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
@@ -149,7 +149,7 @@ class FacilityConditionLlmBatchServiceTest {
 
         when(facilityConditionLlmParser.parse(any(), eq("안내견만 가능"), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
-                        new FacilityConditionExtraction(null, false, List.of(), null, "안내견만 동반 가능")
+                        new FacilityConditionExtraction(null, false, List.of(), List.of(), null, "안내견만 동반 가능")
                 ));
 
         FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
@@ -177,7 +177,7 @@ class FacilityConditionLlmBatchServiceTest {
 
         when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
-                        new FacilityConditionExtraction(null, true, List.of(), null, null)
+                        new FacilityConditionExtraction(null, true, List.of(), List.of(), null, null)
                 ));
 
         FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
@@ -203,7 +203,7 @@ class FacilityConditionLlmBatchServiceTest {
         when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
                         new FacilityConditionExtraction(
-                                new BigDecimal("12.00"), false, List.of(),
+                                new BigDecimal("12.00"), false, List.of(), List.of(),
                                 null, "원문 기준으로 체중 상한이 명시되지 않았으나 조건 분석상 일반적 맹견 기준 반영"
                         )
                 ));
@@ -226,7 +226,7 @@ class FacilityConditionLlmBatchServiceTest {
 
         when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
-                        new FacilityConditionExtraction(BigDecimal.TEN, false, List.of(), null, null)
+                        new FacilityConditionExtraction(BigDecimal.TEN, false, List.of(), List.of(), null, null)
                 ));
 
         FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();

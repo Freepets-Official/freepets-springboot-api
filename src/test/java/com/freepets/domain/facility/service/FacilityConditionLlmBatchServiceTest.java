@@ -161,6 +161,81 @@ class FacilityConditionLlmBatchServiceTest {
     }
 
     @Test
+    void 규칙_엔진의_maxWeight가_컬럼_범위를_벗어나면_버리고_나머지_결과는_저장한다() {
+        // 시설 150처럼 규칙 엔진(#22)이 예전에 잘못 뽑아 이미 DB에 들어있던 maxWeight가
+        // numeric(5,2) 범위(절댓값 1000 미만)를 벗어나면, 이 값을 그대로 넘겨 저장하다
+        // 엔티티 전체 UPDATE가 실패해서 LLM이 이번에 제대로 뽑아낸 다른 필드까지 같이
+        // 유실된다 — 그런 값은 버리고 나머지는 저장해야 한다.
+        Facility corruptedWeight = facility(1L);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                corruptedWeight, "maxWeight", new BigDecimal("1500.00")
+        );
+
+        when(facilityRepository.findByPetConditionStatus(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of(corruptedWeight)))
+                .thenReturn(new SliceImpl<>(List.of()));
+
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+                .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
+                        new FacilityConditionExtraction(null, true, List.of(), null, null)
+                ));
+
+        FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
+
+        assertThat(result.getProcessed()).isEqualTo(1);
+        verify(facilityRepository, times(1)).save(any(Facility.class));
+        assertThat(corruptedWeight.getMaxWeight()).isNull();
+        assertThat(corruptedWeight.isDangerousBreedExcluded()).isTrue();
+    }
+
+    @Test
+    void 원문에_체중_언급이_없는데_LLM이_maxWeight를_지어내면_버린다() {
+        // 실제로 관측된 사례 — "맹견의 경우 입마개 착용 필수"만 있고 kg 언급이 전혀 없는
+        // 원문에서 LLM이 "일반적인 맹견 기준"이라며 maxWeight=12.00을 지어내고, 그 사실을
+        // unmappedConditionText에 스스로 남겼다("추측하지 말라"는 시스템 프롬프트 위반).
+        // 0~200 범위 안이라 rejectOutOfRangeMaxWeight로는 못 잡으니 별도로 걸러야 한다.
+        Facility noWeightMention = facility(1L);
+
+        when(facilityRepository.findByPetConditionStatus(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of(noWeightMention)))
+                .thenReturn(new SliceImpl<>(List.of()));
+
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+                .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
+                        new FacilityConditionExtraction(
+                                new BigDecimal("12.00"), false, List.of(),
+                                null, "원문 기준으로 체중 상한이 명시되지 않았으나 조건 분석상 일반적 맹견 기준 반영"
+                        )
+                ));
+
+        FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
+
+        assertThat(result.getProcessed()).isEqualTo(1);
+        assertThat(noWeightMention.getMaxWeight()).isNull();
+    }
+
+    @Test
+    void 원문에_체중_언급이_있으면_LLM이_뽑은_maxWeight를_그대로_저장한다() {
+        // 위 가드가 정상적인 값까지 오발동으로 버리지 않는지 확인 — 원문에 실제 kg 언급이
+        // 있으면 LLM 결과를 그대로 신뢰해야 한다.
+        Facility hasWeightMention = facilityWithPetAllowed(1L, PetAllowed.ALLOWED, "10kg 이하 동반 가능");
+
+        when(facilityRepository.findByPetConditionStatus(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of(hasWeightMention)))
+                .thenReturn(new SliceImpl<>(List.of()));
+
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+                .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
+                        new FacilityConditionExtraction(BigDecimal.TEN, false, List.of(), null, null)
+                ));
+
+        FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
+
+        assertThat(result.getProcessed()).isEqualTo(1);
+        assertThat(hasWeightMention.getMaxWeight()).isEqualByComparingTo(BigDecimal.TEN);
+    }
+
+    @Test
     void 페이지_전체가_실패하면_무한루프_없이_중단한다() {
         Facility broken = facility(1L);
 

@@ -2,6 +2,7 @@ package com.freepets.domain.petcheck.service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -166,20 +167,28 @@ public class PetCheckJudgeService {
      * <p>partialAreaNote(#30 LLM, "방갈로는 반려견 동반 불가" 같은 구역 제한 메모)도 여기서
      * 같이 담는다 — 이전엔 어디서도 안 읽어서 requirements/체중경계값 안내가 나가는 동안
      * 이 정보만 항상 유실됐다.
+     *
+     * <p>requiredItems(#30 LLM, 전체 방문객 대상 자유텍스트 요구조건)도 마찬가지로 더한다.
+     * requirements(#22 규칙엔진)는 고정된 8종 어휘만 다뤄서, "동물등록증 지참"·"2마리까지만
+     * 동반 가능"처럼 그 어휘에 없는 조건은 LLM이 requiredItems로만 뽑아두는데 여기서
+     * 안 읽으면 이것도 안내에서 통째로 빠진다. requirements와 문구가 겹칠 수 있어(예:
+     * "목줄 착용" vs "리드줄 필수 착용") 완전 중복 문자열만 걸러낸다 — 의미가 같아도
+     * 표현이 다르면 중복 안내가 나갈 수 있지만, 정보 유실보다는 낫다.
      */
     private List<String> applicableConditions(
             List<Requirement> requirements,
             Facility facility,
             boolean appliesDangerousBreedRequiredItems
     ) {
-        List<String> conditions = new ArrayList<>(conditionTexts(requirements));
+        Set<String> conditions = new LinkedHashSet<>(conditionTexts(requirements));
         if (appliesDangerousBreedRequiredItems) {
             conditions.addAll(facility.getDangerousBreedRequiredItems());
         }
+        conditions.addAll(facility.getRequiredItems());
         if (facility.getPartialAreaNote() != null && !facility.getPartialAreaNote().isBlank()) {
             conditions.add(facility.getPartialAreaNote());
         }
-        return conditions;
+        return new ArrayList<>(conditions);
     }
 
     private List<Requirement> requirementsOf(Facility facility) {

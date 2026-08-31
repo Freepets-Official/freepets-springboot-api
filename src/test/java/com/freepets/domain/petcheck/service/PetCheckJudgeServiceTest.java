@@ -271,6 +271,32 @@ class PetCheckJudgeServiceTest {
     }
 
     @Test
+    void requiredItems가_있으면_조건_안내에_담긴다() {
+        // 원문 "동물등록증 및 광견병 예방접종 확인서 필요"류(실측 7215) — requirements(#22 규칙엔진)
+        // 8종 어휘엔 없어서 여기서 안 읽으면 통째로 유실된다.
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of());
+        ReflectionTestUtils.setField(facility, "requiredItems", "[\"동물등록증 및 광견병 예방접종 확인서 필요\"]");
+        Pet pet = pet("몽이", "말티즈", "3.2", true);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.CONDITIONAL, verdict.result());
+        assertTrue(verdict.conditions().contains("동물등록증 및 광견병 예방접종 확인서 필요"));
+    }
+
+    @Test
+    void requiredItems가_requirements와_완전히_같은_문구면_중복으로_안_담긴다() {
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of(Requirement.LEASH));
+        ReflectionTestUtils.setField(facility, "requiredItems", "[\"리드줄 필수 착용\"]");
+        Pet pet = pet("몽이", "말티즈", "3.2", true);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.CONDITIONAL, verdict.result());
+        assertEquals(1, verdict.conditions().stream().filter("리드줄 필수 착용"::equals).count());
+    }
+
+    @Test
     void 그룹_판별은_하나라도_DENIED면_overall이_DENIED() {
         Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("10.0"), List.of(Requirement.LEASH));
         Pet 몽이 = pet("몽이", "말티즈", "3.2", true);

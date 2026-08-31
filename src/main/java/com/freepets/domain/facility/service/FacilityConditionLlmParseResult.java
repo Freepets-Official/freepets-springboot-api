@@ -13,6 +13,7 @@ import com.freepets.domain.facility.entity.PetConditionStatus;
 public record FacilityConditionLlmParseResult(
         PetConditionStatus status,
         BigDecimal maxWeight,
+        Boolean maxWeightInclusive,
         boolean isDangerousBreedExcluded,
         List<String> requiredItems,
         List<String> dangerousBreedRequiredItems,
@@ -22,7 +23,7 @@ public record FacilityConditionLlmParseResult(
 
     public static FacilityConditionLlmParseResult noCondition() {
         return new FacilityConditionLlmParseResult(
-                PetConditionStatus.NO_CONDITION, null, false, List.of(), List.of(), null, null
+                PetConditionStatus.NO_CONDITION, null, null, false, List.of(), List.of(), null, null
         );
     }
 
@@ -41,18 +42,30 @@ public record FacilityConditionLlmParseResult(
             String unmappedConditionText
     ) {
         return new FacilityConditionLlmParseResult(
-                PetConditionStatus.AMBIGUOUS, null, false, List.of(), List.of(), partialAreaNote, unmappedConditionText
+                PetConditionStatus.AMBIGUOUS, null, null, false, List.of(), List.of(), partialAreaNote, unmappedConditionText
         );
     }
 
     /**
-     * maxWeight만 교체한 복사본을 만든다. 규칙 엔진(PetConditionParser, #22)이 이미 뽑아낸
-     * maxWeight가 있으면 이 값으로 LLM의 판독값을 대체해서 우선시킨다 — 나머지 필드(맹견 배제,
-     * 요구조건, 잔여 텍스트)는 LLM이 채운 그대로 둔다. {@code FacilityConditionLlmBatchService} 참고.
+     * maxWeight를 지운 복사본을 만든다 — maxWeightInclusive도 같이 null로 만든다(경계값이
+     * 없는데 포함 여부만 남으면 의미가 없다). 원문 근거 없이 나온 값을 버릴 때 쓴다.
+     * {@code FacilityConditionGuard} 참고.
      */
-    public FacilityConditionLlmParseResult withMaxWeight(BigDecimal overrideMaxWeight) {
+    public FacilityConditionLlmParseResult withoutMaxWeight() {
+        return withMaxWeight(null, null);
+    }
+
+    /**
+     * maxWeight·maxWeightInclusive를 함께 교체한 복사본을 만든다. 규칙 엔진(PetConditionParser,
+     * #22)이 이미 뽑아낸 값이 있으면 이걸로 LLM의 판독값을 대체해서 우선시킨다 — 나머지
+     * 필드(맹견 배제, 요구조건, 잔여 텍스트)는 LLM이 채운 그대로 둔다. {@code FacilityConditionGuard} 참고.
+     */
+    public FacilityConditionLlmParseResult withMaxWeight(
+            BigDecimal overrideMaxWeight,
+            Boolean overrideMaxWeightInclusive
+    ) {
         return new FacilityConditionLlmParseResult(
-                status, overrideMaxWeight, isDangerousBreedExcluded(), requiredItems(),
+                status, overrideMaxWeight, overrideMaxWeightInclusive, isDangerousBreedExcluded(), requiredItems(),
                 dangerousBreedRequiredItems(), partialAreaNote(), unmappedConditionText()
         );
     }
@@ -60,10 +73,14 @@ public record FacilityConditionLlmParseResult(
     public static FacilityConditionLlmParseResult fromExtraction(FacilityConditionExtraction extraction) {
         String unmappedConditionText = sanitizeUnmappedConditionText(extraction.unmappedConditionText());
         boolean hasUnmapped = unmappedConditionText != null;
+        // maxWeight가 없으면 경계 포함 여부도 의미가 없다 — LLM이 maxWeight는 null인데
+        // maxWeightInclusive만 채워 보내는 경우를 방어한다.
+        Boolean maxWeightInclusive = extraction.maxWeight() == null ? null : extraction.maxWeightInclusive();
 
         return new FacilityConditionLlmParseResult(
                 hasUnmapped ? PetConditionStatus.AMBIGUOUS : PetConditionStatus.PARSED,
                 extraction.maxWeight(),
+                maxWeightInclusive,
                 extraction.isDangerousBreedExcluded(),
                 extraction.requiredItems() != null ? extraction.requiredItems() : List.of(),
                 extraction.dangerousBreedRequiredItems() != null ? extraction.dangerousBreedRequiredItems() : List.of(),

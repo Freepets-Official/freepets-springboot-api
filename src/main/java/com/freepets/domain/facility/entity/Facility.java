@@ -157,6 +157,14 @@ public class Facility extends BaseEntity {
     @Column(name = "max_weight", precision = 5, scale = 2)
     private BigDecimal maxWeight;
 
+    /**
+     * maxWeight 경계 포함 여부. {@code TRUE}="이하"(그 체중까지 포함), {@code FALSE}="미만"(그
+     * 체중은 제외), {@code null}=maxWeight가 없거나 원문에서 경계 종류를 알 수 없음. maxWeight가
+     * {@code null}이면 이 값도 항상 {@code null}이어야 한다.
+     */
+    @Column(name = "max_weight_inclusive")
+    private Boolean maxWeightInclusive;
+
     /** 파싱 규칙 버전. 규칙을 고치면 올려서 전량 재파싱 대상으로 만든다. */
     @Column(name = "parser_version", nullable = false)
     private int parserVersion;
@@ -285,6 +293,7 @@ public class Facility extends BaseEntity {
             String petConditionHash,
             PetAllowed petAllowed,
             BigDecimal maxWeight,
+            Boolean maxWeightInclusive,
             int parserVersion,
             PetConditionStatus petConditionStatus,
             FacilitySource source,
@@ -317,6 +326,7 @@ public class Facility extends BaseEntity {
         this.petConditionHash = petConditionHash;
         this.petAllowed = petAllowed;
         this.maxWeight = maxWeight;
+        this.maxWeightInclusive = maxWeightInclusive;
         this.parserVersion = parserVersion;
         this.petConditionStatus = petConditionStatus != null ? petConditionStatus : PetConditionStatus.NOT_PROCESSED;
         this.source = source;
@@ -361,6 +371,7 @@ public class Facility extends BaseEntity {
         this.petConditionHash = fetched.petConditionHash;
         this.petAllowed = fetched.petAllowed;
         this.maxWeight = fetched.maxWeight;
+        this.maxWeightInclusive = fetched.maxWeightInclusive;
         this.parserVersion = fetched.parserVersion;
         this.petTourListed = fetched.petTourListed;
         this.isActive = fetched.isActive;
@@ -392,6 +403,7 @@ public class Facility extends BaseEntity {
     public void applyParsedCondition(
             PetConditionStatus petConditionStatus,
             BigDecimal maxWeight,
+            Boolean maxWeightInclusive,
             boolean isDangerousBreedExcluded,
             List<String> requiredItems,
             List<String> dangerousBreedRequiredItems,
@@ -400,6 +412,7 @@ public class Facility extends BaseEntity {
     ) {
         this.petConditionStatus = petConditionStatus;
         this.maxWeight = maxWeight;
+        this.maxWeightInclusive = maxWeightInclusive;
         this.isDangerousBreedExcluded = isDangerousBreedExcluded;
         this.requiredItems = JsonListUtil.toJson(requiredItems);
         this.dangerousBreedRequiredItems = JsonListUtil.toJson(dangerousBreedRequiredItems);
@@ -421,6 +434,7 @@ public class Facility extends BaseEntity {
      */
     public void clearMaxWeight() {
         this.maxWeight = null;
+        this.maxWeightInclusive = null;
     }
 
 }

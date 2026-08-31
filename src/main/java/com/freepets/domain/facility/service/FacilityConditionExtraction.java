@@ -22,6 +22,13 @@ public record FacilityConditionExtraction(
         BigDecimal maxWeight,
 
         @JsonPropertyDescription(
+                "maxWeight 경계값이 포함되는지 여부. 원문이 '~kg 이하'/'~kg까지'/'~kg 초과 불가'면 "
+                        + "true(그 체중까지 포함), '~kg 미만'이면 false(그 체중은 제외). maxWeight가 "
+                        + "null이거나 원문에 경계 표현이 명확하지 않으면 null."
+        )
+        Boolean maxWeightInclusive,
+
+        @JsonPropertyDescription(
                 "맹견(도사견, 핏불 등 동물보호법상 위험 품종) 동반이 원문에 명시적으로 제외돼 있으면 true."
         )
         boolean isDangerousBreedExcluded,

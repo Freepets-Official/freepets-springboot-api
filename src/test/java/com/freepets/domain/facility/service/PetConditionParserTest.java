@@ -221,6 +221,50 @@ class PetConditionParserTest {
     }
 
     // ------------------------------------------------------------------
+    // maxWeightInclusive 추출 (경계값 포함 여부, #43)
+    // ------------------------------------------------------------------
+
+    @ParameterizedTest
+    @ValueSource(strings = {"10kg 이하 동반 가능", "10kg까지 동반 가능", "10kg 초과 불가"})
+    @DisplayName("이하·까지·초과 불가는 경계값을 포함한다")
+    void 이하_까지_초과불가는_경계값을_포함한다(String allowedAnimal) {
+        PetConditionParseResult result = parse(allowedAnimal, "");
+
+        assertThat(result.maxWeight()).isEqualByComparingTo(BigDecimal.TEN);
+        assertThat(result.maxWeightInclusive()).isTrue();
+    }
+
+    @Test
+    @DisplayName("미만은 경계값을 포함하지 않는다")
+    void 미만은_경계값을_포함하지_않는다() {
+        PetConditionParseResult result = parse("10kg 미만", "");
+
+        assertThat(result.maxWeight()).isEqualByComparingTo(BigDecimal.TEN);
+        assertThat(result.maxWeightInclusive()).isFalse();
+    }
+
+    @Test
+    @DisplayName("체중 상한이 없으면 경계 포함 여부도 없다")
+    void 체중_상한이_없으면_경계_포함_여부도_없다() {
+        PetConditionParseResult result = parse("전 견종 동반 가능", "목줄 착용");
+
+        assertThat(result.maxWeight()).isNull();
+        assertThat(result.maxWeightInclusive()).isNull();
+    }
+
+    @Test
+    @DisplayName("여러 값 중 가장 엄격한 값을 택할 때 그 값의 경계 표현을 같이 따른다")
+    void 가장_엄격한_값을_택할_때_그_값의_경계_표현을_같이_따른다() {
+        // 8kg(더 엄격)이 미만이고 10kg(덜 엄격)이 이하 — 값은 8을 택하지만, 8의 경계인
+        // "미만"(제외)을 그대로 따라야 한다. 값만 최솟값을 찾고 경계는 다른 후보에서 잘못
+        // 가져오면 안 된다.
+        PetConditionParseResult result = parse("10kg 이하 또는 8kg 미만 동반 가능", "");
+
+        assertThat(result.maxWeight()).isEqualByComparingTo(BigDecimal.valueOf(8));
+        assertThat(result.maxWeightInclusive()).isFalse();
+    }
+
+    // ------------------------------------------------------------------
     // 정규화
     // ------------------------------------------------------------------
 

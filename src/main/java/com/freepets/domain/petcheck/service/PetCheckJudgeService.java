@@ -92,6 +92,7 @@ public class PetCheckJudgeService {
         }
 
         BigDecimal maxWeight = facility.getMaxWeight();
+        Boolean maxWeightInclusive = facility.getMaxWeightInclusive();
         List<Requirement> requirements = requirementsOf(facility);
 
         // 맹견 배제 시설이 아니면서 맹견을 데려온 경우 — 동반 자체는 되지만 맹견 전용 요구조건
@@ -114,6 +115,15 @@ public class PetCheckJudgeService {
                     .formatted(pet.getName(), pet.getWeight(), maxWeight));
         }
 
+        // 체중이 경계값과 정확히 같은데 "미만"(제외)이면, 초과는 아니어도 그 시설 기준으로는
+        // 통과가 아니다 — maxWeightInclusive가 없으면(원문에서 경계 종류를 모르면) 여기서
+        // 단정하지 않고 뒤에서 CONDITIONAL로 안내한다.
+        if (maxWeight != null && pet.getWeight().compareTo(maxWeight) == 0
+                && Boolean.FALSE.equals(maxWeightInclusive)) {
+            denialReasons.add("%s은(는) %skg으로 최대 허용 체중 %skg 미만 조건을 충족하지 못합니다"
+                    .formatted(pet.getName(), pet.getWeight(), maxWeight));
+        }
+
         if (requirements.contains(Requirement.VACCINATION) && !pet.isVaccinated()) {
             denialReasons.add("이 시설은 예방접종 완료를 요구하는데 접종 기록이 없습니다");
         }
@@ -127,10 +137,14 @@ public class PetCheckJudgeService {
             return denied(pet, String.join(" / ", denialReasons));
         }
 
-        if (maxWeight != null && pet.getWeight().compareTo(maxWeight) == 0) {
+        // 이 지점에 왔다는 건 위 denialReasons에서 안 걸렸다는 뜻이라, maxWeightInclusive가
+        // FALSE("미만")인 경계값 일치는 이미 DENIED로 처리되고 여기 안 온다. 남는 건 두 경우뿐:
+        // TRUE("이하")면 확실히 허용 범위 안이라 아래 일반 흐름으로 넘어가면 되고, null(원문에서
+        // 경계 종류를 모름)일 때만 현장 확인을 권장한다.
+        if (maxWeight != null && pet.getWeight().compareTo(maxWeight) == 0 && maxWeightInclusive == null) {
             return conditional(
                     pet,
-                    "체중이 허용 한도와 정확히 일치합니다 — 현장 확인을 권장합니다",
+                    "체중이 허용 한도와 정확히 일치합니다 — 경계 포함 여부가 원문에 명시되지 않아 현장 확인을 권장합니다",
                     applicableConditions
             );
         }

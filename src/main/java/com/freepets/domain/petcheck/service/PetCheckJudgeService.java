@@ -72,6 +72,12 @@ public class PetCheckJudgeService {
         BigDecimal maxWeight = facility.getMaxWeight();
         List<Requirement> requirements = requirementsOf(facility);
 
+        // 맹견 배제 시설이 아니면서 맹견을 데려온 경우 — 동반 자체는 되지만 맹견 전용 요구조건
+        // (예: 입마개 착용)이 있으면 CONDITIONAL 조건으로 안내해야 한다. 배제 시설이면 아래
+        // denialReasons에서 이미 DENIED로 끊기므로 여기 조건에 넣을 필요가 없다.
+        boolean appliesDangerousBreedRequiredItems = !facility.isDangerousBreedExcluded() && pet.isDangerousBreed();
+        List<String> applicableConditions = applicableConditions(requirements, facility, appliesDangerousBreedRequiredItems);
+
         // DENIED급 사유는 하나 찾자마자 바로 끊지 않고 전부 모은다 — 체중초과만 알려주고
         // 고쳐서 다시 왔더니 예방접종 문제로 또 막히는 식의 반복 확인을 막기 위함.
         List<String> denialReasons = new ArrayList<>();
@@ -103,15 +109,34 @@ public class PetCheckJudgeService {
             return conditional(
                     pet,
                     "체중이 허용 한도와 정확히 일치합니다 — 현장 확인을 권장합니다",
-                    conditionTexts(requirements)
+                    applicableConditions
             );
         }
 
-        if (!requirements.isEmpty()) {
-            return conditional(pet, "출입은 가능하지만 아래 조건을 확인해 주세요", conditionTexts(requirements));
+        if (!applicableConditions.isEmpty()) {
+            return conditional(pet, "출입은 가능하지만 아래 조건을 확인해 주세요", applicableConditions);
         }
 
         return allowed(pet);
+    }
+
+    /**
+     * 화면에 안내할 조건 문구를 모은다. requirements(#22 규칙엔진, 전체 방문객 대상)는 항상
+     * 포함하고, 맹견인데 배제 시설이 아닌 경우에만 dangerousBreedRequiredItems(#30 LLM,
+     * "맹견의 경우 입마개 착용 필수" 같은 맹견 전용 조건)를 더한다 — isDangerousBreedExcluded만
+     * 보고 dangerousBreedRequiredItems를 읽지 않으면, 맹견을 막지는 않지만 조건이 붙는
+     * 시설(원문 685건 규모)에서 그 조건이 안내에서 통째로 빠진다.
+     */
+    private List<String> applicableConditions(
+            List<Requirement> requirements,
+            Facility facility,
+            boolean appliesDangerousBreedRequiredItems
+    ) {
+        List<String> conditions = new ArrayList<>(conditionTexts(requirements));
+        if (appliesDangerousBreedRequiredItems) {
+            conditions.addAll(facility.getDangerousBreedRequiredItems());
+        }
+        return conditions;
     }
 
     private List<Requirement> requirementsOf(Facility facility) {

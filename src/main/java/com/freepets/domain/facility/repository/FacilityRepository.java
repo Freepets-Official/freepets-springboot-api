@@ -120,6 +120,29 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
     );
 
     /**
+     * {@code facilityConditionParseSampleWithKeyword} 검증 실행에서 쓴다. "맹견" 같은 특정
+     * 키워드가 원문에 있는 시설만 골라 그 케이스에 대한 파싱 결과를 집중적으로 확인할 때
+     * 쓴다 — {@code findByPetConditionStatusWithConditionText}는 조건 원문 유무만 볼 뿐
+     * 어떤 조건인지는 안 가려서, 특정 시나리오를 검증하려면 이 쿼리가 필요하다.
+     */
+    @Query("""
+            select facility from Facility facility
+            where facility.petConditionStatus = :petConditionStatus
+            and (
+                facility.accompanyType like concat('%', :keyword, '%') or
+                facility.allowedAnimalText like concat('%', :keyword, '%') or
+                facility.requiredMatterText like concat('%', :keyword, '%') or
+                facility.etcAccompanyText like concat('%', :keyword, '%') or
+                facility.accidentRiskText like concat('%', :keyword, '%')
+            )
+            """)
+    Slice<Facility> findByPetConditionStatusAndConditionTextContaining(
+            @Param("petConditionStatus") PetConditionStatus petConditionStatus,
+            @Param("keyword") String keyword,
+            Pageable pageable
+    );
+
+    /**
      * {@code facilityConditionInspectParsedWeight} 검증 실행에서 쓴다. 원문에 kg 언급이
      * 없는데 LLM이 maxWeight를 지어내는 사례(facility 4996, 5211 등)를 막는 방어 코드를
      * 넣은 뒤, 반대로 원문에 실제 체중 제한이 있는 정상 케이스는 여전히 잘 뽑히는지 실제

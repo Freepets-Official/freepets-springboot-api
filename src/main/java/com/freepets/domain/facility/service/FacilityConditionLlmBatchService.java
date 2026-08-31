@@ -86,6 +86,21 @@ public class FacilityConditionLlmBatchService {
         ));
     }
 
+    /**
+     * 원문에 특정 키워드가 있는 NOT_PROCESSED 시설만 골라 {@code limit}건 처리한다 — 예를 들어
+     * "맹견"으로 걸러 맹견 관련 조건(dangerousBreedRequiredItems 등)이 실제로 잘 뽑히는지,
+     * unmappedConditionText 할루시네이션 방어가 실제로 통하는지 집중 검증할 때 쓴다
+     * (예: {@code facilityConditionParseSampleWithKeyword} 태스크).
+     */
+    public FacilityConditionLlmBatchResult parseSampleContainingKeyword(
+            String keyword,
+            int limit
+    ) {
+        return run(limit, pageable -> facilityRepository.findByPetConditionStatusAndConditionTextContaining(
+                PetConditionStatus.NOT_PROCESSED, keyword, pageable
+        ));
+    }
+
     private FacilityConditionLlmBatchResult run(
             int limit,
             Function<Pageable, Slice<Facility>> fetchPage

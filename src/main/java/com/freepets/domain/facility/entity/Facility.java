@@ -198,8 +198,8 @@ public class Facility extends BaseEntity {
      * ["입마개 착용", ...] — 맹견(위험 품종)일 때만 추가로 지켜야 하는 조건. 원문에 "맹견의 경우
      * 입마개 착용 필수"처럼 특정 품종에만 걸리는 조건이 있어도 {@link #requiredItems}(전체
      * 방문객 대상)엔 안 담기고, {@code isDangerousBreedExcluded}도 "배제"가 아니라서 false로
-     * 남아 이 정보가 어디에도 안 남던 문제를 위해 추가했다. 지금은 판별 엔진(PetCheckJudgeService)이
-     * 아직 안 읽는다 — 나중에 맹견 조건부 판정 기능을 붙일 때 쓸 재료로 저장만 해둔다.
+     * 남아 이 정보가 어디에도 안 남던 문제를 위해 추가했다. 판별 엔진(PetCheckJudgeService)이
+     * 맹견 배제 시설이 아니면서 맹견을 데려온 경우에만 조건 안내에 포함해 읽는다.
      */
     @Getter(AccessLevel.NONE)
     @JdbcTypeCode(SqlTypes.JSON)

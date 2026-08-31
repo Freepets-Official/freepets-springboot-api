@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
@@ -12,6 +13,7 @@ import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.domain.pet.entity.BreedSize;
+import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.petcheck.entity.PetCheckResult;
 
@@ -24,6 +26,14 @@ import com.freepets.domain.petcheck.entity.PetCheckResult;
 // 품종이 맹견인지는 Pet.isDangerousBreed()(동물보호법 시행규칙 기준)가 판단한다.
 @Service
 public class PetCheckJudgeService {
+
+    /**
+     * 관광공사 반려동물 동반 조건 원문·규칙 엔진(맹견 목록, 소형견 기준 등)이 전부 개·고양이
+     * 기준으로만 만들어져 있다 — 앵무새·토끼·파충류·기타 소동물에 대해서는 원문이 뭐라고
+     * 적혀 있든 우리가 실제로 아는 게 없다. 이 종들은 규칙을 적용하지 않고 직접 확인하라고
+     * 안내한다({@link #judgePet} 참고).
+     */
+    private static final Set<Kind> RULE_ENGINE_SUPPORTED_KINDS = Set.of(Kind.DOG, Kind.CAT);
 
     private static final Map<Requirement, String> CONDITION_TEXT = Map.of(
             Requirement.LEASH, "리드줄 필수 착용",
@@ -65,6 +75,18 @@ public class PetCheckJudgeService {
             return conditional(
                     pet,
                     "이 시설의 반려동물 동반 정책이 아직 확인되지 않았습니다 — 방문 전 시설에 직접 확인해 주세요",
+                    List.of()
+            );
+        }
+
+        // 조건 원문·규칙 엔진이 개·고양이 기준으로만 만들어져 있어, 그 외 종은 이 시설 조건이
+        // 실제로 어떻게 적용되는지 알 수 없다 — 룰을 적용해 잘못된 ALLOWED/DENIED를 내는 대신
+        // 직접 확인하라고 안내한다.
+        if (!RULE_ENGINE_SUPPORTED_KINDS.contains(pet.getKind())) {
+            return conditional(
+                    pet,
+                    "이 시설의 반려동물 동반 조건은 개·고양이 기준으로만 확인됩니다 — %s은(는) 시설에 직접 확인해 주세요"
+                            .formatted(pet.getName()),
                     List.of()
             );
         }
@@ -126,6 +148,10 @@ public class PetCheckJudgeService {
      * "맹견의 경우 입마개 착용 필수" 같은 맹견 전용 조건)를 더한다 — isDangerousBreedExcluded만
      * 보고 dangerousBreedRequiredItems를 읽지 않으면, 맹견을 막지는 않지만 조건이 붙는
      * 시설(원문 685건 규모)에서 그 조건이 안내에서 통째로 빠진다.
+     *
+     * <p>partialAreaNote(#30 LLM, "방갈로는 반려견 동반 불가" 같은 구역 제한 메모)도 여기서
+     * 같이 담는다 — 이전엔 어디서도 안 읽어서 requirements/체중경계값 안내가 나가는 동안
+     * 이 정보만 항상 유실됐다.
      */
     private List<String> applicableConditions(
             List<Requirement> requirements,
@@ -135,6 +161,9 @@ public class PetCheckJudgeService {
         List<String> conditions = new ArrayList<>(conditionTexts(requirements));
         if (appliesDangerousBreedRequiredItems) {
             conditions.addAll(facility.getDangerousBreedRequiredItems());
+        }
+        if (facility.getPartialAreaNote() != null && !facility.getPartialAreaNote().isBlank()) {
+            conditions.add(facility.getPartialAreaNote());
         }
         return conditions;
     }

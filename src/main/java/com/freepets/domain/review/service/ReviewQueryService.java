@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.freepets.domain.facility.entity.PetFriendlyGrade;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.review.converter.ReviewConverter;
 import com.freepets.domain.review.dto.ReviewResponseDTO;
@@ -21,6 +22,7 @@ import com.freepets.domain.review.repository.ReviewReportRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.global.util.Numbers;
 
 import lombok.RequiredArgsConstructor;
 
@@ -36,25 +38,6 @@ public class ReviewQueryService {
 
     // 한 번에 너무 많이 긁어가지 못하게 상한을 둔다.
     private static final int MAX_PAGE_SIZE = 50;
-
-    // 등급 기준표(발자국). 점수·리뷰 수 둘 다 만족해야 그 등급이 되며, 높은 등급부터 확인한다.
-    private static final List<GradeTier> GRADE_TIERS = List.of(
-            new GradeTier(5, "최고 등급", 94, 150),
-            new GradeTier(4, "동반 우수", 88, 90),
-            new GradeTier(3, "동반 추천", 80, 50),
-            new GradeTier(2, "동반 편안", 70, 25),
-            new GradeTier(1, "동반 가능", 60, 10)
-    );
-
-    // 어떤 등급도 못 받았을 때 "리뷰 수집 중 (n/10)"의 분모 — 최하위 등급(레벨 1)의 필요 리뷰 수와 같다.
-    private static final long MIN_REVIEW_COUNT_FOR_ANY_GRADE = 10;
-
-    private record GradeTier(
-            int level,
-            String label,
-            int minScore,
-            long minCount
-    ) {}
 
     private final FacilityRepository facilityRepository;
     private final ReviewRepository reviewRepository;
@@ -123,21 +106,24 @@ public class ReviewQueryService {
         return reviews.subList(fromIndex, toIndex);
     }
 
+    /**
+     * 등급 기준표는 {@link PetFriendlyGrade}가 들고 있다. 목록·상세 조회도 같은 표를 쓴다.
+     *
+     * <p>등급 판정에는 반올림 전 원점수를 넘긴다. 87.96이 표시용으로 88.0이 되면서
+     * 한 등급 올라가면 안 된다.
+     */
     private ReviewResponseDTO.Grade calculateGrade(List<Review> eligibleReviews) {
         long count = eligibleReviews.size();
         double score = count == 0 ? 0 : average(eligibleReviews, Review::toScore100);
-        long needMore = Math.max(0, MIN_REVIEW_COUNT_FOR_ANY_GRADE - count);
+        PetFriendlyGrade grade = PetFriendlyGrade.ofScore(score, count);
 
-        GradeTier tier = GRADE_TIERS.stream()
-                .filter(candidate -> score >= candidate.minScore() && count >= candidate.minCount())
-                .findFirst()
-                .orElse(null);
-
-        if (tier == null) {
-            return new ReviewResponseDTO.Grade(0, "리뷰 수집 중 (%d/10)".formatted(count), roundToOneDecimal(score), count, needMore);
-        }
-
-        return new ReviewResponseDTO.Grade(tier.level(), tier.label(), roundToOneDecimal(score), count, needMore);
+        return new ReviewResponseDTO.Grade(
+                PetFriendlyGrade.levelOf(grade),
+                PetFriendlyGrade.displayLabelOf(grade, count),
+                Numbers.roundToOneDecimal(score),
+                count,
+                PetFriendlyGrade.needMore(count)
+        );
     }
 
     private ReviewResponseDTO.CategoryAverages calculateCategoryAverages(List<Review> eligibleReviews) {
@@ -145,9 +131,9 @@ public class ReviewQueryService {
             return new ReviewResponseDTO.CategoryAverages(0, 0, 0);
         }
 
-        double space = roundToOneDecimal(average(eligibleReviews, Review::getRatingSpace));
-        double staff = roundToOneDecimal(average(eligibleReviews, Review::getRatingStaff));
-        double amenity = roundToOneDecimal(average(eligibleReviews, Review::getRatingAmenity));
+        double space = Numbers.roundToOneDecimal(average(eligibleReviews, Review::getRatingSpace));
+        double staff = Numbers.roundToOneDecimal(average(eligibleReviews, Review::getRatingStaff));
+        double amenity = Numbers.roundToOneDecimal(average(eligibleReviews, Review::getRatingAmenity));
 
         return new ReviewResponseDTO.CategoryAverages(space, staff, amenity);
     }
@@ -160,10 +146,6 @@ public class ReviewQueryService {
                 .mapToInt(valueExtractor)
                 .average()
                 .orElse(0);
-    }
-
-    private double roundToOneDecimal(double value) {
-        return Math.round(value * 10) / 10.0;
     }
 
     // topTags/categoryAverages/grade는 review_pets(반려동물 수)가 아니라 리뷰 1건당 1로 집계한다.

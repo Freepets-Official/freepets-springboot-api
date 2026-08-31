@@ -2,6 +2,8 @@ package com.freepets.domain.facility.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -60,5 +62,78 @@ class PetFriendlyGradeTest {
     @DisplayName("친화도 점수가 아직 없으면 등급을 주지 않는다")
     void 친화도_점수가_아직_없으면_등급을_주지_않는다() {
         assertThat(PetFriendlyGrade.labelOf(null, 1000)).isNull();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "최고 등급, 5",
+            "동반 우수, 4",
+            "동반 추천, 3",
+            "동반 편안, 2",
+            "동반 가능, 1"
+    })
+    @DisplayName("등급마다 발자국 개수가 매겨져 있다")
+    void 등급마다_발자국_개수가_매겨져_있다(
+            String label,
+            int expectedLevel
+    ) {
+        PetFriendlyGrade grade = Arrays.stream(PetFriendlyGrade.values())
+                .filter(candidate -> candidate.getLabel().equals(label))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(grade.getLevel()).isEqualTo(expectedLevel);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "87.96, 90, 3",
+            "88.0, 90, 4",
+            "93.99, 150, 4",
+            "94.0, 150, 5"
+    })
+    @DisplayName("소수 점수는 반올림 없이 그대로 기준과 비교한다")
+    void 소수_점수는_반올림_없이_그대로_기준과_비교한다(
+            double petScore,
+            long reviewCount,
+            int expectedLevel
+    ) {
+        assertThat(PetFriendlyGrade.levelOf(PetFriendlyGrade.ofScore(petScore, reviewCount)))
+                .isEqualTo(expectedLevel);
+    }
+
+    @Test
+    @DisplayName("등급이 없으면 레벨은 0이다")
+    void 등급이_없으면_레벨은_0이다() {
+        assertThat(PetFriendlyGrade.levelOf(null)).isEqualTo(PetFriendlyGrade.NO_GRADE_LEVEL);
+        assertThat(PetFriendlyGrade.levelOf(PetFriendlyGrade.ofScore(100, 9))).isZero();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "0, 리뷰 수집 중 (0/10)",
+            "3, 리뷰 수집 중 (3/10)"
+    })
+    @DisplayName("등급이 없으면 얼마나 모였는지 안내 문구로 알린다")
+    void 등급이_없으면_얼마나_모였는지_안내_문구로_알린다(
+            long reviewCount,
+            String expectedLabel
+    ) {
+        assertThat(PetFriendlyGrade.collectingLabel(reviewCount)).isEqualTo(expectedLabel);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "0, 10",
+            "3, 7",
+            "10, 0",
+            "15, 0"
+    })
+    @DisplayName("첫 등급까지 남은 리뷰 수는 음수가 되지 않는다")
+    void 첫_등급까지_남은_리뷰_수는_음수가_되지_않는다(
+            long reviewCount,
+            long expectedNeedMore
+    ) {
+        assertThat(PetFriendlyGrade.needMore(reviewCount)).isEqualTo(expectedNeedMore);
     }
 }

@@ -3,6 +3,8 @@ package com.freepets.global.apiPayload.exception;
 import com.freepets.global.apiPayload.ApiResponse;
 import com.freepets.global.apiPayload.code.BaseErrorCode;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -45,6 +47,26 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * {@code @Validated}가 붙은 컨트롤러의 파라미터 검증 실패.
+     *
+     * <p>본문 검증({@link MethodArgumentNotValidException})과 같은 모양의 400을 내려준다.
+     * 프론트가 API마다 오류 처리를 다르게 짜지 않아도 되게 하기 위함이다.
+     *
+     * <p>이 핸들러가 없으면 catch-all에 걸려 500이 나간다.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiResponse<Map<String, String>>> handleConstraintViolationException(ConstraintViolationException exception) {
+        Map<String, String> errors = new HashMap<>();
+        exception.getConstraintViolations().forEach(violation ->
+                errors.put(parameterNameOf(violation), violation.getMessage())
+        );
+
+        return ResponseEntity
+                .status(ErrorStatus.COMMON400.getHttpStatus())
+                .body(ApiResponse.onFailure(ErrorStatus.COMMON400, errors));
+    }
+
+    /**
      * 본문 자체를 객체로 만들지 못한 경우.
      *
      * <p>enum에 없는 값이 오면 Bean Validation까지 가지도 못하고 여기서 끝난다.
@@ -72,6 +94,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(ErrorStatus.COMMON500.getHttpStatus())
                 .body(ApiResponse.onFailure(ErrorStatus.COMMON500));
+    }
+
+    /**
+     * 위반 경로는 {@code getFacilityDetail.latitude}처럼 메소드명이 앞에 붙는다. 본문 검증은
+     * 필드명만 담으므로 마지막 마디만 남겨 응답 모양을 맞춘다.
+     *
+     * <p>파라미터 이름이 남으려면 컴파일에 {@code -parameters}가 필요하다. Spring Boot Gradle
+     * 플러그인이 자동으로 넣어주므로 따로 설정하지 않는다.
+     */
+    private String parameterNameOf(ConstraintViolation<?> violation) {
+        String propertyPath = violation.getPropertyPath().toString();
+        int lastSeparator = propertyPath.lastIndexOf('.');
+
+        return lastSeparator < 0 ? propertyPath : propertyPath.substring(lastSeparator + 1);
     }
 
     /** 중첩 객체라면 가장 안쪽 경로가 실제로 문제가 된 필드다. */

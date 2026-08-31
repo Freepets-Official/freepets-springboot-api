@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,6 +14,7 @@ import org.springframework.data.repository.query.Param;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
+import com.freepets.domain.facility.entity.PetConditionStatus;
 
 public interface FacilityRepository extends JpaRepository<Facility, Long> {
 
@@ -104,6 +106,80 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
             @Param("userLongitudeRadian") double userLongitudeRadian,
             @Param("facilityId") Long facilityId
     );
+
+     * {@code FacilityConditionLlmBatchService}가 배치 파싱 대상을 페이지 단위로 훑는 데 쓴다.
+     * 처리된 행은 상태가 바뀌어 다음 조회에서 자연히 빠지므로, 항상 {@code Pageable.ofSize(N)}
+     * (0페이지)로만 호출해도 전량을 순회할 수 있다.
+     */
+    Slice<Facility> findByPetConditionStatus(
+            PetConditionStatus petConditionStatus,
+            Pageable pageable
+    );
+
+    /**
+     * {@code facilityConditionParseSample} 같은 소규모 검증 실행에서 쓴다. NOT_PROCESSED의
+     * 약 90%는 조건 원문 자체가 없어 LLM을 호출하지 않고 곧장 NO_CONDITION으로 빠지므로,
+     * {@code findByPetConditionStatus}로 뽑은 샘플은 파싱 결과를 검증하는 데 쓸모가 없을 수
+     * 있다 — facility_id 순서에 조건없음 시설이 몰려 있으면 특히 그렇다. 이 쿼리는 조건 원문이
+     * 하나라도 있는 시설만 걸러 실제로 LLM이 호출되는 케이스를 보장한다.
+     */
+    @Query("""
+            select facility from Facility facility
+            where facility.petConditionStatus = :petConditionStatus
+            and (
+                (facility.accompanyType is not null and length(trim(facility.accompanyType)) > 0) or
+                (facility.allowedAnimalText is not null and length(trim(facility.allowedAnimalText)) > 0) or
+                (facility.requiredMatterText is not null and length(trim(facility.requiredMatterText)) > 0) or
+                (facility.etcAccompanyText is not null and length(trim(facility.etcAccompanyText)) > 0) or
+                (facility.accidentRiskText is not null and length(trim(facility.accidentRiskText)) > 0)
+            )
+            """)
+    Slice<Facility> findByPetConditionStatusWithConditionText(
+            @Param("petConditionStatus") PetConditionStatus petConditionStatus,
+            Pageable pageable
+    );
+
+    /**
+     * {@code facilityConditionParseSampleWithKeyword} 검증 실행에서 쓴다. "맹견" 같은 특정
+     * 키워드가 원문에 있는 시설만 골라 그 케이스에 대한 파싱 결과를 집중적으로 확인할 때
+     * 쓴다 — {@code findByPetConditionStatusWithConditionText}는 조건 원문 유무만 볼 뿐
+     * 어떤 조건인지는 안 가려서, 특정 시나리오를 검증하려면 이 쿼리가 필요하다.
+     */
+    @Query("""
+            select facility from Facility facility
+            where facility.petConditionStatus = :petConditionStatus
+            and (
+                facility.accompanyType like concat('%', :keyword, '%') or
+                facility.allowedAnimalText like concat('%', :keyword, '%') or
+                facility.requiredMatterText like concat('%', :keyword, '%') or
+                facility.etcAccompanyText like concat('%', :keyword, '%') or
+                facility.accidentRiskText like concat('%', :keyword, '%')
+            )
+            """)
+    Slice<Facility> findByPetConditionStatusAndConditionTextContaining(
+            @Param("petConditionStatus") PetConditionStatus petConditionStatus,
+            @Param("keyword") String keyword,
+            Pageable pageable
+    );
+
+    /**
+     * {@code facilityConditionInspectParsedWeight} 검증 실행에서 쓴다. 원문에 kg 언급이
+     * 없는데 LLM이 maxWeight를 지어내는 사례(facility 4996, 5211 등)를 막는 방어 코드를
+     * 넣은 뒤, 반대로 원문에 실제 체중 제한이 있는 정상 케이스는 여전히 잘 뽑히는지 실제
+     * 데이터로 확인할 때 쓴다.
+     */
+    Slice<Facility> findByPetConditionStatusAndMaxWeightIsNotNull(
+            PetConditionStatus petConditionStatus,
+            Pageable pageable
+    );
+
+    /**
+     * {@code FacilityConditionLlmBatchService.cleanUpMaxWeightWithoutSourceEvidence}가 이미
+     * 저장된 시설 중 원문에 kg 언급 없이 maxWeight만 채워진 과거 오염 데이터를 찾을 때 쓴다.
+     * petConditionStatus를 안 가려서 PARSED/AMBIGUOUS 어느 쪽이든 다 걸린다 — 상태가 뭐든
+     * 이미 재파싱 대상에서 빠진 시설이 청소 대상이기 때문이다.
+     */
+    Slice<Facility> findByMaxWeightIsNotNull(Pageable pageable);
 
     @Query(SELECT_WITH_DISTANCE + SEARCH_FILTER + ORDER_BY_DISTANCE)
     List<FacilityWithDistance> search(

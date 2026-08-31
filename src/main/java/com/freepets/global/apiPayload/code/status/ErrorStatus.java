@@ -22,6 +22,12 @@ public enum ErrorStatus implements BaseErrorCode {
     PET4001(NOT_FOUND, "PET4001", "해당 반려동물이 존재하지 않습니다."),
     PET4002(FORBIDDEN, "PET4002", "해당 반려동물에 대한 권한이 없습니다."),
 
+    // 시설 에러
+    FACILITY4001(NOT_FOUND, "FACILITY4001", "해당 시설이 존재하지 않습니다."),
+
+    // 판별 에러
+    PETCHECK4001(NOT_FOUND, "PETCHECK4001", "해당 판별 기록이 존재하지 않습니다."),
+
     // 토큰 에러
     TOKEN4001(UNAUTHORIZED, "TOKEN4001", "유효하지 않은 토큰입니다."),
     TOKEN4002(UNAUTHORIZED, "TOKEN4002", "만료된 토큰입니다."),

@@ -48,6 +48,9 @@ dependencies {
 
 	// aws s3
 	implementation 'software.amazon.awssdk:s3:2.29.52'
+
+	// anthropic (claude) — 시설 조건 파싱(FacilityConditionLlmParser)
+	implementation 'com.anthropic:anthropic-java:2.34.0'
 }
 
 tasks.named('test') {
@@ -98,6 +101,221 @@ tasks.register('facilitySync', Test) {
 
 	// 전량 적재는 수십 분이 걸릴 수 있다.
 	timeout = Duration.ofHours(3)
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// 시설 조건 원문 LLM 파싱. 조건 원문이 있는 시설(약 10%)마다 Claude를 호출한다.
+// 실행: ./gradlew facilityConditionParse
+tasks.register('facilityConditionParse', Test) {
+	group = 'application'
+	description = '조건 미처리(NOT_PROCESSED) 시설을 LLM으로 파싱한다 (Claude API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionLlmParseRunner'
+	}
+
+	systemProperty 'facility.condition.parse', 'true'
+
+	timeout = Duration.ofHours(3)
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// facilityConditionParse의 50건 샘플 버전 — 전량 실행 전에 먼저 결과를 검증할 때 쓴다.
+// 실행: ./gradlew facilityConditionParseSample
+tasks.register('facilityConditionParseSample', Test) {
+	group = 'application'
+	description = '조건 미처리(NOT_PROCESSED) 시설 중 50건만 LLM으로 파싱한다 (Claude API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionLlmParseRunner'
+	}
+
+	systemProperty 'facility.condition.parse', 'true'
+	systemProperty 'facility.condition.parse.limit', '50'
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// facilityConditionParseSample과 달리 조건 원문이 있는 시설만 걸러 뽑는다 — facility_id 순서에
+// 조건없음(약 90%) 시설이 몰려 있으면 facilityConditionParseSample은 LLM을 한 번도 못 부를 수
+// 있어, 실제 파싱 결과를 검증하려면 이쪽을 쓴다.
+// 실행: ./gradlew facilityConditionParseSampleWithCondition
+tasks.register('facilityConditionParseSampleWithCondition', Test) {
+	group = 'application'
+	description = '조건 원문이 있는 NOT_PROCESSED 시설 중 50건만 골라 LLM으로 파싱한다 (Claude API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionLlmParseRunner'
+	}
+
+	systemProperty 'facility.condition.parse', 'true'
+	systemProperty 'facility.condition.parse.withCondition', 'true'
+	systemProperty 'facility.condition.parse.limit', '50'
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// 원문에 특정 키워드가 있는 시설만 골라 파싱한다 — 특정 조건 시나리오(맹견 배제 등)를
+// 집중적으로 검증할 때 쓴다. 기본값은 "맹견" 10건, -Pkeyword/-Plimit로 바꿀 수 있다.
+// 실행: ./gradlew facilityConditionParseSampleWithKeyword -Pkeyword=맹견 -Plimit=10
+tasks.register('facilityConditionParseSampleWithKeyword', Test) {
+	group = 'application'
+	description = '원문에 특정 키워드가 있는 NOT_PROCESSED 시설만 골라 LLM으로 파싱한다 (Claude API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionLlmParseRunner'
+	}
+
+	systemProperty 'facility.condition.parse', 'true'
+	systemProperty 'facility.condition.parse.keyword', (project.findProperty('keyword') ?: '맹견')
+	systemProperty 'facility.condition.parse.limit', (project.findProperty('limit') ?: '10')
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// AMBIGUOUS로 판정된 시설의 원문과 unmapped_condition_text를 나란히 출력한다 — 조회 전용,
+// LLM 호출·DB 쓰기 없음. facilityConditionParseSampleWithCondition으로 몇 건 처리해본 뒤
+// 그 결과가 실제로 타당한지 원문과 대조해볼 때 쓴다.
+// 실행: ./gradlew facilityConditionInspectAmbiguous
+tasks.register('facilityConditionInspectAmbiguous', Test) {
+	group = 'application'
+	description = 'AMBIGUOUS 시설의 원문과 미매핑 텍스트를 출력한다 (조회 전용, API 호출 없음)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionInspectAmbiguousRunner'
+	}
+
+	systemProperty 'facility.condition.inspectAmbiguous', 'true'
+	systemProperty 'facility.condition.inspectAmbiguous.limit', (project.findProperty('limit') ?: '10')
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// 원문에 kg 언급 없이 LLM이 지어낸 maxWeight를 버리는 방어 코드를 넣은 뒤, 반대로 원문에
+// 실제 체중 제한이 있는 정상 케이스는 여전히 잘 뽑히는지 실제 데이터로 확인한다 — 조회
+// 전용, LLM 호출·DB 쓰기 없음.
+// 실행: ./gradlew facilityConditionInspectParsedWeight
+tasks.register('facilityConditionInspectParsedWeight', Test) {
+	group = 'application'
+	description = '체중 상한이 정상적으로 뽑힌 PARSED 시설을 출력한다 (조회 전용, API 호출 없음)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionInspectAmbiguousRunner'
+	}
+
+	systemProperty 'facility.condition.inspectAmbiguous', 'true'
+	systemProperty 'facility.condition.inspectAmbiguous.parsed', 'true'
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// 이미 저장된 시설 중 원문에 kg 언급 없이 maxWeight만 채워진 과거 오염 데이터를 찾아
+// 정리한다(예: facility 3283, 48346). petConditionStatus = NOT_PROCESSED만 훑는
+// facilityConditionParse* 배치는 이미 PARSED/AMBIGUOUS로 저장된 이런 시설을 절대 다시
+// 안 건드리므로 별도 청소가 필요하다. LLM 호출 없이 이미 있는 값만 검사해서 지우므로
+// 비용은 안 들지만 DB 쓰기는 실제로 일어난다.
+// 실행: ./gradlew facilityConditionCleanUpMaxWeight
+tasks.register('facilityConditionCleanUpMaxWeight', Test) {
+	group = 'application'
+	description = '원문에 체중 언급 없이 저장된 maxWeight를 정리한다 (LLM 호출 없음, DB 쓰기 있음)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionCleanUpMaxWeightRunner'
+	}
+
+	systemProperty 'facility.condition.cleanUpMaxWeight', 'true'
+
+	timeout = Duration.ofHours(3)
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// facilityConditionCleanUpMaxWeight의 50건 샘플 버전 — 전량 실행 전에 먼저 결과를 검증할 때 쓴다.
+// 실행: ./gradlew facilityConditionCleanUpMaxWeightSample
+tasks.register('facilityConditionCleanUpMaxWeightSample', Test) {
+	group = 'application'
+	description = '원문에 체중 언급 없이 저장된 maxWeight 중 50건만 정리한다 (LLM 호출 없음, DB 쓰기 있음)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionCleanUpMaxWeightRunner'
+	}
+
+	systemProperty 'facility.condition.cleanUpMaxWeight', 'true'
+	systemProperty 'facility.condition.cleanUpMaxWeight.limit', '50'
 
 	testLogging {
 		showStandardStreams = true

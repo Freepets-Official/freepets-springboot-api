@@ -268,7 +268,8 @@ class ReviewCommandServiceTest {
         ReviewResponseDTO.UpsertResult result = reviewCommandService.upsertReview(1L, 7L, request);
 
         assertThat(result.petIds()).containsExactly(1L);
-        verify(petCheckRepository, never()).existsByPetPetIdAndFacilityFacilityId(any(), any());
+        // AI 판별 그룹 판별 재설계로 PetCheck에 pet_id가 아예 없어져서(PetCheckVerdict로 이동),
+        // "펫 단위로는 확인 안 함"을 런타임 검증할 대상 자체가 사라졌다 — 엔티티 구조로 이미 보장됨.
     }
 
     @Test

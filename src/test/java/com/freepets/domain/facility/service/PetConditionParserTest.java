@@ -31,20 +31,32 @@ class PetConditionParserTest {
     // ------------------------------------------------------------------
 
     @ParameterizedTest
+    @ValueSource(strings = {"불가", "불가(보조견만 가능)"})
+    @DisplayName("원문에 명시적 불가 표현이 있으면 DENIED로 판정한다")
+    void 명시적_불가_표현이_있으면_DENIED로_판정한다(String allowedAnimal) {
+        PetConditionParseResult result = parse(allowedAnimal, "");
+
+        assertThat(result.petAllowed()).isEqualTo(PetAllowed.DENIED);
+        assertThat(result.requirements()).isEmpty();
+        assertThat(result.maxWeight()).isNull();
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {
-            "불가",
-            "불가(보조견만 가능)",
             "맹인 안내견",
             "시각 장애인 안내견",
             "안내견",
             "안내견만 가능",
             "안내견만 가"
     })
-    @DisplayName("원문에 명시적 불가 표현이 있으면 DENIED로 판정한다")
-    void 명시적_불가_표현이_있으면_DENIED로_판정한다(String allowedAnimal) {
+    @DisplayName("안내견 전용 예외 표현은 완전 거부가 아니라 조건부 예외라 PENDING으로 판정한다")
+    void 안내견_전용_표현은_PENDING으로_판정한다(String allowedAnimal) {
+        // "불가"와 달리 조건부 예외라 DENIED로 단정하지 않는다 — 그렇다고 ALLOWED로 단정하면
+        // 일반 반려동물이 체중/요구조건만 통과해 들어갈 수 있다고 잘못 안내하게 된다.
+        // PetCheckJudgeService가 PENDING을 "확인 필요"로 안내하므로 안전하다.
         PetConditionParseResult result = parse(allowedAnimal, "");
 
-        assertThat(result.petAllowed()).isEqualTo(PetAllowed.DENIED);
+        assertThat(result.petAllowed()).isEqualTo(PetAllowed.PENDING);
         assertThat(result.requirements()).isEmpty();
         assertThat(result.maxWeight()).isNull();
     }

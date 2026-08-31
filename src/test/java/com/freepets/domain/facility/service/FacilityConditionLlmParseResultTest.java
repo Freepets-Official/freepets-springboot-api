@@ -50,6 +50,32 @@ class FacilityConditionLlmParseResultTest {
     }
 
     @Test
+    void unmappedConditionText에_한글이_없으면_할루시네이션으로_보고_PARSED() {
+        // 관측된 실패 사례: Haiku가 이따금 원문과 무관한 숫자/영어 토큰을 채워넣는다.
+        FacilityConditionExtraction extraction = new FacilityConditionExtraction(
+                null, false, List.of(), List.of(), null, "+1.0"
+        );
+
+        FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
+
+        assertThat(result.status()).isEqualTo(PetConditionStatus.PARSED);
+        assertThat(result.unmappedConditionText()).isNull();
+    }
+
+    @Test
+    void unmappedConditionText에_한글이_섞여있으면_그대로_AMBIGUOUS() {
+        // SNS, 24h처럼 영어/숫자가 섞여도 한글 원문 문구면 진짜 잔여 조건일 수 있으니 살린다.
+        FacilityConditionExtraction extraction = new FacilityConditionExtraction(
+                null, false, List.of(), List.of(), null, "SNS 인증 시 24h 이내 재방문 불가"
+        );
+
+        FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
+
+        assertThat(result.status()).isEqualTo(PetConditionStatus.AMBIGUOUS);
+        assertThat(result.unmappedConditionText()).isEqualTo("SNS 인증 시 24h 이내 재방문 불가");
+    }
+
+    @Test
     void requiredItems가_null이면_빈리스트로_대체() {
         FacilityConditionExtraction extraction = new FacilityConditionExtraction(
                 null, false, null, null, null, null

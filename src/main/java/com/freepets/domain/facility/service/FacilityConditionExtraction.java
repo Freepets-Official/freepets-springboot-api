@@ -47,7 +47,9 @@ public record FacilityConditionExtraction(
 
         @JsonPropertyDescription(
                 "위 컬럼 중 어디에도 담을 수 없는 조건 문장이 원문에 남아 있으면 그 문장을 그대로 옮긴다. "
-                        + "판단을 요약하거나 재구성하지 말고 원문 그대로. 전부 컬럼에 담겼으면 null."
+                        + "판단을 요약하거나 재구성하지 말고 원문 그대로. 원문 내용이 전부 위 컬럼에 담겼다면 "
+                        + "반드시 null을 반환한다 — 이 필드를 비워두는 게 흔한 정답이며, +1.0 같은 숫자나 "
+                        + "영어 단어처럼 원문에 없는 값을 지어내서 채우면 안 된다."
         )
         String unmappedConditionText
 

@@ -34,6 +34,18 @@ public class FacilityConditionLlmParser {
             추측하지 말고 원문에 실제로 적힌 내용만 반영해라. 원문에 없는 조건을 만들어내지 마라.
             체중 상한처럼 숫자가 명시되지 않은 정성적 표현(예: "소형견만")은 컬럼에 숫자를 지어내지
             말고 unmappedConditionText로 그대로 남겨라.
+            모든 필드를 채워야 한다는 압박을 느끼지 마라 — 원문에 없는 내용이면 해당 필드는
+            비워두는(null 또는 빈 배열) 것이 정답이다. 특히 unmappedConditionText는 원문 내용이
+            이미 다른 컬럼에 전부 반영됐다면 반드시 null이어야 하고, +1.0 같은 숫자나 영어
+            단어처럼 원문에 없는 값을 채워넣으면 절대 안 된다.
+
+            예시: "동반 시 필요사항"에 "목줄 착용 필수. 맹견은 입마개 착용"이 적혀 있다면
+            requiredItems=["목줄 착용"], dangerousBreedRequiredItems=["입마개 착용"]로 나누어 담고,
+            원문이 이 두 필드로 전부 소화됐으므로 unmappedConditionText는 null이다 — 원문 텍스트가
+            길다고 해서 unmappedConditionText에 뭔가 남아있어야 하는 건 아니다.
+
+            잘못된 예시(하지 말아야 할 것): 원문 어디에도 없는데 unmappedConditionText에
+            "+1.0"이나 영어 단어를 채워넣는 것. 그런 값을 만들어내느니 null을 반환해라.
             """;
 
     private final AnthropicClient anthropicClient;

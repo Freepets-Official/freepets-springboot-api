@@ -150,7 +150,10 @@ public class FacilityConditionLlmBatchApiService {
         while (true) {
             MessageBatch batch = anthropicClient.messages().batches().retrieve(batchId);
 
-            if (batch.processingStatus() == MessageBatch.ProcessingStatus.ENDED) {
+            // ProcessingStatus는 진짜 자바 enum이 아니라 미지의 값도 담을 수 있는 래퍼 타입이라,
+            // JSON 역직렬화로 만들어진 인스턴스가 이 상수와 같은 참조라는 보장이 없다 — ==로
+            // 비교하면 "ended"를 실제로 받고도 계속 폴링을 반복하는 무한루프가 된다(직접 겪음).
+            if (batch.processingStatus().equals(MessageBatch.ProcessingStatus.ENDED)) {
                 return batch;
             }
             if (Instant.now().isAfter(deadline)) {

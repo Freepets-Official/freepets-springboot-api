@@ -167,6 +167,31 @@ class PetCheckJudgeServiceTest {
     }
 
     @Test
+    void 맹견_배제가_아니고_맹견_전용_요구조건이_있으면_맹견은_CONDITIONAL_이고_조건에_담긴다() {
+        // 원문 "맹견의 경우, 입마개 착용 필수"류(실측 685건) — 동반 자체는 되지만 조건이 붙는다.
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of());
+        ReflectionTestUtils.setField(facility, "dangerousBreedRequiredItems", "[\"입마개 착용\"]");
+        Pet pet = pet("두목", "로트와일러", "40.0", true, BreedSize.LARGE);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.CONDITIONAL, verdict.result());
+        assertTrue(verdict.conditions().contains("입마개 착용"));
+    }
+
+    @Test
+    void 맹견_전용_요구조건이_있어도_맹견이_아니면_조건에_안_담긴다() {
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of());
+        ReflectionTestUtils.setField(facility, "dangerousBreedRequiredItems", "[\"입마개 착용\"]");
+        Pet pet = pet("몽이", "말티즈", "3.2", true);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.ALLOWED, verdict.result());
+        assertTrue(verdict.conditions().isEmpty());
+    }
+
+    @Test
     void 거부_사유가_여러_개면_전부_한번에_담긴다() {
         Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("10.0"), List.of(Requirement.VACCINATION));
         ReflectionTestUtils.setField(facility, "isDangerousBreedExcluded", true);
@@ -179,6 +204,44 @@ class PetCheckJudgeServiceTest {
         assertTrue(verdict.reason().contains("초과"));
         assertTrue(verdict.reason().contains("접종"));
         assertTrue(verdict.reason().contains("맹견"));
+    }
+
+    @Test
+    void 개_고양이가_아닌_종은_규칙을_적용하지_않고_직접_확인_안내로_CONDITIONAL() {
+        // 조건 원문·규칙 엔진이 개·고양이 기준으로만 만들어져 있어, 앵무새 등은 룰을 적용할 수 없다.
+        // 체중초과처럼 DENIED가 될 조건을 일부러 같이 줘도, 그 룰 자체를 안 타야 한다.
+        Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("1.0"), List.of());
+        Pet pet = petOfKind("초코", Kind.PARROT, "1.5");
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.CONDITIONAL, verdict.result());
+        assertTrue(verdict.reason().contains("확인"));
+        assertTrue(verdict.conditions().isEmpty());
+    }
+
+    @Test
+    void 고양이는_개와_동일하게_규칙_엔진이_그대로_적용된다() {
+        Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("3.0"), List.of());
+        Pet pet = petOfKind("나비", Kind.CAT, "5.0");
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.DENIED, verdict.result());
+        assertTrue(verdict.reason().contains("초과"));
+    }
+
+    @Test
+    void partialAreaNote가_있으면_조건_안내에_담긴다() {
+        // 원문 "방갈로는 반려견 동반 불가"류 — requirements가 없어도 이 메모만으로 CONDITIONAL이어야 한다.
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of());
+        ReflectionTestUtils.setField(facility, "partialAreaNote", "방갈로는 반려견 동반 불가");
+        Pet pet = pet("몽이", "말티즈", "3.2", true);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.CONDITIONAL, verdict.result());
+        assertTrue(verdict.conditions().contains("방갈로는 반려견 동반 불가"));
     }
 
     @Test
@@ -218,6 +281,21 @@ class PetCheckJudgeServiceTest {
             boolean vaccinated
     ) {
         return pet(name, species, weight, vaccinated, BreedSize.SMALL);
+    }
+
+    private Pet petOfKind(
+            String name,
+            Kind kind,
+            String weight
+    ) {
+        return Pet.builder()
+                .name(name)
+                .kind(kind)
+                .species(name)
+                .weight(new BigDecimal(weight))
+                .breedSize(BreedSize.SMALL)
+                .isVaccinated(true)
+                .build();
     }
 
     private Pet pet(

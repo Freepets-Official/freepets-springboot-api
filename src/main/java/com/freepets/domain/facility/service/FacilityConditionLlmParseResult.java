@@ -27,6 +27,17 @@ public record FacilityConditionLlmParseResult(
     }
 
     /**
+     * LLM을 부르지 않고 AMBIGUOUS로 확정한다. {@link FacilityConditionLlmParser}가 accompanyType
+     * 하나만으로("일부구역 동반가능"인데 설명이 없는 경우) 판단할 때 쓴다 — 구조화할 실질
+     * 문장이 없으니 호출할 이유가 없지만, 조건 없음으로 단정하면 안 되는 경우다.
+     */
+    public static FacilityConditionLlmParseResult ambiguousWithoutText(String unmappedConditionText) {
+        return new FacilityConditionLlmParseResult(
+                PetConditionStatus.AMBIGUOUS, null, false, List.of(), List.of(), null, unmappedConditionText
+        );
+    }
+
+    /**
      * maxWeight만 교체한 복사본을 만든다. 규칙 엔진(PetConditionParser, #22)이 이미 뽑아낸
      * maxWeight가 있으면 이 값으로 LLM의 판독값을 대체해서 우선시킨다 — 나머지 필드(맹견 배제,
      * 요구조건, 잔여 텍스트)는 LLM이 채운 그대로 둔다. {@code FacilityConditionLlmBatchService} 참고.

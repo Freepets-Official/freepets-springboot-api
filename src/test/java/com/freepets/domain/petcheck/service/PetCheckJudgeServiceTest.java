@@ -70,13 +70,39 @@ class PetCheckJudgeServiceTest {
     }
 
     @Test
-    void 체중이_경계값과_정확히_같으면_CONDITIONAL() {
+    void 체중이_경계값과_정확히_같고_경계_포함_여부를_모르면_CONDITIONAL() {
+        // maxWeightInclusive를 안 채우면(원문에서 경계 종류를 모르면) 기존처럼 현장 확인 안내.
         Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("10.0"), List.of());
         Pet pet = pet("몽이", "말티즈", "10.0", true);
 
         PetVerdict verdict = judgeService.judgePet(pet, facility);
 
         assertEquals(PetCheckResult.CONDITIONAL, verdict.result());
+    }
+
+    @Test
+    void 체중이_경계값과_같고_이하로_포함이면_ALLOWED() {
+        // 원문 "10kg 이하" — 10kg인 아이는 명확히 허용 범위 안이라 CONDITIONAL로 애매하게
+        // 안내할 이유가 없다.
+        Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("10.0"), List.of());
+        ReflectionTestUtils.setField(facility, "maxWeightInclusive", true);
+        Pet pet = pet("몽이", "말티즈", "10.0", true);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.ALLOWED, verdict.result());
+    }
+
+    @Test
+    void 체중이_경계값과_같고_미만으로_제외면_DENIED() {
+        // 원문 "10kg 미만" — 10kg인 아이는 그 경계값 자체가 빠져서 실질적으로 초과와 같다.
+        Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("10.0"), List.of());
+        ReflectionTestUtils.setField(facility, "maxWeightInclusive", false);
+        Pet pet = pet("몽이", "말티즈", "10.0", true);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.DENIED, verdict.result());
     }
 
     @Test

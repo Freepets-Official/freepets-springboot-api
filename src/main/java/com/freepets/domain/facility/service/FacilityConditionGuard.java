@@ -47,7 +47,7 @@ final class FacilityConditionGuard {
         parsed = rejectMaxWeightWithoutSourceEvidence(facility, parsed);
 
         if (facility.getMaxWeight() != null) {
-            parsed = parsed.withMaxWeight(facility.getMaxWeight());
+            parsed = parsed.withMaxWeight(facility.getMaxWeight(), facility.getMaxWeightInclusive());
         }
 
         return rejectOutOfRangeMaxWeight(facility, parsed);
@@ -63,7 +63,7 @@ final class FacilityConditionGuard {
                     "시설 {} maxWeight({})가 컬럼 범위(절댓값 {} 미만)를 벗어나 버립니다 — 원인 조사 필요",
                     facility.getFacilityId(), maxWeight, MAX_WEIGHT_COLUMN_LIMIT
             );
-            return parsed.withMaxWeight(null);
+            return parsed.withoutMaxWeight();
         }
         return parsed;
     }
@@ -86,7 +86,7 @@ final class FacilityConditionGuard {
                 "시설 {} maxWeight({})가 원문에 체중 언급 없이 나와 버립니다 — LLM 추측 의심",
                 facility.getFacilityId(), parsed.maxWeight()
         );
-        return parsed.withMaxWeight(null);
+        return parsed.withoutMaxWeight();
     }
 
     static boolean hasWeightMention(Facility facility) {

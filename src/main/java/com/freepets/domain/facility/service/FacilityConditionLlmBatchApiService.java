@@ -247,6 +247,7 @@ public class FacilityConditionLlmBatchApiService {
                 facility.applyParsedCondition(
                         parsed.status(),
                         parsed.maxWeight(),
+                        parsed.maxWeightInclusive(),
                         parsed.isDangerousBreedExcluded(),
                         parsed.requiredItems(),
                         parsed.dangerousBreedRequiredItems(),

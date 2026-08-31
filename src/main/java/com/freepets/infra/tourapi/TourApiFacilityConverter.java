@@ -72,7 +72,7 @@ public class TourApiFacilityConverter {
                         petTourItem.requiredMatter(),
                         petTourItem.etcAccompanyInfo(),
                         petTourItem.accidentRisk())
-                : new PetConditionParseResult(PetAllowed.PENDING, null, List.of());
+                : new PetConditionParseResult(PetAllowed.PENDING, null, null, List.of());
 
         Facility facility = Facility.builder()
                 .contentId(areaBasedItem.contentId())
@@ -103,6 +103,7 @@ public class TourApiFacilityConverter {
                 .petConditionHash(hashOf(petTourItem))
                 .petAllowed(parsed.petAllowed())
                 .maxWeight(parsed.maxWeight())
+                .maxWeightInclusive(parsed.maxWeightInclusive())
                 .parserVersion(PetConditionParser.PARSER_VERSION)
                 .source(FacilitySource.TOUR_API)
                 .isActive(true)

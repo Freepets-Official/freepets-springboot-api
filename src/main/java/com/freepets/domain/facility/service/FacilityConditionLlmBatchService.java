@@ -130,6 +130,7 @@ public class FacilityConditionLlmBatchService {
             facility.applyParsedCondition(
                     parsed.status(),
                     parsed.maxWeight(),
+                    parsed.maxWeightInclusive(),
                     parsed.isDangerousBreedExcluded(),
                     parsed.requiredItems(),
                     parsed.dangerousBreedRequiredItems(),

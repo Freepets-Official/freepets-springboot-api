@@ -26,8 +26,16 @@ import com.freepets.domain.facility.entity.Requirement;
 @Component
 public class PetConditionParser {
 
-    /** 파싱 규칙 버전. 규칙을 바꾸면 올려서 전량 재파싱 대상으로 만든다. */
-    public static final int PARSER_VERSION = 1;
+    /**
+     * 파싱 규칙 버전. 규칙을 바꾸면 올려서 전량 재파싱 대상으로 만든다.
+     *
+     * <p>2 — maxWeightInclusive(#43) 추가로 WEIGHT_LIMIT 정규식이 바뀌었다. 다만 지금은
+     * parserVersion을 실제로 읽어 재파싱 대상을 고르는 로직이 없어서, 이 값을 올리는 것만으로
+     * 기존 시설의 maxWeightInclusive가 저절로 채워지지는 않는다 — 원문(TourAPI 텍스트)이
+     * 실제로 바뀌어 재동기화될 때만 규칙 엔진이 다시 돈다({@code Facility#updateFromTourApi}
+     * 참고). 기존 데이터 백필 여부는 별도 결정 사항이다.
+     */
+    public static final int PARSER_VERSION = 2;
 
     /**
      * {@code acmpyNeedMtr}의 원자값 사전. 실데이터에서 관측된 값이 전부 여기 있다.
@@ -65,10 +73,16 @@ public class PetConditionParser {
     private static final Pattern OUTDOOR_ONLY_KEYWORD =
             Pattern.compile("(야외|실외|테라스|옥외)\\s*(공간|구역|좌석|석)?\\s*(에서만|에 한|만|한해|한정)");
 
-    /** 체중 상한. {@code 이상}·{@code 초과}는 상한이 아니므로 매칭하지 않는다. */
+    /**
+     * 체중 상한. {@code 이상}·{@code 초과}는 상한이 아니므로 매칭하지 않는다. 경계 포함 여부를
+     * 가르는 표현(이하/까지/초과 불가 = 포함, 미만 = 제외)을 2번째 그룹으로 따로 잡는다.
+     */
     private static final Pattern WEIGHT_LIMIT = Pattern.compile(
-            "(\\d+(?:\\.\\d+)?)\\s*(?:kg|㎏|킬로그램|킬로)\\s*(?:이하|미만|까지|초과\\s*불가)"
+            "(\\d+(?:\\.\\d+)?)\\s*(?:kg|㎏|킬로그램|킬로)\\s*(이하|미만|까지|초과\\s*불가)"
     );
+
+    /** {@code 미만}만 경계를 제외한다. 나머지("이하", "까지", "초과 불가")는 그 체중까지 포함이다. */
+    private static final String EXCLUSIVE_BOUNDARY_WORD = "미만";
 
     private static final BigDecimal MAX_REASONABLE_WEIGHT = BigDecimal.valueOf(200);
 
@@ -88,7 +102,7 @@ public class PetConditionParser {
         ).trim();
 
         if (isDenied(allowedAnimal)) {
-            return new PetConditionParseResult(PetAllowed.DENIED, null, List.of());
+            return new PetConditionParseResult(PetAllowed.DENIED, null, null, List.of());
         }
 
         // "안내견만 가능"류는 "불가"처럼 완전히 거부하는 게 아니라 조건부 예외라 DENIED로
@@ -98,12 +112,15 @@ public class PetConditionParser {
         // "안내견만 가능" 문장은 unmappedConditionText로 남아 AMBIGUOUS가 된다 — 사람이
         // 검토할 신호가 된다.
         if (isGuideDogOnly(allowedAnimal)) {
-            return new PetConditionParseResult(PetAllowed.PENDING, null, List.of());
+            return new PetConditionParseResult(PetAllowed.PENDING, null, null, List.of());
         }
+
+        WeightLimit weightLimit = extractMaxWeight(freeText);
 
         return new PetConditionParseResult(
                 PetAllowed.ALLOWED,
-                extractMaxWeight(freeText),
+                weightLimit.value(),
+                weightLimit.inclusive(),
                 extractRequirements(requiredMatter, freeText)
         );
     }
@@ -158,13 +175,15 @@ public class PetConditionParser {
     }
 
     /**
-     * 체중 상한을 뽑는다. 여러 값이 나오면 가장 엄격한 값을 택한다.
+     * 체중 상한과 경계 포함 여부를 뽑는다. 여러 값이 나오면 가장 엄격한 값(가장 작은 상한)을
+     * 택하고, 그 값의 경계 표현("이하"/"미만"/"까지"/"초과 불가")을 그대로 따른다 — 값이 같아도
+     * 표현이 다르면 경계 취급이 달라지므로 값과 경계를 항상 같이 다룬다.
      *
      * <p>{@code 체고 40cm}처럼 단위가 다른 값은 패턴에 걸리지 않는다.
      */
-    private BigDecimal extractMaxWeight(String freeText) {
+    private WeightLimit extractMaxWeight(String freeText) {
         Matcher matcher = WEIGHT_LIMIT.matcher(freeText);
-        BigDecimal strictest = null;
+        WeightLimit strictest = null;
 
         while (matcher.find()) {
             BigDecimal candidate = new BigDecimal(matcher.group(1));
@@ -173,11 +192,20 @@ public class PetConditionParser {
             if (!isReasonable) {
                 continue;
             }
-            if (strictest == null || candidate.compareTo(strictest) < 0) {
-                strictest = candidate;
+            if (strictest == null || candidate.compareTo(strictest.value()) < 0) {
+                boolean inclusive = !EXCLUSIVE_BOUNDARY_WORD.equals(matcher.group(2));
+                strictest = new WeightLimit(candidate, inclusive);
             }
         }
-        return strictest;
+        return strictest == null ? WeightLimit.EMPTY : strictest;
+    }
+
+    /** {@code value}가 {@code null}이면 {@code inclusive}도 항상 {@code null}이어야 한다. */
+    private record WeightLimit(
+            BigDecimal value,
+            Boolean inclusive
+    ) {
+        private static final WeightLimit EMPTY = new WeightLimit(null, null);
     }
 
     private void addIfAbsent(

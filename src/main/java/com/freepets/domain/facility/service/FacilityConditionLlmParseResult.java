@@ -55,19 +55,27 @@ public record FacilityConditionLlmParseResult(
 
     /**
      * unmappedConditionText는 원문 조건 문구를 그대로 옮긴 값이어야 하는데, 관측 결과 Haiku가
-     * 이따금 원문과 무관한 문자열({@code "+1.0"}, 영어 토큰 등)을 채워넣는다. 원문은 전부
-     * 한국어라 실제 잔여 조건이라면 한글이 반드시 섞여 있으므로, 한글이 하나도 없는 값은
-     * 모델이 지어낸 것으로 보고 무시한다. 그래야 이미 다 파싱된 시설이 이 값 하나 때문에
-     * AMBIGUOUS로 잘못 분류되는 걸 막을 수 있다(status 결정 로직 참고).
+     * 이따금 원문과 무관한 문자열을 채워넣는다. 두 가지 실패 패턴이 확인됐다:
+     * <ul>
+     *   <li>{@code "+1.0"}, 영어 토큰처럼 원문에 없는 값 — 원문은 전부 한국어라 실제 잔여
+     *       조건이면 한글이 반드시 섞여 있으므로, 한글이 하나도 없으면 걸러낸다.</li>
+     *   <li>자기 자신의 구조화 결과를 JSON 문자열로 되풀이해서 이 필드 안에 또 채워넣는 경우
+     *       (예: {@code {"dangerousBreedRequiredItems":[...],...}}) — 한글이 섞여 있어 위
+     *       필터로는 못 잡으므로, JSON 객체처럼 생긴 값인지 따로 확인한다.</li>
+     * </ul>
+     * 그래야 이미 다 파싱된 시설이 이 값 하나 때문에 AMBIGUOUS로 잘못 분류되는 걸 막을 수
+     * 있다(status 결정 로직 참고).
      */
     private static String sanitizeUnmappedConditionText(String rawText) {
         if (rawText == null || rawText.isBlank()) {
             return null;
         }
 
-        boolean hasHangul = rawText.codePoints()
+        String trimmed = rawText.trim();
+        boolean hasHangul = trimmed.codePoints()
                 .anyMatch(codePoint -> codePoint >= 0xAC00 && codePoint <= 0xD7A3);
+        boolean looksLikeJsonObject = trimmed.startsWith("{") && trimmed.endsWith("}");
 
-        return hasHangul ? rawText : null;
+        return (hasHangul && !looksLikeJsonObject) ? rawText : null;
     }
 }

@@ -63,6 +63,21 @@ class FacilityConditionLlmParseResultTest {
     }
 
     @Test
+    void unmappedConditionText가_자기_결과를_JSON으로_되풀이하면_할루시네이션으로_보고_PARSED() {
+        // 관측된 실패 사례(시설 5807): 한글이 섞여 있어 한글 필터만으로는 못 잡는다.
+        FacilityConditionExtraction extraction = new FacilityConditionExtraction(
+                null, false, List.of("목줄 착용"), List.of("입마개 착용"), null,
+                "{\"dangerousBreedRequiredItems\":[\"입마개 착용\"],\"isDangerousBreedExcluded\":false,"
+                        + "\"unmappedConditionText\":null}"
+        );
+
+        FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
+
+        assertThat(result.status()).isEqualTo(PetConditionStatus.PARSED);
+        assertThat(result.unmappedConditionText()).isNull();
+    }
+
+    @Test
     void unmappedConditionText에_한글이_섞여있으면_그대로_AMBIGUOUS() {
         // SNS, 24h처럼 영어/숫자가 섞여도 한글 원문 문구면 진짜 잔여 조건일 수 있으니 살린다.
         FacilityConditionExtraction extraction = new FacilityConditionExtraction(

@@ -46,6 +46,9 @@ public class FacilityConditionLlmParser {
 
             잘못된 예시(하지 말아야 할 것): 원문 어디에도 없는데 unmappedConditionText에
             "+1.0"이나 영어 단어를 채워넣는 것. 그런 값을 만들어내느니 null을 반환해라.
+            또한 unmappedConditionText에 너 자신이 방금 만든 구조화 결과를 JSON 문자열로
+            요약해서 다시 채워넣지 마라(예: {"dangerousBreedRequiredItems":[...]} 같은 값).
+            이 필드는 원문에서 못 담은 잔여 텍스트 전용이지, 결과 요약을 담는 곳이 아니다.
             """;
 
     private final AnthropicClient anthropicClient;

@@ -189,6 +189,33 @@ tasks.register('facilityConditionParseSampleWithCondition', Test) {
 	outputs.upToDateWhen { false }
 }
 
+// 원문에 특정 키워드가 있는 시설만 골라 파싱한다 — 특정 조건 시나리오(맹견 배제 등)를
+// 집중적으로 검증할 때 쓴다. 기본값은 "맹견" 10건, -Pkeyword/-Plimit로 바꿀 수 있다.
+// 실행: ./gradlew facilityConditionParseSampleWithKeyword -Pkeyword=맹견 -Plimit=10
+tasks.register('facilityConditionParseSampleWithKeyword', Test) {
+	group = 'application'
+	description = '원문에 특정 키워드가 있는 NOT_PROCESSED 시설만 골라 LLM으로 파싱한다 (Claude API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionLlmParseRunner'
+	}
+
+	systemProperty 'facility.condition.parse', 'true'
+	systemProperty 'facility.condition.parse.keyword', (project.findProperty('keyword') ?: '맹견')
+	systemProperty 'facility.condition.parse.limit', (project.findProperty('limit') ?: '10')
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
 // AMBIGUOUS로 판정된 시설의 원문과 unmapped_condition_text를 나란히 출력한다 — 조회 전용,
 // LLM 호출·DB 쓰기 없음. facilityConditionParseSampleWithCondition으로 몇 건 처리해본 뒤
 // 그 결과가 실제로 타당한지 원문과 대조해볼 때 쓴다.
@@ -206,6 +233,7 @@ tasks.register('facilityConditionInspectAmbiguous', Test) {
 	}
 
 	systemProperty 'facility.condition.inspectAmbiguous', 'true'
+	systemProperty 'facility.condition.inspectAmbiguous.limit', (project.findProperty('limit') ?: '10')
 
 	testLogging {
 		showStandardStreams = true

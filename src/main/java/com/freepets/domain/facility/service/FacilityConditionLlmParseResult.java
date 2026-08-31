@@ -59,20 +59,24 @@ public record FacilityConditionLlmParseResult(
                 extraction.isDangerousBreedExcluded(),
                 extraction.requiredItems() != null ? extraction.requiredItems() : List.of(),
                 extraction.dangerousBreedRequiredItems() != null ? extraction.dangerousBreedRequiredItems() : List.of(),
-                extraction.partialAreaNote(),
+                sanitizePartialAreaNote(extraction.partialAreaNote()),
                 unmappedConditionText
         );
     }
 
     /**
      * unmappedConditionText는 원문 조건 문구를 그대로 옮긴 값이어야 하는데, 관측 결과 Haiku가
-     * 이따금 원문과 무관한 문자열을 채워넣는다. 두 가지 실패 패턴이 확인됐다:
+     * 이따금 원문과 무관한 문자열을 채워넣는다. 세 가지 실패 패턴이 확인됐다:
      * <ul>
      *   <li>{@code "+1.0"}, 영어 토큰처럼 원문에 없는 값 — 원문은 전부 한국어라 실제 잔여
      *       조건이면 한글이 반드시 섞여 있으므로, 한글이 하나도 없으면 걸러낸다.</li>
      *   <li>자기 자신의 구조화 결과를 JSON 문자열로 되풀이해서 이 필드 안에 또 채워넣는 경우
      *       (예: {@code {"dangerousBreedRequiredItems":[...],...}}) — 한글이 섞여 있어 위
      *       필터로는 못 잡으므로, JSON 객체처럼 생긴 값인지 따로 확인한다.</li>
+     *   <li>{@code "{maxWeight}~10kg 미만"}처럼 템플릿 변수 이름이 그대로 새어나오는 경우
+     *       (실측 시설 5883) — 한글이 섞여 있고 JSON 모양도 아니라 위 두 필터를 둘 다
+     *       통과한다. 중괄호({@code {}}) 문자 자체가 실제 한국어 조건 원문에 나올 일이
+     *       없으므로 있으면 그대로 버린다.</li>
      * </ul>
      * 그래야 이미 다 파싱된 시설이 이 값 하나 때문에 AMBIGUOUS로 잘못 분류되는 걸 막을 수
      * 있다(status 결정 로직 참고).
@@ -87,6 +91,26 @@ public record FacilityConditionLlmParseResult(
                 .anyMatch(codePoint -> codePoint >= 0xAC00 && codePoint <= 0xD7A3);
         boolean looksLikeJsonObject = trimmed.startsWith("{") && trimmed.endsWith("}");
 
-        return (hasHangul && !looksLikeJsonObject) ? rawText : null;
+        return (hasHangul && !looksLikeJsonObject && !containsTemplatePlaceholder(trimmed)) ? rawText : null;
+    }
+
+    /**
+     * partialAreaNote는 판별 결과(PetCheckJudgeService)의 사용자 안내 문구에 그대로 노출되므로,
+     * unmappedConditionText와 같은 템플릿 변수 누출({@code "{maxWeight}~10kg 미만 소형견"},
+     * 실측 시설 5883)이 그대로 사용자에게 보이면 안 된다. 이 필드는 unmappedConditionText와
+     * 달리 값이 있는 게 정상 케이스라 한글/JSON 필터는 적용하지 않고, 실제 한국어 조건
+     * 원문에 나올 일이 없는 중괄호 누출만 방어한다.
+     */
+    private static String sanitizePartialAreaNote(String rawText) {
+        if (rawText == null || rawText.isBlank()) {
+            return null;
+        }
+
+        String trimmed = rawText.trim();
+        return containsTemplatePlaceholder(trimmed) ? null : rawText;
+    }
+
+    private static boolean containsTemplatePlaceholder(String text) {
+        return text.contains("{") || text.contains("}");
     }
 }

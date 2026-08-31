@@ -84,6 +84,27 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
 
     boolean existsByContentId(String contentId);
 
+    /**
+     * 상세 조회용 시설 단건 + 사용자 위치로부터의 거리.
+     *
+     * <p>좌표가 없는 시설은 결과에서 빠진다. {@code DISTANCE_METER}가 null이 되어
+     * {@link FacilityWithDistance}의 원시 타입 {@code double}에 담기지 못하기 때문이다.
+     * 그런 시설도 상세는 보여줘야 하므로, 호출부가 결과가 비었을 때 {@code findById}로 다시 집는다.
+     * 즉 빈 결과는 "시설이 없다"와 "좌표가 없다" 둘 중 하나를 뜻한다.
+     *
+     * <p>{@code isActive} 조건은 걸지 않는다. 비표출로 내려간 시설이라도 저장해둔 링크로 들어올 수
+     * 있고, 리뷰 조회 API도 활성 여부를 보지 않아 기준을 맞춘다.
+     */
+    @Query(SELECT_WITH_DISTANCE
+            + "where facility.facilityId = :facilityId "
+            + "and facility.lat is not null "
+            + "and facility.lng is not null")
+    Optional<FacilityWithDistance> findWithDistanceById(
+            @Param("userLatitudeRadian") double userLatitudeRadian,
+            @Param("userLongitudeRadian") double userLongitudeRadian,
+            @Param("facilityId") Long facilityId
+    );
+
     @Query(SELECT_WITH_DISTANCE + SEARCH_FILTER + ORDER_BY_DISTANCE)
     List<FacilityWithDistance> search(
             @Param("userLatitudeRadian") double userLatitudeRadian,

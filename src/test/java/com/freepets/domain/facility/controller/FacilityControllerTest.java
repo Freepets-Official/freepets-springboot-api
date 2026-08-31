@@ -1,13 +1,19 @@
 package com.freepets.domain.facility.controller;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
@@ -155,6 +161,116 @@ class FacilityControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("COMMON400"))
                 .andExpect(jsonPath("$.result.size").exists());
+
+        verifyNoInteractions(facilityQueryService);
+    }
+
+    // ------------------------------------------------------------------
+    // 시설 상세 조회
+    // ------------------------------------------------------------------
+
+    private static final String DETAIL_PATH = "/api/v1/facilities/{facilityId}";
+
+    private FacilityResponseDTO.FacilityDetail createDetail() {
+        return new FacilityResponseDTO.FacilityDetail(
+                2L,
+                "카페 파도살롱",
+                FacilityCategory.CAFE,
+                "강원 강릉시 창해로 17",
+                "033-651-2287",
+                37.8016,
+                128.9107,
+                1200L,
+                PetAllowed.PENDING,
+                null,
+                LocalDateTime.of(2026, 7, 5, 0, 0),
+                "https://tong.visitkorea.or.kr/image.jpg",
+                "https://tong.visitkorea.or.kr/thumbnail.jpg",
+                new FacilityResponseDTO.PawGrade(4, "동반 우수"),
+                new FacilityResponseDTO.Ratings(88.4, 4.5, 4.8, 4.2),
+                List.of(new FacilityResponseDTO.OwnedPet(1L, "몽이", new BigDecimal("3.20"))),
+                false
+        );
+    }
+
+    @Test
+    @DisplayName("상세 조회에 성공하면 200과 시설 상세를 반환한다")
+    void 상세_조회에_성공하면_200과_시설_상세를_반환한다() throws Exception {
+        when(facilityQueryService.getFacilityDetail(eq(2L), any(), any(), any()))
+                .thenReturn(createDetail());
+
+        mockMvc.perform(get(DETAIL_PATH, 2L)
+                        .param("latitude", "37.8016")
+                        .param("longitude", "128.9107"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("COMMON200"))
+                .andExpect(jsonPath("$.result.facilityId").value(2))
+                .andExpect(jsonPath("$.result.name").value("카페 파도살롱"))
+                .andExpect(jsonPath("$.result.category").value("CAFE"))
+                .andExpect(jsonPath("$.result.phone").value("033-651-2287"))
+                .andExpect(jsonPath("$.result.latitude").value(37.8016))
+                .andExpect(jsonPath("$.result.longitude").value(128.9107))
+                .andExpect(jsonPath("$.result.distanceM").value(1200))
+                .andExpect(jsonPath("$.result.petAllowed").value("PENDING"))
+                .andExpect(jsonPath("$.result.imageUrl").value("https://tong.visitkorea.or.kr/image.jpg"))
+                .andExpect(jsonPath("$.result.pawGrade.level").value(4))
+                .andExpect(jsonPath("$.result.pawGrade.label").value("동반 우수"))
+                .andExpect(jsonPath("$.result.ratings.score").value(88.4))
+                .andExpect(jsonPath("$.result.ratings.spaceRating").value(4.5))
+                .andExpect(jsonPath("$.result.ratings.customerService").value(4.8))
+                .andExpect(jsonPath("$.result.ratings.amenitiesRating").value(4.2))
+                .andExpect(jsonPath("$.result.pets[0].petId").value(1))
+                .andExpect(jsonPath("$.result.pets[0].name").value("몽이"))
+                .andExpect(jsonPath("$.result.hasNonDogCatPet").value(false));
+    }
+
+    @Test
+    @DisplayName("동반 조건 원문은 값이 없어도 키를 남긴다")
+    void 동반_조건_원문은_값이_없어도_키를_남긴다() throws Exception {
+        when(facilityQueryService.getFacilityDetail(eq(2L), any(), any(), any()))
+                .thenReturn(createDetail());
+
+        mockMvc.perform(get(DETAIL_PATH, 2L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.petConditionRaw").doesNotExist())
+                .andExpect(content().string(containsString("\"petConditionRaw\":null")));
+    }
+
+    @Test
+    @DisplayName("좌표를 보내지 않아도 상세 조회는 성공한다")
+    void 좌표를_보내지_않아도_상세_조회는_성공한다() throws Exception {
+        when(facilityQueryService.getFacilityDetail(eq(2L), any(), isNull(), isNull()))
+                .thenReturn(createDetail());
+
+        mockMvc.perform(get(DETAIL_PATH, 2L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    @DisplayName("상세 조회 위도가 범위를 벗어나면 400을 반환한다")
+    void 상세_조회_위도가_범위를_벗어나면_400을_반환한다() throws Exception {
+        mockMvc.perform(get(DETAIL_PATH, 2L)
+                        .param("latitude", "91.0")
+                        .param("longitude", "128.9107"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("COMMON400"))
+                .andExpect(jsonPath("$.result.latitude").value("위도는 90 이하여야 합니다."));
+
+        verifyNoInteractions(facilityQueryService);
+    }
+
+    @Test
+    @DisplayName("상세 조회 경도가 범위를 벗어나면 400을 반환한다")
+    void 상세_조회_경도가_범위를_벗어나면_400을_반환한다() throws Exception {
+        mockMvc.perform(get(DETAIL_PATH, 2L)
+                        .param("latitude", "37.8016")
+                        .param("longitude", "181.0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"))
+                .andExpect(jsonPath("$.result.longitude").value("경도는 180 이하여야 합니다."));
 
         verifyNoInteractions(facilityQueryService);
     }

@@ -12,10 +12,17 @@ import org.springframework.transaction.annotation.Transactional;
 import com.freepets.domain.facility.converter.FacilityConverter;
 import com.freepets.domain.facility.dto.FacilityRequestDTO;
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
+import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.facility.repository.FacilityWithDistance;
+import com.freepets.domain.pet.entity.Pet;
+import com.freepets.domain.pet.repository.PetRepository;
+import com.freepets.domain.review.entity.ReviewReportStatus;
+import com.freepets.domain.review.repository.FacilityReviewAggregate;
 import com.freepets.domain.review.repository.FacilityReviewCount;
 import com.freepets.domain.review.repository.ReviewRepository;
+import com.freepets.global.apiPayload.code.status.ErrorStatus;
+import com.freepets.global.apiPayload.exception.GeneralException;
 
 import lombok.RequiredArgsConstructor;
 
@@ -29,6 +36,7 @@ public class FacilityQueryService {
 
     private final FacilityRepository facilityRepository;
     private final ReviewRepository reviewRepository;
+    private final PetRepository petRepository;
 
     public FacilityResponseDTO.FacilitySearchResult searchFacilities(FacilityRequestDTO.SearchRequest request) {
         double userLatitudeRadian = Math.toRadians(request.getLatitude());
@@ -88,6 +96,77 @@ public class FacilityQueryService {
         }
 
         return FacilityConverter.toFacilitySearchResult(found, reviewCountsOf(found), total);
+    }
+
+    /**
+     * 시설 상세를 조회한다.
+     *
+     * <p>리뷰 목록과 만족도 목록은 담지 않는다. 각각 전용 API가 있고, 페이징 단위와 갱신 주기가
+     * 달라 한 응답에 묶으면 리뷰 한 건을 더 보려고 시설 정보까지 다시 받게 된다.
+     *
+     * @param latitude  사용자 위도. {@code null}이면 거리를 계산하지 않는다
+     * @param longitude 사용자 경도. {@code null}이면 거리를 계산하지 않는다
+     */
+    public FacilityResponseDTO.FacilityDetail getFacilityDetail(
+            Long facilityId,
+            Long userId,
+            Double latitude,
+            Double longitude
+    ) {
+        validateCoordinatePair(latitude, longitude);
+
+        Facility facility;
+        Long distanceM;
+
+        FacilityWithDistance found = latitude == null
+                ? null
+                : facilityRepository.findWithDistanceById(
+                        Math.toRadians(latitude),
+                        Math.toRadians(longitude),
+                        facilityId
+                ).orElse(null);
+
+        if (found == null) {
+            // 좌표를 안 보냈거나, 시설에 좌표가 없어 거리를 낼 수 없는 경우다.
+            // 시설 자체가 없으면 여기서 404가 난다.
+            facility = facilityRepository.findById(facilityId)
+                    .orElseThrow(() -> new GeneralException(ErrorStatus.FACILITY4041));
+            distanceM = null;
+        } else {
+            facility = found.facility();
+            distanceM = Math.round(found.distanceMeter());
+        }
+
+        FacilityReviewAggregate aggregate = reviewRepository
+                .aggregateByFacilityId(facilityId, ReviewReportStatus.ACCEPTED)
+                .orElse(null);
+
+        // 인증이 필요한 API라 userId는 항상 있다.
+        List<Pet> myPets = petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(userId);
+
+        return FacilityConverter.toFacilityDetail(facility, distanceM, aggregate, myPets);
+    }
+
+    /**
+     * 위도와 경도는 함께 와야 한다. 하나만 보내는 것은 클라이언트 실수이므로 조용히 거리를
+     * 비우지 않고 400으로 알린다.
+     */
+    private void validateCoordinatePair(
+            Double latitude,
+            Double longitude
+    ) {
+        if (latitude == null && longitude == null) {
+            return;
+        }
+        if (latitude != null && longitude != null) {
+            return;
+        }
+
+        String missingField = latitude == null ? "latitude" : "longitude";
+        throw new GeneralException(
+                ErrorStatus.COMMON400,
+                Map.of(missingField, "위도와 경도는 함께 보내야 합니다.")
+        );
     }
 
     /**

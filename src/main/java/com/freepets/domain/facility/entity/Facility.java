@@ -182,6 +182,18 @@ public class Facility extends BaseEntity {
     // 우리 데이터 — 적재 배치가 건드리지 않는다
     // ------------------------------------------------------------------
 
+    /**
+     * 화면에 그대로 보여줄 동반 조건 안내문.
+     *
+     * <p>관광공사 원문({@code allowedAnimalText} 등)을 이어 붙여 만들지 않는다. 원문은 표현이
+     * 제각각이라 그대로 노출하면 잘못 읽히기 쉬워, 사람이 확인해 정리한 문장을 여기에 넣는다.
+     *
+     * <p>적재 배치가 건드리지 않는 우리 데이터다. {@code updateFromTourApi}에서 제외되어 있으므로
+     * 동기화가 다시 돌아도 지워지지 않는다.
+     */
+    @Column(name = "pet_condition_raw", columnDefinition = "TEXT")
+    private String petConditionRaw;
+
     @Column(name = "pet_score")
     private Integer petScore;
 

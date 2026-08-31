@@ -5,12 +5,17 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,8 +36,16 @@ import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.facility.repository.FacilityWithDistance;
+import com.freepets.domain.pet.entity.BreedSize;
+import com.freepets.domain.pet.entity.Kind;
+import com.freepets.domain.pet.entity.Pet;
+import com.freepets.domain.pet.repository.PetRepository;
+import com.freepets.domain.review.entity.ReviewReportStatus;
+import com.freepets.domain.review.repository.FacilityReviewAggregate;
 import com.freepets.domain.review.repository.FacilityReviewCount;
 import com.freepets.domain.review.repository.ReviewRepository;
+import com.freepets.global.apiPayload.code.status.ErrorStatus;
+import com.freepets.global.apiPayload.exception.GeneralException;
 
 @ExtendWith(MockitoExtension.class)
 class FacilityQueryServiceTest {
@@ -45,6 +58,9 @@ class FacilityQueryServiceTest {
 
     @Mock
     private ReviewRepository reviewRepository;
+
+    @Mock
+    private PetRepository petRepository;
 
     @InjectMocks
     private FacilityQueryService facilityQueryService;
@@ -295,5 +311,270 @@ class FacilityQueryServiceTest {
 
         assertThat(pageable.getValue().getPageNumber()).isZero();
         assertThat(pageable.getValue().getPageSize()).isEqualTo(15);
+    }
+
+    // ------------------------------------------------------------------
+    // 시설 상세 조회
+    // ------------------------------------------------------------------
+
+    private static final Long FACILITY_ID = 2L;
+    private static final Long USER_ID = 7L;
+
+    private Pet createPet(
+            Long petId,
+            String name,
+            Kind kind,
+            String weight
+    ) {
+        Pet pet = Pet.builder()
+                .name(name)
+                .kind(kind)
+                .species("말티즈")
+                .weight(new BigDecimal(weight))
+                .breedSize(BreedSize.SMALL)
+                .build();
+
+        ReflectionTestUtils.setField(pet, "petId", petId);
+        return pet;
+    }
+
+    private void givenNoPets() {
+        when(petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(USER_ID))
+                .thenReturn(List.of());
+    }
+
+    private void givenNoReviews() {
+        when(reviewRepository.aggregateByFacilityId(FACILITY_ID, ReviewReportStatus.ACCEPTED))
+                .thenReturn(Optional.empty());
+    }
+
+    private void givenFacilityAt(double distanceMeter) {
+        when(facilityRepository.findWithDistanceById(anyDouble(), anyDouble(), eq(FACILITY_ID)))
+                .thenReturn(Optional.of(new FacilityWithDistance(createFacility(FACILITY_ID), distanceMeter)));
+    }
+
+    private FacilityResponseDTO.FacilityDetail getDetailFromSeoul() {
+        return facilityQueryService.getFacilityDetail(
+                FACILITY_ID, USER_ID, SEOUL_LATITUDE, SEOUL_LONGITUDE);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 시설이면 FACILITY4041을 던진다")
+    void 존재하지_않는_시설이면_FACILITY4041을_던진다() {
+        when(facilityRepository.findWithDistanceById(anyDouble(), anyDouble(), eq(FACILITY_ID)))
+                .thenReturn(Optional.empty());
+        when(facilityRepository.findById(FACILITY_ID)).thenReturn(Optional.empty());
+
+        GeneralException exception = assertThrows(GeneralException.class, this::getDetailFromSeoul);
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.FACILITY4041);
+    }
+
+    @Test
+    @DisplayName("좌표를 보내면 거리를 미터 단위 정수로 반올림해 내려준다")
+    void 좌표를_보내면_거리를_미터_단위_정수로_반올림해_내려준다() {
+        givenFacilityAt(1200.6);
+        givenNoReviews();
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.distanceM()).isEqualTo(1201L);
+        assertThat(result.facilityId()).isEqualTo(FACILITY_ID);
+        assertThat(result.name()).isEqualTo("카페 파도살롱");
+    }
+
+    @Test
+    @DisplayName("좌표는 소수점 자리를 살리지 않고 내려준다")
+    void 좌표는_소수점_자리를_살리지_않고_내려준다() {
+        givenFacilityAt(100.0);
+        givenNoReviews();
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.latitude()).isEqualTo(37.8);
+        assertThat(result.longitude()).isEqualTo(128.9);
+    }
+
+    @Test
+    @DisplayName("좌표를 보내지 않으면 거리를 비우고 거리 쿼리도 하지 않는다")
+    void 좌표를_보내지_않으면_거리를_비우고_거리_쿼리도_하지_않는다() {
+        when(facilityRepository.findById(FACILITY_ID))
+                .thenReturn(Optional.of(createFacility(FACILITY_ID)));
+        givenNoReviews();
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result =
+                facilityQueryService.getFacilityDetail(FACILITY_ID, USER_ID, null, null);
+
+        assertThat(result.distanceM()).isNull();
+        verify(facilityRepository, never()).findWithDistanceById(anyDouble(), anyDouble(), any());
+    }
+
+    @Test
+    @DisplayName("좌표가 없는 시설이면 거리만 비우고 나머지는 채워서 내려준다")
+    void 좌표가_없는_시설이면_거리만_비우고_나머지는_채워서_내려준다() {
+        // 거리 쿼리가 좌표 없는 시설을 걸러내므로 결과가 비어 돌아온다.
+        when(facilityRepository.findWithDistanceById(anyDouble(), anyDouble(), eq(FACILITY_ID)))
+                .thenReturn(Optional.empty());
+        when(facilityRepository.findById(FACILITY_ID))
+                .thenReturn(Optional.of(createFacility(FACILITY_ID)));
+        givenNoReviews();
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.distanceM()).isNull();
+        assertThat(result.name()).isEqualTo("카페 파도살롱");
+    }
+
+    @Test
+    @DisplayName("위도와 경도 중 하나만 보내면 COMMON400을 던진다")
+    void 위도와_경도_중_하나만_보내면_COMMON400을_던진다() {
+        GeneralException exception = assertThrows(GeneralException.class, () ->
+                facilityQueryService.getFacilityDetail(FACILITY_ID, USER_ID, SEOUL_LATITUDE, null));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON400);
+        verifyNoInteractions(facilityRepository, reviewRepository, petRepository);
+    }
+
+    @Test
+    @DisplayName("리뷰가 없으면 평점은 내리지 않고 등급은 수집 중으로 내려준다")
+    void 리뷰가_없으면_평점은_내리지_않고_등급은_수집_중으로_내려준다() {
+        givenFacilityAt(100.0);
+        givenNoReviews();
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.ratings()).isNull();
+        assertThat(result.pawGrade().level()).isZero();
+        assertThat(result.pawGrade().label()).isEqualTo("리뷰 수집 중 (0/10)");
+    }
+
+    @Test
+    @DisplayName("리뷰 집계가 있으면 평점과 등급을 소수 한 자리로 채워서 내려준다")
+    void 리뷰_집계가_있으면_평점과_등급을_소수_한_자리로_채워서_내려준다() {
+        givenFacilityAt(100.0);
+        when(reviewRepository.aggregateByFacilityId(FACILITY_ID, ReviewReportStatus.ACCEPTED))
+                .thenReturn(Optional.of(new FacilityReviewAggregate(
+                        FACILITY_ID, 90L, 88.44, 4.53, 4.78, 4.21)));
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.ratings().score()).isEqualTo(88.4);
+        assertThat(result.ratings().spaceRating()).isEqualTo(4.5);
+        assertThat(result.ratings().customerService()).isEqualTo(4.8);
+        assertThat(result.ratings().amenitiesRating()).isEqualTo(4.2);
+        assertThat(result.pawGrade().level()).isEqualTo(4);
+        assertThat(result.pawGrade().label()).isEqualTo("동반 우수");
+    }
+
+    @Test
+    @DisplayName("등급 판정은 표시용으로 반올림하기 전 점수로 한다")
+    void 등급_판정은_표시용으로_반올림하기_전_점수로_한다() {
+        // 87.96은 표시용으로 88.0이 되지만 88점을 넘긴 적이 없으므로 한 단계 아래 등급이어야 한다.
+        givenFacilityAt(100.0);
+        when(reviewRepository.aggregateByFacilityId(FACILITY_ID, ReviewReportStatus.ACCEPTED))
+                .thenReturn(Optional.of(new FacilityReviewAggregate(
+                        FACILITY_ID, 90L, 87.96, 4.4, 4.4, 4.4)));
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.ratings().score()).isEqualTo(88.0);
+        assertThat(result.pawGrade().level()).isEqualTo(3);
+        assertThat(result.pawGrade().label()).isEqualTo("동반 추천");
+    }
+
+    @Test
+    @DisplayName("사용자의 반려동물을 조회 순서 그대로 내려준다")
+    void 사용자의_반려동물을_조회_순서_그대로_내려준다() {
+        givenFacilityAt(100.0);
+        givenNoReviews();
+        when(petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(USER_ID))
+                .thenReturn(List.of(
+                        createPet(1L, "몽이", Kind.DOG, "3.20"),
+                        createPet(2L, "나비", Kind.CAT, "4.10")
+                ));
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.pets()).hasSize(2);
+        assertThat(result.pets().get(0).petId()).isEqualTo(1L);
+        assertThat(result.pets().get(0).name()).isEqualTo("몽이");
+        assertThat(result.pets().get(0).weight()).isEqualByComparingTo("3.20");
+        assertThat(result.pets().get(1).name()).isEqualTo("나비");
+    }
+
+    @Test
+    @DisplayName("개와 고양이만 있으면 hasNonDogCatPet은 false다")
+    void 개와_고양이만_있으면_hasNonDogCatPet은_false다() {
+        givenFacilityAt(100.0);
+        givenNoReviews();
+        when(petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(USER_ID))
+                .thenReturn(List.of(
+                        createPet(1L, "몽이", Kind.DOG, "3.20"),
+                        createPet(2L, "나비", Kind.CAT, "4.10")
+                ));
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.hasNonDogCatPet()).isFalse();
+    }
+
+    @Test
+    @DisplayName("개와 고양이가 아닌 반려동물이 있으면 hasNonDogCatPet은 true다")
+    void 개와_고양이가_아닌_반려동물이_있으면_hasNonDogCatPet은_true다() {
+        givenFacilityAt(100.0);
+        givenNoReviews();
+        when(petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(USER_ID))
+                .thenReturn(List.of(
+                        createPet(1L, "몽이", Kind.DOG, "3.20"),
+                        createPet(3L, "초록이", Kind.PARROT, "0.40")
+                ));
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.hasNonDogCatPet()).isTrue();
+    }
+
+    @Test
+    @DisplayName("동반 조건 안내문은 전용 컬럼 값을 그대로 내려준다")
+    void 동반_조건_안내문은_전용_컬럼_값을_그대로_내려준다() {
+        Facility facility = createFacility(FACILITY_ID);
+        ReflectionTestUtils.setField(facility, "petConditionRaw", "10kg 이하 소형견에 한해 실내 입장이 가능합니다.");
+
+        // 관광공사 원문은 표현이 제각각이라 안내문으로 쓰지 않는다. 값이 달라도 섞이면 안 된다.
+        ReflectionTestUtils.setField(facility, "allowedAnimalText", "전 견종 동반 가능");
+        ReflectionTestUtils.setField(facility, "confirmedAt", LocalDateTime.of(2026, 7, 5, 0, 0));
+
+        when(facilityRepository.findWithDistanceById(anyDouble(), anyDouble(), eq(FACILITY_ID)))
+                .thenReturn(Optional.of(new FacilityWithDistance(facility, 100.0)));
+        givenNoReviews();
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.petConditionRaw()).isEqualTo("10kg 이하 소형견에 한해 실내 입장이 가능합니다.");
+        assertThat(result.confirmedAt()).isEqualTo(LocalDateTime.of(2026, 7, 5, 0, 0));
+    }
+
+    @Test
+    @DisplayName("안내문을 아직 채우지 않은 시설은 동반 조건을 비워서 내려준다")
+    void 안내문을_아직_채우지_않은_시설은_동반_조건을_비워서_내려준다() {
+        Facility facility = createFacility(FACILITY_ID);
+
+        // 관광공사 원문만 있는 상태다. 이걸 이어 붙여 안내문을 만들어내지 않는다.
+        ReflectionTestUtils.setField(facility, "allowedAnimalText", "전 견종 동반 가능");
+
+        when(facilityRepository.findWithDistanceById(anyDouble(), anyDouble(), eq(FACILITY_ID)))
+                .thenReturn(Optional.of(new FacilityWithDistance(facility, 100.0)));
+        givenNoReviews();
+        givenNoPets();
+
+        assertThat(getDetailFromSeoul().petConditionRaw()).isNull();
     }
 }

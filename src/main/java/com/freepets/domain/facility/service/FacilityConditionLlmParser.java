@@ -31,7 +31,11 @@ public class FacilityConditionLlmParser {
     // 스키마를 써야 해서 패키지 접근으로 열어둔다 — private로 막으면 배치 쪽에서 통째로
     // 복붙하게 되고, 둘이 갈라지면 동기 경로와 배치 경로의 파싱 결과가 서로 달라진다.
     static final String MODEL = "claude-haiku-4-5";
-    static final long MAX_TOKENS = 2048L;
+
+    // 2048이었을 때 실측 배치(832건 중 3건)에서 응답이 max_tokens 한도에 걸려 JSON이 채
+    // 끝나기 전에 잘렸다("Unexpected end-of-input in character escape sequence") — 원문이
+    // 유난히 긴 시설에서 구조화 출력이 2048 토큰을 넘어간 것으로 보인다. 여유를 두고 올린다.
+    static final long MAX_TOKENS = 4096L;
 
     /**
      * 관광공사 {@code acmpyTypeCd}의 두 원자값 중 하나. 실측 데이터 기준 이 값이면 구역 제한이

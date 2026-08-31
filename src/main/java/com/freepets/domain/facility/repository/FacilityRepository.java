@@ -107,6 +107,7 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
             @Param("facilityId") Long facilityId
     );
 
+    /**
      * {@code FacilityConditionLlmBatchService}가 배치 파싱 대상을 페이지 단위로 훑는 데 쓴다.
      * 처리된 행은 상태가 바뀌어 다음 조회에서 자연히 빠지므로, 항상 {@code Pageable.ofSize(N)}
      * (0페이지)로만 호출해도 전량을 순회할 수 있다.

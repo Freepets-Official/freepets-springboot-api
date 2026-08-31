@@ -216,6 +216,62 @@ tasks.register('facilityConditionParseSampleWithKeyword', Test) {
 	outputs.upToDateWhen { false }
 }
 
+// Batch API(#39)로 NOT_PROCESSED 전량을 한 번에 처리한다 — 시설마다 개별 호출하는
+// facilityConditionParse와 달리 배치 하나로 묶어 제출하고 끝날 때까지 대기한다(입력·출력
+// 토큰 50% 할인). 배치 처리 시간을 고려해 타임아웃을 넉넉히 둔다.
+// 실행: ./gradlew facilityConditionParseBatch
+tasks.register('facilityConditionParseBatch', Test) {
+	group = 'application'
+	description = 'NOT_PROCESSED 시설 전량을 Batch API로 파싱한다 (Claude API 호출, 50% 할인)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionLlmBatchApiRunner'
+	}
+
+	systemProperty 'facility.condition.parse.batch', 'true'
+
+	timeout = Duration.ofHours(21)
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+// facilityConditionParseBatch의 소규모 샘플 버전 — 전량 제출 전에 먼저 결과를 검증할 때 쓴다.
+// 실행: ./gradlew facilityConditionParseBatchSample -Plimit=10
+tasks.register('facilityConditionParseBatchSample', Test) {
+	group = 'application'
+	description = 'NOT_PROCESSED 시설 중 일부만 Batch API로 파싱한다 (Claude API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityConditionLlmBatchApiRunner'
+	}
+
+	systemProperty 'facility.condition.parse.batch', 'true'
+	systemProperty 'facility.condition.parse.batch.limit', (project.findProperty('limit') ?: '10')
+
+	timeout = Duration.ofHours(3)
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
+
 // AMBIGUOUS로 판정된 시설의 원문과 unmapped_condition_text를 나란히 출력한다 — 조회 전용,
 // LLM 호출·DB 쓰기 없음. facilityConditionParseSampleWithCondition으로 몇 건 처리해본 뒤
 // 그 결과가 실제로 타당한지 원문과 대조해볼 때 쓴다.

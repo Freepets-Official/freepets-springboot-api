@@ -78,6 +78,58 @@ class FacilityConditionLlmParseResultTest {
     }
 
     @Test
+    void unmappedConditionText에_템플릿_변수가_섞여있으면_할루시네이션으로_보고_PARSED() {
+        // 관측된 실패 사례(시설 5883): "10kg미만 소형견" 원문에 "{maxWeight}~10kg 미만"처럼
+        // 템플릿 변수 이름이 그대로 새어나온다. 한글이 섞여 있고 JSON 모양도 아니라 기존 두
+        // 필터를 둘 다 통과한다.
+        FacilityConditionExtraction extraction = new FacilityConditionExtraction(
+                new BigDecimal("10.0"), false, List.of(), List.of(), null, "{maxWeight}~10kg 미만"
+        );
+
+        FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
+
+        assertThat(result.status()).isEqualTo(PetConditionStatus.PARSED);
+        assertThat(result.unmappedConditionText()).isNull();
+    }
+
+    @Test
+    void partialAreaNote에_템플릿_변수가_섞여있으면_null로_버려진다() {
+        // partialAreaNote는 PetCheckJudgeService의 사용자 안내 문구에 그대로 노출되므로,
+        // 템플릿 변수 누출이 사용자에게 그대로 보이면 안 된다.
+        FacilityConditionExtraction extraction = new FacilityConditionExtraction(
+                new BigDecimal("10.0"), false, List.of(), List.of(), "{maxWeight}~10kg 미만 소형견", null
+        );
+
+        FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
+
+        assertThat(result.partialAreaNote()).isNull();
+    }
+
+    @Test
+    void partialAreaNote에_글자가_하나도_없으면_null로_버려진다() {
+        // 관측된 실패 사례(시설 5883, 템플릿 변수 방어 적용 후 재파싱): 구역 제한 언급이
+        // 없는 원문인데 "."(구두점 하나)만 채워넣었다. 원래 null이 정답인 자리다.
+        FacilityConditionExtraction extraction = new FacilityConditionExtraction(
+                null, false, List.of(), List.of(), ".", null
+        );
+
+        FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
+
+        assertThat(result.partialAreaNote()).isNull();
+    }
+
+    @Test
+    void partialAreaNote가_정상이면_그대로_유지된다() {
+        FacilityConditionExtraction extraction = new FacilityConditionExtraction(
+                null, false, List.of(), List.of(), "더테라스스위트 객실만 동반가능", null
+        );
+
+        FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
+
+        assertThat(result.partialAreaNote()).isEqualTo("더테라스스위트 객실만 동반가능");
+    }
+
+    @Test
     void unmappedConditionText에_한글이_섞여있으면_그대로_AMBIGUOUS() {
         // SNS, 24h처럼 영어/숫자가 섞여도 한글 원문 문구면 진짜 잔여 조건일 수 있으니 살린다.
         FacilityConditionExtraction extraction = new FacilityConditionExtraction(
@@ -104,10 +156,13 @@ class FacilityConditionLlmParseResultTest {
 
     @Test
     void ambiguousWithoutText는_AMBIGUOUS_상태와_전달한_텍스트를_그대로_반환() {
-        FacilityConditionLlmParseResult result =
-                FacilityConditionLlmParseResult.ambiguousWithoutText("일부구역 동반가능 — 구체적인 동반 가능 구역 설명 없음");
+        FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.ambiguousWithoutText(
+                "일부 구역에서만 동반 가능 — 세부 안내 없음, 방문 전 확인 필요",
+                "일부구역 동반가능 — 구체적인 동반 가능 구역 설명 없음"
+        );
 
         assertThat(result.status()).isEqualTo(PetConditionStatus.AMBIGUOUS);
+        assertThat(result.partialAreaNote()).isEqualTo("일부 구역에서만 동반 가능 — 세부 안내 없음, 방문 전 확인 필요");
         assertThat(result.unmappedConditionText()).isEqualTo("일부구역 동반가능 — 구체적인 동반 가능 구역 설명 없음");
         assertThat(result.maxWeight()).isNull();
         assertThat(result.requiredItems()).isEmpty();

@@ -53,6 +53,10 @@ class FacilityConditionLlmParserTest {
 
         assertThat(result.status()).isEqualTo(PetConditionStatus.AMBIGUOUS);
         assertThat(result.unmappedConditionText()).contains("일부구역 동반가능");
+        // partialAreaNote도 같이 채워야 한다 — PetCheckJudgeService는 petConditionStatus나
+        // unmappedConditionText를 안 읽고 partialAreaNote만 사용자 안내에 반영하므로, 이게
+        // 비어있으면 이 시설은 조용히 ALLOWED로 나가 "일부 구역만 가능하다"는 신호가 유실된다.
+        assertThat(result.partialAreaNote()).isNotBlank();
         verifyNoInteractions(anthropicClient);
     }
 }

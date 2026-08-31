@@ -103,6 +103,18 @@ class FacilityConditionLlmParseResultTest {
     }
 
     @Test
+    void ambiguousWithoutText는_AMBIGUOUS_상태와_전달한_텍스트를_그대로_반환() {
+        FacilityConditionLlmParseResult result =
+                FacilityConditionLlmParseResult.ambiguousWithoutText("일부구역 동반가능 — 구체적인 동반 가능 구역 설명 없음");
+
+        assertThat(result.status()).isEqualTo(PetConditionStatus.AMBIGUOUS);
+        assertThat(result.unmappedConditionText()).isEqualTo("일부구역 동반가능 — 구체적인 동반 가능 구역 설명 없음");
+        assertThat(result.maxWeight()).isNull();
+        assertThat(result.requiredItems()).isEmpty();
+        assertThat(result.dangerousBreedRequiredItems()).isEmpty();
+    }
+
+    @Test
     void noCondition은_NO_CONDITION_상태를_반환() {
         FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.noCondition();
 

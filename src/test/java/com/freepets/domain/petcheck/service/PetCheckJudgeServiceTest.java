@@ -167,6 +167,31 @@ class PetCheckJudgeServiceTest {
     }
 
     @Test
+    void 맹견_배제가_아니고_맹견_전용_요구조건이_있으면_맹견은_CONDITIONAL_이고_조건에_담긴다() {
+        // 원문 "맹견의 경우, 입마개 착용 필수"류(실측 685건) — 동반 자체는 되지만 조건이 붙는다.
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of());
+        ReflectionTestUtils.setField(facility, "dangerousBreedRequiredItems", "[\"입마개 착용\"]");
+        Pet pet = pet("두목", "로트와일러", "40.0", true, BreedSize.LARGE);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.CONDITIONAL, verdict.result());
+        assertTrue(verdict.conditions().contains("입마개 착용"));
+    }
+
+    @Test
+    void 맹견_전용_요구조건이_있어도_맹견이_아니면_조건에_안_담긴다() {
+        Facility facility = facility(PetAllowed.ALLOWED, null, List.of());
+        ReflectionTestUtils.setField(facility, "dangerousBreedRequiredItems", "[\"입마개 착용\"]");
+        Pet pet = pet("몽이", "말티즈", "3.2", true);
+
+        PetVerdict verdict = judgeService.judgePet(pet, facility);
+
+        assertEquals(PetCheckResult.ALLOWED, verdict.result());
+        assertTrue(verdict.conditions().isEmpty());
+    }
+
+    @Test
     void 거부_사유가_여러_개면_전부_한번에_담긴다() {
         Facility facility = facility(PetAllowed.ALLOWED, new BigDecimal("10.0"), List.of(Requirement.VACCINATION));
         ReflectionTestUtils.setField(facility, "isDangerousBreedExcluded", true);

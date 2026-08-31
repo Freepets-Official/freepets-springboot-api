@@ -29,6 +29,13 @@ public class FacilityConditionLlmParser {
     private static final String MODEL = "claude-haiku-4-5";
     private static final long MAX_TOKENS = 2048L;
 
+    /**
+     * 관광공사 {@code acmpyTypeCd}의 두 원자값 중 하나. 실측 데이터 기준 이 값이면 구역 제한이
+     * 없다는 뜻이라, 나머지 4종 원문이 전부 비어 있을 때 "조건 없음"으로 확정할 수 있다
+     * (PetConditionParser 클래스 주석 §"acmpyTypeCd가 2개뿐인 코드성 필드" 참고).
+     */
+    private static final String UNRESTRICTED_ACCOMPANY_TYPE = "전구역 동반가능";
+
     private static final String SYSTEM_PROMPT = """
             너는 반려동물 동반 여행지의 조건 원문을 구조화된 데이터로 변환하는 파서다.
             추측하지 말고 원문에 실제로 적힌 내용만 반영해라. 원문에 없는 조건을 만들어내지 마라.
@@ -60,8 +67,13 @@ public class FacilityConditionLlmParser {
             String etcAccompanyText,
             String accidentRiskText
     ) {
-        if (isAllBlank(accompanyType, allowedAnimalText, requiredMatterText, etcAccompanyText, accidentRiskText)) {
-            return FacilityConditionLlmParseResult.noCondition();
+        // accompanyType(동반구분)은 실측상 "전구역 동반가능"/"일부구역 동반가능" 두 값뿐인
+        // 코드성 필드라 그 자체로는 구조화할 실질 문장이 없다 — isAllBlank 판정에서 뺀다.
+        // 나머지 4종(동반가능동물·필수준비물·기타·사고대비)이 전부 비어 있으면 LLM을 부를
+        // 이유가 없다: 89.4%(약 8,687건, "전구역 동반가능")는 조건 없음이고, 나머지는
+        // accompanyType만으로 결정한다.
+        if (isAllBlank(allowedAnimalText, requiredMatterText, etcAccompanyText, accidentRiskText)) {
+            return resolveByAccompanyTypeOnly(accompanyType);
         }
 
         FacilityConditionExtraction extraction = extract(
@@ -128,5 +140,23 @@ public class FacilityConditionLlmParser {
             }
         }
         return true;
+    }
+
+    /**
+     * 나머지 4종이 전부 비어 있을 때 accompanyType만으로 상태를 기계적으로 정한다. 실측 데이터
+     * 기준 값은 두 종류뿐이다: "전구역 동반가능"(구역 제한 없음)이거나 "일부구역 동반가능"류
+     * (제한은 있는데 어느 구역인지 설명이 없음). 전자는 조건 없음, 후자는 사람이 확인해야 할
+     * 신호로 AMBIGUOUS에 남긴다 — LLM에 넘겨도 구조화할 실질 문장이 없어 호출하지 않는다.
+     */
+    private FacilityConditionLlmParseResult resolveByAccompanyTypeOnly(String accompanyType) {
+        String normalized = accompanyType == null ? "" : accompanyType.trim();
+
+        if (normalized.isEmpty() || normalized.equals(UNRESTRICTED_ACCOMPANY_TYPE)) {
+            return FacilityConditionLlmParseResult.noCondition();
+        }
+
+        return FacilityConditionLlmParseResult.ambiguousWithoutText(
+                normalized + " — 구체적인 동반 가능 구역 설명 없음"
+        );
     }
 }

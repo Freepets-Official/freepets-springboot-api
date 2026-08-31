@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.models.messages.MessageCreateParams;
+import com.anthropic.models.messages.OutputConfig;
 import com.anthropic.models.messages.StructuredMessageCreateParams;
 
 import lombok.RequiredArgsConstructor;
@@ -26,8 +27,11 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class FacilityConditionLlmParser {
 
-    private static final String MODEL = "claude-haiku-4-5";
-    private static final long MAX_TOKENS = 2048L;
+    // FacilityConditionLlmBatchApiService(#39)가 Batch API 요청을 만들 때도 동일한 모델·프롬프트·
+    // 스키마를 써야 해서 패키지 접근으로 열어둔다 — private로 막으면 배치 쪽에서 통째로
+    // 복붙하게 되고, 둘이 갈라지면 동기 경로와 배치 경로의 파싱 결과가 서로 달라진다.
+    static final String MODEL = "claude-haiku-4-5";
+    static final long MAX_TOKENS = 2048L;
 
     /**
      * 관광공사 {@code acmpyTypeCd}의 두 원자값 중 하나. 실측 데이터 기준 이 값이면 구역 제한이
@@ -36,7 +40,7 @@ public class FacilityConditionLlmParser {
      */
     private static final String UNRESTRICTED_ACCOMPANY_TYPE = "전구역 동반가능";
 
-    private static final String SYSTEM_PROMPT = """
+    static final String SYSTEM_PROMPT = """
             너는 반려동물 동반 여행지의 조건 원문을 구조화된 데이터로 변환하는 파서다.
             추측하지 말고 원문에 실제로 적힌 내용만 반영해라. 원문에 없는 조건을 만들어내지 마라.
             체중 상한처럼 숫자가 명시되지 않은 정성적 표현(예: "소형견만")은 컬럼에 숫자를 지어내지
@@ -107,7 +111,7 @@ public class FacilityConditionLlmParser {
                 .orElseThrow(() -> new IllegalStateException("Claude 응답에 구조화 결과가 없습니다."));
     }
 
-    private String buildUserMessage(
+    static String buildUserMessage(
             String accompanyType,
             String allowedAnimalText,
             String requiredMatterText,
@@ -129,8 +133,26 @@ public class FacilityConditionLlmParser {
         );
     }
 
-    private String nullToDash(String text) {
+    private static String nullToDash(String text) {
         return (text == null || text.isBlank()) ? "-" : text;
+    }
+
+    /**
+     * Batch API 요청(#39)에서 쓸 {@code OutputConfig}를 만든다. {@code outputConfig(Class)}는
+     * {@code StructuredMessageCreateParams.Builder}만 내주고 {@code OutputConfig} 자체를 직접
+     * 만드는 API는 없어서, 더미 값으로 정상적인 요청 하나를 만들어 그 안에서 꺼낸다 — 이렇게
+     * 뽑은 스키마는 요청마다 항상 동일하므로 배치 전체에서 한 번만 만들어 재사용하면 된다.
+     */
+    static OutputConfig buildOutputConfig() {
+        return MessageCreateParams.builder()
+                .model(MODEL)
+                .maxTokens(MAX_TOKENS)
+                .addUserMessage("placeholder")
+                .outputConfig(FacilityConditionExtraction.class)
+                .build()
+                .rawParams()
+                .outputConfig()
+                .orElseThrow(() -> new IllegalStateException("outputConfig 생성에 실패했습니다."));
     }
 
     private boolean isAllBlank(String... texts) {

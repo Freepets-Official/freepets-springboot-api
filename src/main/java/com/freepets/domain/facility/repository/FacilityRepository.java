@@ -161,6 +161,30 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
      */
     Slice<Facility> findByMaxWeightIsNotNull(Pageable pageable);
 
+    /**
+     * {@code FacilityConditionLlmBatchApiService}(#39)가 Batch API 제출 대상을 고를 때 쓴다.
+     * {@code FacilityConditionLlmParser.parse()}가 실제로 LLM을 호출하는 조건과 정확히
+     * 일치시켰다 — {@code petAllowed=DENIED}는 애초에 호출 안 하고(resolve() 참고),
+     * {@code accompanyType}은 실질 조건 문장이 없는 코드성 필드라 나머지 4종만 본다(그
+     * 필드만 있으면 파서가 LLM 호출 없이 기계적으로 처리한다). 이 조건과 어긋나면 제출
+     * 대상 수와 실제 호출 대상 수가 갈린다.
+     */
+    @Query("""
+            select facility from Facility facility
+            where facility.petConditionStatus = :petConditionStatus
+            and facility.petAllowed <> com.freepets.domain.facility.entity.PetAllowed.DENIED
+            and (
+                (facility.allowedAnimalText is not null and length(trim(facility.allowedAnimalText)) > 0) or
+                (facility.requiredMatterText is not null and length(trim(facility.requiredMatterText)) > 0) or
+                (facility.etcAccompanyText is not null and length(trim(facility.etcAccompanyText)) > 0) or
+                (facility.accidentRiskText is not null and length(trim(facility.accidentRiskText)) > 0)
+            )
+            """)
+    Slice<Facility> findRequiringLlmParse(
+            @Param("petConditionStatus") PetConditionStatus petConditionStatus,
+            Pageable pageable
+    );
+
     @Query(SELECT_WITH_DISTANCE + SEARCH_FILTER + ORDER_BY_DISTANCE)
     List<FacilityWithDistance> search(
             @Param("userLatitudeRadian") double userLatitudeRadian,

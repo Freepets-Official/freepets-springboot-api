@@ -96,10 +96,15 @@ public record FacilityConditionLlmParseResult(
 
     /**
      * partialAreaNote는 판별 결과(PetCheckJudgeService)의 사용자 안내 문구에 그대로 노출되므로,
-     * unmappedConditionText와 같은 템플릿 변수 누출({@code "{maxWeight}~10kg 미만 소형견"},
-     * 실측 시설 5883)이 그대로 사용자에게 보이면 안 된다. 이 필드는 unmappedConditionText와
-     * 달리 값이 있는 게 정상 케이스라 한글/JSON 필터는 적용하지 않고, 실제 한국어 조건
-     * 원문에 나올 일이 없는 중괄호 누출만 방어한다.
+     * 의미 없는 값이 그대로 사용자에게 보이면 안 된다. 두 가지를 막는다:
+     * <ul>
+     *   <li>템플릿 변수 누출({@code "{maxWeight}~10kg 미만 소형견"}, 실측 시설 5883)</li>
+     *   <li>글자가 하나도 없는 값(예: {@code "."} 하나만) — 시설 5883을 방어 코드 적용 후
+     *       재파싱했을 때 관측됨. 원문에 구역 제한 언급이 없으면 null이 정답인데, 그 대신
+     *       의미 없는 구두점 하나를 채워넣은 사례다.</li>
+     * </ul>
+     * 이 필드는 unmappedConditionText와 달리 값이 있는 게 정상 케이스라, "한글이 없으면
+     * 버린다"는 더 엄격한 필터 대신 "글자가 아예 없으면 버린다"는 느슨한 필터를 쓴다.
      */
     private static String sanitizePartialAreaNote(String rawText) {
         if (rawText == null || rawText.isBlank()) {
@@ -107,7 +112,14 @@ public record FacilityConditionLlmParseResult(
         }
 
         String trimmed = rawText.trim();
-        return containsTemplatePlaceholder(trimmed) ? null : rawText;
+        if (containsTemplatePlaceholder(trimmed) || hasNoLetters(trimmed)) {
+            return null;
+        }
+        return rawText;
+    }
+
+    private static boolean hasNoLetters(String text) {
+        return text.codePoints().noneMatch(Character::isLetter);
     }
 
     private static boolean containsTemplatePlaceholder(String text) {

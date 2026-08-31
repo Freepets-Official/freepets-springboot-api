@@ -106,6 +106,19 @@ class FacilityConditionLlmParseResultTest {
     }
 
     @Test
+    void partialAreaNote에_글자가_하나도_없으면_null로_버려진다() {
+        // 관측된 실패 사례(시설 5883, 템플릿 변수 방어 적용 후 재파싱): 구역 제한 언급이
+        // 없는 원문인데 "."(구두점 하나)만 채워넣었다. 원래 null이 정답인 자리다.
+        FacilityConditionExtraction extraction = new FacilityConditionExtraction(
+                null, false, List.of(), List.of(), ".", null
+        );
+
+        FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.fromExtraction(extraction);
+
+        assertThat(result.partialAreaNote()).isNull();
+    }
+
+    @Test
     void partialAreaNote가_정상이면_그대로_유지된다() {
         FacilityConditionExtraction extraction = new FacilityConditionExtraction(
                 null, false, List.of(), List.of(), "더테라스스위트 객실만 동반가능", null

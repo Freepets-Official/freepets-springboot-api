@@ -42,7 +42,8 @@ public record FacilityConditionExtraction(
         @JsonPropertyDescription(
                 "일부 구역에서만 동반 가능하다면 그 구역을 설명하는 문구(예: \"야외 테라스석에 한함\"). "
                         + "전 구역 동반 가능하거나 구역 제한 언급이 없으면 null. maxWeight 같은 다른 필드 "
-                        + "이름이나 값을 중괄호와 함께 참조하지 말고, 원문에 있는 문구만 그대로 옮긴다."
+                        + "이름이나 값을 중괄호와 함께 참조하지 말고, 원문에 있는 문구만 그대로 옮긴다. "
+                        + "\".\"이나 \"-\" 같은 의미 없는 구두점 하나로 채우지 말고, 채울 내용이 없으면 null이다."
         )
         String partialAreaNote,
 

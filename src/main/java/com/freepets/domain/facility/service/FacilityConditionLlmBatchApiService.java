@@ -3,8 +3,9 @@ package com.freepets.domain.facility.service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -33,6 +34,11 @@ import lombok.extern.slf4j.Slf4j;
  * 같지만, 시설마다 개별 호출하는 대신 전량을 하나의 배치로 제출해 입력·출력 토큰을 50%
  * 할인받는다 — 실시간 응답이 필요 없는 순수 백그라운드 작업이라 이 할인에 맞는 경우다.
  *
+ * <p>{@code pet_condition_hash}(원문 5종 필드의 해시)가 같은 시설은 원문이 완전히 동일해
+ * {@link FacilityConditionLlmParser}의 결과도 항상 같다 — 같은 조건 문장을 쓰는 시설이 많아서
+ * (docs/03 3장), 해시가 같은 시설을 묶어 요청 하나만 보내고 결과를 그룹 전체에 적용한다.
+ * 시설 수만큼이 아니라 고유 해시 수만큼만 Claude를 호출한다.
+ *
  * <p>대상 선정은 {@link FacilityRepository#findRequiringLlmParse}가 담당하고, 프롬프트·모델·
  * 구조화 출력 스키마·maxWeight 방어 로직은 {@link FacilityConditionLlmParser}와
  * {@link FacilityConditionGuard}를 그대로 재사용한다 — 동기 경로와 결과가 갈리면 안 된다.
@@ -60,10 +66,11 @@ public class FacilityConditionLlmBatchApiService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * 대상 시설을 전부 모아 배치 하나로 제출하고, 끝날 때까지 기다린 뒤 결과를 저장한다.
+     * 대상 시설을 전부 모아 조건 해시로 묶은 뒤, 고유 해시 수만큼만 배치로 제출하고 끝날
+     * 때까지 기다려 결과를 그룹 전체에 적용한다.
      *
-     * <p>{@code limit}이 있으면 그만큼만 모아서 제출한다 — 전량 실행 전에 소규모로 먼저
-     * 검증할 때 쓴다({@code facilityConditionParseBatchSample} 태스크).
+     * <p>{@code limit}이 있으면 그만큼만(시설 수 기준) 모아서 제출한다 — 전량 실행 전에
+     * 소규모로 먼저 검증할 때 쓴다({@code facilityConditionParseBatchSample} 태스크).
      */
     public FacilityConditionLlmBatchApiResult run(int limit) {
         FacilityConditionLlmBatchApiResult result = new FacilityConditionLlmBatchApiResult();
@@ -74,15 +81,20 @@ public class FacilityConditionLlmBatchApiService {
             return result;
         }
 
-        log.info("배치 제출 대상 {}건을 모았습니다.", targets.size());
-        String batchId = submit(targets);
+        Map<String, List<Facility>> groupedByHash = groupByConditionHash(targets);
+        log.info(
+                "배치 제출 대상 {}건을 모았습니다 — 조건 해시 기준 {}건으로 묶어서 제출합니다.",
+                targets.size(), groupedByHash.size()
+        );
+
+        String batchId = submit(groupedByHash);
         result.addSubmitted(targets.size());
         log.info("배치를 제출했습니다. batchId={}", batchId);
 
         MessageBatch finished = waitUntilEnded(batchId);
         log.info("배치 처리가 끝났습니다. requestCounts={}", finished.requestCounts());
 
-        applyResults(batchId, result);
+        applyResults(batchId, groupedByHash, result);
         log.info("배치 결과 적용을 마쳤습니다. {}", result.summary());
         return result;
     }
@@ -108,12 +120,35 @@ public class FacilityConditionLlmBatchApiService {
         return targets;
     }
 
-    private String submit(List<Facility> facilities) {
+    /**
+     * {@code pet_condition_hash}로 묶는다. 원문 5종 필드가 전부 같아야 같은 해시가 나오므로
+     * ({@code TourApiFacilityConverter#hashOf}), 같은 그룹의 시설은 파싱 결과도 항상 같다.
+     *
+     * <p>해시가 없는 시설(이론상 나올 일이 없다 — 대상 선정 자체가 원문이 있는 시설만 고른다)은
+     * 안전하게 시설 ID로 자기만의 그룹을 만든다. null을 그대로 묶는 키로 쓰면 서로 다른
+     * 원문의 시설이 우연히 한 그룹으로 섞일 수 있다.
+     */
+    private Map<String, List<Facility>> groupByConditionHash(List<Facility> targets) {
+        Map<String, List<Facility>> grouped = new LinkedHashMap<>();
+        for (Facility facility : targets) {
+            grouped.computeIfAbsent(groupKeyOf(facility), key -> new ArrayList<>()).add(facility);
+        }
+        return grouped;
+    }
+
+    private String groupKeyOf(Facility facility) {
+        String hash = facility.getPetConditionHash();
+        return (hash != null && !hash.isBlank()) ? hash : "facility:" + facility.getFacilityId();
+    }
+
+    private String submit(Map<String, List<Facility>> groupedByHash) {
         OutputConfig outputConfig = FacilityConditionLlmParser.buildOutputConfig();
 
         BatchCreateParams.Builder builder = BatchCreateParams.builder();
-        for (Facility facility : facilities) {
-            builder.addRequest(requestFor(facility, outputConfig));
+        for (Map.Entry<String, List<Facility>> entry : groupedByHash.entrySet()) {
+            // 같은 그룹의 시설은 원문이 전부 동일하므로, 대표로 첫 시설의 원문만 보내면 된다.
+            Facility representative = entry.getValue().get(0);
+            builder.addRequest(requestFor(entry.getKey(), representative, outputConfig));
         }
 
         MessageBatch batch = anthropicClient.messages().batches().create(builder.build());
@@ -121,19 +156,20 @@ public class FacilityConditionLlmBatchApiService {
     }
 
     private BatchCreateParams.Request requestFor(
-            Facility facility,
+            String groupKey,
+            Facility representative,
             OutputConfig outputConfig
     ) {
         String userMessage = FacilityConditionLlmParser.buildUserMessage(
-                facility.getAccompanyType(),
-                facility.getAllowedAnimalText(),
-                facility.getRequiredMatterText(),
-                facility.getEtcAccompanyText(),
-                facility.getAccidentRiskText()
+                representative.getAccompanyType(),
+                representative.getAllowedAnimalText(),
+                representative.getRequiredMatterText(),
+                representative.getEtcAccompanyText(),
+                representative.getAccidentRiskText()
         );
 
         return BatchCreateParams.Request.builder()
-                .customId(String.valueOf(facility.getFacilityId()))
+                .customId(groupKey)
                 .params(BatchCreateParams.Request.Params.builder()
                         .model(FacilityConditionLlmParser.MODEL)
                         .maxTokens(FacilityConditionLlmParser.MAX_TOKENS)
@@ -179,58 +215,61 @@ public class FacilityConditionLlmBatchApiService {
 
     private void applyResults(
             String batchId,
+            Map<String, List<Facility>> groupedByHash,
             FacilityConditionLlmBatchApiResult result
     ) {
         try (StreamResponse<MessageBatchIndividualResponse> stream =
                 anthropicClient.messages().batches().resultsStreaming(batchId)) {
-            stream.stream().forEach(response -> applyOne(response, result));
+            stream.stream().forEach(response -> applyOne(response, groupedByHash, result));
         }
     }
 
+    /**
+     * 응답 하나(그룹 하나)를 파싱해서 같은 조건 해시를 공유하는 시설 전부에 적용한다 — 원문이
+     * 동일하므로 파싱 결과도 그룹 내 모든 시설에 그대로 유효하다.
+     */
     private void applyOne(
             MessageBatchIndividualResponse response,
+            Map<String, List<Facility>> groupedByHash,
             FacilityConditionLlmBatchApiResult result
     ) {
-        Long facilityId;
-        try {
-            facilityId = Long.valueOf(response.customId());
-        } catch (NumberFormatException exception) {
-            log.warn("배치 결과의 customId가 시설 ID 형식이 아닙니다: {}", response.customId());
+        List<Facility> group = groupedByHash.get(response.customId());
+        if (group == null || group.isEmpty()) {
+            log.warn("배치 결과의 customId에 해당하는 시설 그룹을 찾을 수 없습니다: {}", response.customId());
             result.addFailed();
             return;
         }
 
-        Optional<Facility> maybeFacility = facilityRepository.findById(facilityId);
-        if (maybeFacility.isEmpty()) {
-            log.warn("배치 결과에 해당하는 시설을 찾을 수 없습니다. facilityId={}", facilityId);
-            result.addFailed();
-            return;
-        }
-        Facility facility = maybeFacility.get();
-
         try {
-            FacilityConditionLlmParseResult parsed = parse(response.result(), facility);
+            FacilityConditionLlmParseResult parsed = parse(response.result(), group.get(0));
 
-            facility.applyParsedCondition(
-                    parsed.status(),
-                    parsed.maxWeight(),
-                    parsed.isDangerousBreedExcluded(),
-                    parsed.requiredItems(),
-                    parsed.dangerousBreedRequiredItems(),
-                    parsed.partialAreaNote(),
-                    parsed.unmappedConditionText()
-            );
-            facilityRepository.save(facility);
-            result.addApplied(parsed.status());
+            for (Facility facility : group) {
+                facility.applyParsedCondition(
+                        parsed.status(),
+                        parsed.maxWeight(),
+                        parsed.isDangerousBreedExcluded(),
+                        parsed.requiredItems(),
+                        parsed.dangerousBreedRequiredItems(),
+                        parsed.partialAreaNote(),
+                        parsed.unmappedConditionText()
+                );
+                facilityRepository.save(facility);
+                result.addApplied(parsed.status());
+            }
         } catch (Exception exception) {
-            log.warn("시설 {} 배치 결과 적용 실패 — 건너뜁니다: {}", facilityId, exception.getMessage());
-            result.addFailed();
+            log.warn(
+                    "그룹 {}(시설 {}건) 배치 결과 적용 실패 — 건너뜁니다: {}",
+                    response.customId(), group.size(), exception.getMessage()
+            );
+            for (int i = 0; i < group.size(); i++) {
+                result.addFailed();
+            }
         }
     }
 
     private FacilityConditionLlmParseResult parse(
             MessageBatchResult batchResult,
-            Facility facility
+            Facility representative
     ) throws Exception {
         if (!batchResult.isSucceeded()) {
             throw new IllegalStateException("배치 개별 요청이 실패했습니다: " + batchResult);
@@ -246,7 +285,7 @@ public class FacilityConditionLlmBatchApiService {
         FacilityConditionExtraction extraction = objectMapper.readValue(json, FacilityConditionExtraction.class);
         FacilityConditionLlmParseResult parsed = FacilityConditionLlmParseResult.fromExtraction(extraction);
 
-        return FacilityConditionGuard.apply(facility, parsed);
+        return FacilityConditionGuard.apply(representative, parsed);
     }
 
 }

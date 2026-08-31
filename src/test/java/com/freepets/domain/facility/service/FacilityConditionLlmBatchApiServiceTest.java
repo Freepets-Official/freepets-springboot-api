@@ -90,10 +90,43 @@ class FacilityConditionLlmBatchApiServiceTest {
 
         assertThat(result.getSubmitted()).isEqualTo(2);
         assertThat(paramsCaptor.getValue().requests()).hasSize(2);
+        // petConditionHash를 안 채운 시설끼리는 서로 다른 그룹으로 취급돼 "facility:{id}"로
+        // 각자 자기 ID를 쓴다 — 해시가 같은 경우의 묶음 동작은 별도 테스트에서 확인한다.
         assertThat(paramsCaptor.getValue().requests())
                 .extracting(request -> request.customId())
-                .containsExactlyInAnyOrder("1", "2");
+                .containsExactlyInAnyOrder("facility:1", "facility:2");
         verify(batchService).create(any(BatchCreateParams.class));
+    }
+
+    @Test
+    void 조건_해시가_같은_시설은_요청_하나로_묶어_제출한다() {
+        // 원문(5종 필드)이 완전히 같으면 pet_condition_hash도 같다 — 파싱 결과가 항상 같을 걸
+        // 알면서 시설마다 따로 호출하면 API 비용만 늘어난다.
+        Facility facility1 = facility(1L, "SAME_HASH");
+        Facility facility2 = facility(2L, "SAME_HASH");
+        Facility facility3 = facility(3L, "DIFFERENT_HASH");
+
+        when(facilityRepository.findRequiringLlmParse(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of(facility1, facility2, facility3)));
+
+        when(anthropicClient.messages()).thenReturn(messageService);
+        when(messageService.batches()).thenReturn(batchService);
+
+        ArgumentCaptor<BatchCreateParams> paramsCaptor = ArgumentCaptor.forClass(BatchCreateParams.class);
+        when(batchService.create(paramsCaptor.capture())).thenReturn(endedBatch("batch_test", 2));
+        when(batchService.retrieve(anyString())).thenReturn(endedBatch("batch_test", 2));
+
+        StreamResponse<MessageBatchIndividualResponse> emptyStream = mockEmptyStream();
+        when(batchService.resultsStreaming(anyString())).thenReturn(emptyStream);
+
+        FacilityConditionLlmBatchApiResult result = facilityConditionLlmBatchApiService.run(Integer.MAX_VALUE);
+
+        // 제출 집계는 시설 수 기준(3)이지만, 실제로 나간 요청은 고유 해시 수만큼(2)이어야 한다.
+        assertThat(result.getSubmitted()).isEqualTo(3);
+        assertThat(paramsCaptor.getValue().requests()).hasSize(2);
+        assertThat(paramsCaptor.getValue().requests())
+                .extracting(request -> request.customId())
+                .containsExactlyInAnyOrder("SAME_HASH", "DIFFERENT_HASH");
     }
 
     @Test
@@ -157,6 +190,15 @@ class FacilityConditionLlmBatchApiServiceTest {
                 .allowedAnimalText("전 견종 동반 가능")
                 .build();
         org.springframework.test.util.ReflectionTestUtils.setField(facility, "facilityId", facilityId);
+        return facility;
+    }
+
+    private Facility facility(
+            Long facilityId,
+            String petConditionHash
+    ) {
+        Facility facility = facility(facilityId);
+        org.springframework.test.util.ReflectionTestUtils.setField(facility, "petConditionHash", petConditionHash);
         return facility;
     }
 }

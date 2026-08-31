@@ -183,7 +183,12 @@ public class FacilityConditionLlmParser {
             return FacilityConditionLlmParseResult.noCondition();
         }
 
+        // partialAreaNote도 같이 채운다 — 안 채우면 이 시설이 PetCheckJudgeService의
+        // 사용자 안내(applicableConditions)에 전혀 안 잡히고 조용히 ALLOWED로 나간다.
+        // petConditionStatus/unmappedConditionText는 PetCheckJudgeService가 안 읽으므로
+        // AMBIGUOUS로 남겨두는 것만으로는 사용자에게 아무 신호가 안 간다.
         return FacilityConditionLlmParseResult.ambiguousWithoutText(
+                "일부 구역에서만 동반 가능 — 세부 안내 없음, 방문 전 확인 필요",
                 normalized + " — 구체적인 동반 가능 구역 설명 없음"
         );
     }

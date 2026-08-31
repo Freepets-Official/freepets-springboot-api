@@ -156,10 +156,13 @@ class FacilityConditionLlmParseResultTest {
 
     @Test
     void ambiguousWithoutText는_AMBIGUOUS_상태와_전달한_텍스트를_그대로_반환() {
-        FacilityConditionLlmParseResult result =
-                FacilityConditionLlmParseResult.ambiguousWithoutText("일부구역 동반가능 — 구체적인 동반 가능 구역 설명 없음");
+        FacilityConditionLlmParseResult result = FacilityConditionLlmParseResult.ambiguousWithoutText(
+                "일부 구역에서만 동반 가능 — 세부 안내 없음, 방문 전 확인 필요",
+                "일부구역 동반가능 — 구체적인 동반 가능 구역 설명 없음"
+        );
 
         assertThat(result.status()).isEqualTo(PetConditionStatus.AMBIGUOUS);
+        assertThat(result.partialAreaNote()).isEqualTo("일부 구역에서만 동반 가능 — 세부 안내 없음, 방문 전 확인 필요");
         assertThat(result.unmappedConditionText()).isEqualTo("일부구역 동반가능 — 구체적인 동반 가능 구역 설명 없음");
         assertThat(result.maxWeight()).isNull();
         assertThat(result.requiredItems()).isEmpty();

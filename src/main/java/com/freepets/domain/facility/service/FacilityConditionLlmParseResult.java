@@ -30,10 +30,18 @@ public record FacilityConditionLlmParseResult(
      * LLM을 부르지 않고 AMBIGUOUS로 확정한다. {@link FacilityConditionLlmParser}가 accompanyType
      * 하나만으로("일부구역 동반가능"인데 설명이 없는 경우) 판단할 때 쓴다 — 구조화할 실질
      * 문장이 없으니 호출할 이유가 없지만, 조건 없음으로 단정하면 안 되는 경우다.
+     *
+     * <p>partialAreaNote를 같이 받는다 — {@code PetCheckJudgeService}는 petConditionStatus나
+     * unmappedConditionText를 읽지 않고 partialAreaNote만 사용자 안내에 반영하므로, 이걸
+     * 비워두면 이 시설은 조용히 ALLOWED로 나가고 "일부 구역만 가능하다"는 신호 자체가
+     * 사용자에게 전혀 전달되지 않는다.
      */
-    public static FacilityConditionLlmParseResult ambiguousWithoutText(String unmappedConditionText) {
+    public static FacilityConditionLlmParseResult ambiguousWithoutText(
+            String partialAreaNote,
+            String unmappedConditionText
+    ) {
         return new FacilityConditionLlmParseResult(
-                PetConditionStatus.AMBIGUOUS, null, false, List.of(), List.of(), null, unmappedConditionText
+                PetConditionStatus.AMBIGUOUS, null, false, List.of(), List.of(), partialAreaNote, unmappedConditionText
         );
     }
 

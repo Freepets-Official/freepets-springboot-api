@@ -21,6 +21,10 @@ import lombok.RequiredArgsConstructor;
 @Transactional(readOnly = true)
 public class PetCheckQueryService {
 
+    // FacilityRequestDTO의 페이지 크기 상한(100)과 맞춘다 — 상한이 없으면 limit을 크게 보내는
+    // 요청 하나로 DB가 한 번에 큰 결과 집합을 만들게 할 수 있다.
+    private static final int MAX_LIMIT = 100;
+
     private final PetCheckRepository petCheckRepository;
 
     // GET /api/v1/pet-checks — 내 판별 이력(최신순). facilityId로 필터 가능.
@@ -33,6 +37,17 @@ public class PetCheckQueryService {
     ) {
         if (limit <= 0) {
             throw new GeneralException(ErrorStatus.COMMON400, Map.of("limit", "1 이상이어야 합니다."));
+        }
+        if (limit > MAX_LIMIT) {
+            throw new GeneralException(ErrorStatus.COMMON400, Map.of("limit", MAX_LIMIT + " 이하여야 합니다."));
+        }
+        if (offset < 0) {
+            throw new GeneralException(ErrorStatus.COMMON400, Map.of("offset", "0 이상이어야 합니다."));
+        }
+        // offset이 limit의 배수라는 가정(위 주석)이 깨지면 PageRequest.of가 잘못된 페이지로
+        // 조용히 내림 계산해버려서 호출자가 알아챌 방법이 없다 — 가정이 어긋났다는 걸 명시적으로 알린다.
+        if (offset % limit != 0) {
+            throw new GeneralException(ErrorStatus.COMMON400, Map.of("offset", "limit의 배수여야 합니다."));
         }
 
         PageRequest pageRequest = PageRequest.of(offset / limit, limit);

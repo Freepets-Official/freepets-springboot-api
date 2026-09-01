@@ -80,8 +80,8 @@ public class PetCheckCommandService {
             throw new GeneralException(ErrorStatus.PET4001);
         }
 
-        boolean ownsAll = pets.stream().allMatch(pet -> pet.isOwnedBy(userId));
-        if (!ownsAll) {
+        boolean isAllOwnedByUser = pets.stream().allMatch(pet -> pet.isOwnedBy(userId));
+        if (!isAllOwnedByUser) {
             throw new GeneralException(ErrorStatus.PET4002);
         }
 

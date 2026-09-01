@@ -67,6 +67,32 @@ class CourseAssemblyServiceTest {
         assertThat(result).extracting(Facility::getFacilityId).containsExactly(1L, 3L, 2L);
     }
 
+    @Test
+    void 카테고리_다양성_미적용_조립은_같은_카테고리도_전부_남긴다() {
+        // preset의 "애견 카페" 테마처럼 후보가 전부 같은 카테고리(CAFE)인 경우.
+        Facility cafeA = facility(1L, "카페A", FacilityCategory.CAFE, "37.0", "128.0");
+        Facility cafeB = facility(2L, "카페B", FacilityCategory.CAFE, "37.001", "128.001");
+        Facility cafeC = facility(3L, "카페C", FacilityCategory.CAFE, "37.002", "128.002");
+
+        List<Facility> result = courseAssemblyService.assembleWithoutCategoryDiversity(
+                List.of(cafeA, cafeB, cafeC), 4
+        );
+
+        assertThat(result).extracting(Facility::getFacilityId).containsExactlyInAnyOrder(1L, 2L, 3L);
+    }
+
+    @Test
+    void 카테고리_다양성_미적용_조립도_limit은_지킨다() {
+        Facility cafeA = facility(1L, "카페A", FacilityCategory.CAFE, "37.0", "128.0");
+        Facility cafeB = facility(2L, "카페B", FacilityCategory.CAFE, "37.001", "128.001");
+
+        List<Facility> result = courseAssemblyService.assembleWithoutCategoryDiversity(
+                List.of(cafeA, cafeB), 1
+        );
+
+        assertThat(result).hasSize(1);
+    }
+
     private Facility facility(
             Long facilityId,
             String name,

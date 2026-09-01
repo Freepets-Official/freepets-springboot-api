@@ -10,7 +10,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.freepets.domain.course.dto.CourseResponseDTO;
+import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.course.service.CourseLikedService;
+import com.freepets.domain.course.service.CoursePresetService;
 import com.freepets.domain.course.service.CourseSimilarService;
 import com.freepets.global.apiPayload.ApiResponse;
 
@@ -27,6 +29,19 @@ public class CourseController {
 
     private final CourseLikedService courseLikedService;
     private final CourseSimilarService courseSimilarService;
+    private final CoursePresetService coursePresetService;
+
+    // 로그인 불필요 — 유일하게 인증 없이 쓸 수 있는 코스 모드(07-courses.md 참고).
+    @GetMapping("/preset")
+    public ApiResponse<CourseResponseDTO.PresetCourseResult> getPresetCourse(
+            @RequestParam @NotEmpty(message = "지역을 선택해주세요.") String sido,
+            @RequestParam(required = false) String sigungu,
+            @RequestParam CourseTheme theme
+    ) {
+        return ApiResponse.onSuccess(
+                coursePresetService.getPreset(sido, sigungu, theme)
+        );
+    }
 
     @GetMapping("/liked")
     public ApiResponse<CourseResponseDTO.LikedCourseResult> getLikedCourse(

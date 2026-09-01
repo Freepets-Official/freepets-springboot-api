@@ -28,12 +28,29 @@ public class CourseAssemblyService {
      *                                  없는 시설은 최근접-이웃 재정렬을 할 수 없어 조립 전에 제외한다.
      */
     public List<Facility> assemble(List<Facility> candidatesScoreDescSorted) {
-        List<Facility> withCoordinates = candidatesScoreDescSorted.stream()
+        List<Facility> selected = pickTopPerCategory(withCoordinatesOnly(candidatesScoreDescSorted));
+        return reorderByNearestNeighbor(selected);
+    }
+
+    /**
+     * {@code preset}용 — 카테고리 다양성 규칙을 적용하지 않는다. "강릉 애견 카페 반나절 코스"처럼
+     * 같은 카테고리(카페)로만 채워지는 테마 코스가 있어서, liked/similar와 달리 카테고리당 1곳
+     * 제한을 걸면 안 된다. 점수 desc 순서로 상위 {@code limit}개를 그대로 뽑고 동선만 재정렬한다.
+     */
+    public List<Facility> assembleWithoutCategoryDiversity(
+            List<Facility> candidatesScoreDescSorted,
+            int limit
+    ) {
+        List<Facility> selected = withCoordinatesOnly(candidatesScoreDescSorted).stream()
+                .limit(limit)
+                .toList();
+        return reorderByNearestNeighbor(selected);
+    }
+
+    private List<Facility> withCoordinatesOnly(List<Facility> candidates) {
+        return candidates.stream()
                 .filter(facility -> facility.getLat() != null && facility.getLng() != null)
                 .toList();
-
-        List<Facility> selected = pickTopPerCategory(withCoordinates);
-        return reorderByNearestNeighbor(selected);
     }
 
     /** 앞에서부터(=점수 높은 순) 순회하며 카테고리별로 처음 만나는(=그 카테고리 최고점) 1곳만 채택. */

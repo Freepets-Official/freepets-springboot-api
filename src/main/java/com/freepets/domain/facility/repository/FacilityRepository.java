@@ -91,6 +91,24 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
             Collection<FacilityCategory> categories
     );
 
+    /**
+     * {@code GET /api/v1/courses/preset} 배치가 지역×테마 후보를 뽑을 때 쓴다. {@code sigungu}가
+     * 없으면 {@code sido} 전체를 대상으로 한다 — 파라미터가 null이면 그 조건은 무시된다.
+     */
+    @Query("""
+            select facility from Facility facility
+            where facility.isActive = true
+            and facility.petAllowed <> com.freepets.domain.facility.entity.PetAllowed.DENIED
+            and facility.sido = :sido
+            and (:sigungu is null or facility.sigungu = :sigungu)
+            and facility.category in :categories
+            """)
+    List<Facility> findPresetCandidates(
+            @Param("sido") String sido,
+            @Param("sigungu") String sigungu,
+            @Param("categories") Collection<FacilityCategory> categories
+    );
+
     Optional<Facility> findByContentId(String contentId);
 
     List<Facility> findByContentIdIn(Collection<String> contentIds);

@@ -46,4 +46,24 @@ public class CourseResponseDTO {
             String reason
     ) {}
 
+    // GET /api/v1/courses/preset 응답.
+    public record PresetCourseResult(
+            Long courseId,
+            String title,
+            List<PresetStop> stops
+    ) {}
+
+    public record PresetStop(
+            Long facilityId,
+            String name,
+            FacilityCategory category,
+            double score,
+
+            /**
+             * 코스 첫 스톱으로부터의 거리(m). GPS/지역 좌표 같은 별도 기준점 입력이 없어, 이
+             * 코스 동선의 시작점을 기준점으로 삼는다 — 첫 스톱 자신은 항상 0.
+             */
+            double distanceM
+    ) {}
+
 }

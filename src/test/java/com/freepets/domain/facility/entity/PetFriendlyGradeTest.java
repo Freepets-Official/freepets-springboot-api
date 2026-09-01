@@ -24,7 +24,7 @@ class PetFriendlyGradeTest {
     })
     @DisplayName("점수와 리뷰 수가 기준을 정확히 만족하면 해당 등급이 된다")
     void 점수와_리뷰_수가_기준을_정확히_만족하면_해당_등급이_된다(
-            int petScore,
+            double petScore,
             long reviewCount,
             String expectedLabel
     ) {
@@ -34,13 +34,13 @@ class PetFriendlyGradeTest {
     @Test
     @DisplayName("점수가 한 단계 모자라면 아래 등급으로 내려간다")
     void 점수가_한_단계_모자라면_아래_등급으로_내려간다() {
-        assertThat(PetFriendlyGrade.labelOf(93, 150)).isEqualTo("동반 우수");
+        assertThat(PetFriendlyGrade.labelOf(93.0, 150)).isEqualTo("동반 우수");
     }
 
     @Test
     @DisplayName("점수가 충분해도 리뷰 수가 모자라면 아래 등급으로 내려간다")
     void 점수가_충분해도_리뷰_수가_모자라면_아래_등급으로_내려간다() {
-        assertThat(PetFriendlyGrade.labelOf(94, 149)).isEqualTo("동반 우수");
+        assertThat(PetFriendlyGrade.labelOf(94.0, 149)).isEqualTo("동반 우수");
     }
 
     @ParameterizedTest
@@ -51,11 +51,18 @@ class PetFriendlyGradeTest {
     })
     @DisplayName("가장 낮은 등급에도 못 미치면 등급을 주지 않는다")
     void 가장_낮은_등급에도_못_미치면_등급을_주지_않는다(
-            int petScore,
+            double petScore,
             long reviewCount
     ) {
         assertThat(PetFriendlyGrade.of(petScore, reviewCount)).isNull();
         assertThat(PetFriendlyGrade.labelOf(petScore, reviewCount)).isNull();
+    }
+
+    @Test
+    @DisplayName("소수점이 살아 있어 반올림으로 등급이 올라가지 않는다")
+    void 소수점이_살아_있어_반올림으로_등급이_올라가지_않는다() {
+        // 87.96은 표시할 때 88.0으로 반올림되지만, 88점이 기준인 4등급에는 못 미친다.
+        assertThat(PetFriendlyGrade.labelOf(87.96, 90)).isEqualTo("동반 추천");
     }
 
     @Test

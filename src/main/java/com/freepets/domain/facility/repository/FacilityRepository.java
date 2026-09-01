@@ -14,6 +14,7 @@ import org.springframework.data.repository.query.Param;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
+import com.freepets.domain.facility.entity.PetFriendlyGrade;
 import com.freepets.domain.facility.entity.PetConditionStatus;
 
 public interface FacilityRepository extends JpaRepository<Facility, Long> {
@@ -79,6 +80,42 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
      * LIMIT/OFFSET 페이징에서 같은 시설이 두 페이지에 나오거나 아예 빠질 수 있다.
      */
     String ORDER_BY_DISTANCE = "order by " + DISTANCE_METER + ", facility.facilityId";
+
+    /**
+     * 발자국 랭킹 대상 조건.
+     *
+     * <p>등급을 받은 시설만 노출한다(기능명세서 F3-3). 등급 판정은 리뷰가 바뀔 때 미리 계산해
+     * {@code pawGradeLevel}에 저장해두므로, 여기서는 임계값을 다시 따지지 않는다. 등급 기준을
+     * SQL에도 적어두면 {@link com.freepets.domain.facility.entity.PetFriendlyGrade}가 바뀔 때
+     * 한쪽만 고치게 된다.
+     *
+     * <p>지역은 이름이 아니라 코드로 거른다. 지명 개편(강원도 → 강원특별자치도)이 있어도 코드는
+     * 그대로이고, {@code idx_facilities_region}도 코드 기준이다.
+     */
+    String RANKING_FILTER =
+            "where facility.isActive = true "
+            + "and facility.pawGradeLevel > " + PetFriendlyGrade.NO_GRADE_LEVEL + " "
+            + "and (:category is null or facility.category = :category) "
+            + "and (:petAllowed is null or facility.petAllowed = :petAllowed) "
+            + "and (:sidoCode is null or facility.sidoCode = :sidoCode) "
+            + "and (:sigunguCode is null or facility.sigunguCode = :sigunguCode) ";
+
+    /** 거리를 함께 계산할 때만 붙이는 조건. 좌표가 없는 시설은 거리를 낼 수 없어 제외된다. */
+    String COORDINATE_NOT_NULL_FILTER =
+            "and facility.lat is not null "
+            + "and facility.lng is not null ";
+
+    /**
+     * 랭킹 정렬. 등급 내림차순 → 친화도 점수 내림차순이며, 동률은 ID로 고정한다.
+     *
+     * <p>점수만으로 정렬하면 안 된다. 95점·리뷰 20건은 1등급, 85점·리뷰 100건은 3등급이라
+     * 뒤쪽이 위에 와야 하기 때문이다.
+     *
+     * <p>ID 보조 기준이 없으면 같은 등급·점수끼리의 순서를 DB가 매번 다르게 정할 수 있고,
+     * LIMIT/OFFSET 페이징에서 같은 시설이 두 페이지에 나오거나 아예 빠질 수 있다.
+     */
+    String ORDER_BY_GRADE =
+            "order by facility.pawGradeLevel desc, facility.petScore desc, facility.facilityId";
 
     Optional<Facility> findByContentId(String contentId);
 
@@ -236,6 +273,89 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
             @Param("maximumLongitude") BigDecimal maximumLongitude,
             @Param("radiusMeter") double radiusMeter,
             Pageable pageable
+    );
+
+    /**
+     * 백필이 전 시설을 페이지 단위로 훑는 데 쓴다.
+     *
+     * <p>{@code findAll(Pageable)}과 달리 전체 건수를 세지 않는다. 수만 행짜리 count를 페이지마다
+     * 반복할 이유가 없다.
+     */
+    Slice<Facility> findAllBy(Pageable pageable);
+
+    /**
+     * 발자국 랭킹. 사용자 좌표가 없을 때 쓴다.
+     *
+     * <p>위치 권한을 거부해도 랭킹은 보여야 하므로 거리 없이도 조회할 수 있어야 한다.
+     * 거리를 계산하지 않으니 좌표가 없는 시설도 그대로 포함된다.
+     */
+    @Query("select facility from Facility facility " + RANKING_FILTER + ORDER_BY_GRADE)
+    List<Facility> searchRanking(
+            @Param("category") FacilityCategory category,
+            @Param("petAllowed") PetAllowed petAllowed,
+            @Param("sidoCode") String sidoCode,
+            @Param("sigunguCode") String sigunguCode,
+            Pageable pageable
+    );
+
+    /** 발자국 랭킹 + 사용자 위치로부터의 거리. 반경 제한은 걸지 않는다. */
+    @Query(SELECT_WITH_DISTANCE + RANKING_FILTER + COORDINATE_NOT_NULL_FILTER + ORDER_BY_GRADE)
+    List<FacilityWithDistance> searchRankingWithDistance(
+            @Param("userLatitudeRadian") double userLatitudeRadian,
+            @Param("userLongitudeRadian") double userLongitudeRadian,
+            @Param("category") FacilityCategory category,
+            @Param("petAllowed") PetAllowed petAllowed,
+            @Param("sidoCode") String sidoCode,
+            @Param("sigunguCode") String sigunguCode,
+            Pageable pageable
+    );
+
+    /** 발자국 랭킹 + 반경 제한. 경계 사각형이 인덱스를 타도록 {@link #RADIUS_FILTER}를 그대로 쓴다. */
+    @Query(SELECT_WITH_DISTANCE + RANKING_FILTER + COORDINATE_NOT_NULL_FILTER + RADIUS_FILTER + ORDER_BY_GRADE)
+    List<FacilityWithDistance> searchRankingWithinRadius(
+            @Param("userLatitudeRadian") double userLatitudeRadian,
+            @Param("userLongitudeRadian") double userLongitudeRadian,
+            @Param("category") FacilityCategory category,
+            @Param("petAllowed") PetAllowed petAllowed,
+            @Param("sidoCode") String sidoCode,
+            @Param("sigunguCode") String sigunguCode,
+            @Param("minimumLatitude") BigDecimal minimumLatitude,
+            @Param("maximumLatitude") BigDecimal maximumLatitude,
+            @Param("minimumLongitude") BigDecimal minimumLongitude,
+            @Param("maximumLongitude") BigDecimal maximumLongitude,
+            @Param("radiusMeter") double radiusMeter,
+            Pageable pageable
+    );
+
+    /**
+     * 랭킹 전체 건수.
+     *
+     * @param isCoordinateGiven 좌표를 보낸 요청인지 여부. 좌표가 있으면 거리 계산 때문에 좌표 없는
+     *                          시설이 목록에서 빠지므로, 건수도 같은 기준으로 세야 마지막 페이지가 맞는다
+     */
+    @Query(SELECT_COUNT + RANKING_FILTER
+            + "and (:isCoordinateGiven = false or (facility.lat is not null and facility.lng is not null)) ")
+    long countRanking(
+            @Param("category") FacilityCategory category,
+            @Param("petAllowed") PetAllowed petAllowed,
+            @Param("sidoCode") String sidoCode,
+            @Param("sigunguCode") String sigunguCode,
+            @Param("isCoordinateGiven") boolean isCoordinateGiven
+    );
+
+    @Query(SELECT_COUNT + RANKING_FILTER + COORDINATE_NOT_NULL_FILTER + RADIUS_FILTER)
+    long countRankingWithinRadius(
+            @Param("userLatitudeRadian") double userLatitudeRadian,
+            @Param("userLongitudeRadian") double userLongitudeRadian,
+            @Param("category") FacilityCategory category,
+            @Param("petAllowed") PetAllowed petAllowed,
+            @Param("sidoCode") String sidoCode,
+            @Param("sigunguCode") String sigunguCode,
+            @Param("minimumLatitude") BigDecimal minimumLatitude,
+            @Param("maximumLatitude") BigDecimal maximumLatitude,
+            @Param("minimumLongitude") BigDecimal minimumLongitude,
+            @Param("maximumLongitude") BigDecimal maximumLongitude,
+            @Param("radiusMeter") double radiusMeter
     );
 
     @Query(SELECT_COUNT + SEARCH_FILTER + RADIUS_FILTER)

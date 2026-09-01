@@ -30,6 +30,7 @@ import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.facility.service.FacilityGradeCacheService;
 import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
@@ -70,6 +71,9 @@ class ReviewCommandServiceTest {
 
     @Mock
     private PetCheckRepository petCheckRepository;
+
+    @Mock
+    private FacilityGradeCacheService facilityGradeCacheService;
 
     @InjectMocks
     private ReviewCommandService reviewCommandService;

@@ -99,6 +99,145 @@ public class FacilityQueryService {
     }
 
     /**
+     * 발자국 랭킹을 조회한다.
+     *
+     * <p>등급을 받은 시설만, 등급 → 점수 순으로 내려간다. 필터는 모두 선택이며 AND로 겹친다.
+     *
+     * <p>좌표는 선택이다. 위치 권한을 거부한 사용자도 랭킹은 볼 수 있어야 하므로, 좌표가 없으면
+     * 거리를 계산하지 않고 {@code distanceM}만 비운다. 다만 좌표를 보낸 요청은 거리를 계산해야 해서
+     * 좌표가 없는 시설이 결과에서 빠진다 — 목록 검색과 같은 규칙이다.
+     */
+    public FacilityResponseDTO.RankingResult getRanking(FacilityRequestDTO.RankingRequest request) {
+        validateRankingRequest(request);
+
+        Pageable pageable = PageRequest.of(request.getPage(), request.getSize());
+
+        if (!request.isCoordinateGiven()) {
+            List<Facility> found = facilityRepository.searchRanking(
+                    request.getCategory(),
+                    request.getPetAllowed(),
+                    request.getSidoCode(),
+                    request.getSigunguCode(),
+                    pageable
+            );
+            long total = facilityRepository.countRanking(
+                    request.getCategory(),
+                    request.getPetAllowed(),
+                    request.getSidoCode(),
+                    request.getSigunguCode(),
+                    false
+            );
+
+            return FacilityConverter.toRankingResult(
+                    found,
+                    Map.of(),
+                    request.getPage(),
+                    request.getSize(),
+                    total
+            );
+        }
+
+        double userLatitudeRadian = Math.toRadians(request.getLatitude());
+        double userLongitudeRadian = Math.toRadians(request.getLongitude());
+
+        List<FacilityWithDistance> found;
+        long total;
+
+        if (request.getRadiusM() == null) {
+            found = facilityRepository.searchRankingWithDistance(
+                    userLatitudeRadian,
+                    userLongitudeRadian,
+                    request.getCategory(),
+                    request.getPetAllowed(),
+                    request.getSidoCode(),
+                    request.getSigunguCode(),
+                    pageable
+            );
+            total = facilityRepository.countRanking(
+                    request.getCategory(),
+                    request.getPetAllowed(),
+                    request.getSidoCode(),
+                    request.getSigunguCode(),
+                    true
+            );
+        } else {
+            BoundingBox boundingBox = BoundingBox.around(
+                    request.getLatitude(),
+                    request.getLongitude(),
+                    request.getRadiusM()
+            );
+
+            found = facilityRepository.searchRankingWithinRadius(
+                    userLatitudeRadian,
+                    userLongitudeRadian,
+                    request.getCategory(),
+                    request.getPetAllowed(),
+                    request.getSidoCode(),
+                    request.getSigunguCode(),
+                    boundingBox.minimumLatitude(),
+                    boundingBox.maximumLatitude(),
+                    boundingBox.minimumLongitude(),
+                    boundingBox.maximumLongitude(),
+                    request.getRadiusM(),
+                    pageable
+            );
+            total = facilityRepository.countRankingWithinRadius(
+                    userLatitudeRadian,
+                    userLongitudeRadian,
+                    request.getCategory(),
+                    request.getPetAllowed(),
+                    request.getSidoCode(),
+                    request.getSigunguCode(),
+                    boundingBox.minimumLatitude(),
+                    boundingBox.maximumLatitude(),
+                    boundingBox.minimumLongitude(),
+                    boundingBox.maximumLongitude(),
+                    request.getRadiusM()
+            );
+        }
+
+        return FacilityConverter.toRankingResult(
+                found.stream().map(FacilityWithDistance::facility).toList(),
+                distancesOf(found),
+                request.getPage(),
+                request.getSize(),
+                total
+        );
+    }
+
+    /**
+     * 애너테이션으로 표현할 수 없는 필드 간 관계를 검증한다.
+     *
+     * <p>조용히 무시하지 않고 400으로 알린다. 거리 필터를 걸었는데 반경이 무시된 목록을 받으면
+     * 사용자는 필터가 먹은 줄 알게 된다.
+     */
+    private void validateRankingRequest(FacilityRequestDTO.RankingRequest request) {
+        validateCoordinatePair(request.getLatitude(), request.getLongitude());
+
+        if (request.getRadiusM() != null && !request.isCoordinateGiven()) {
+            throw new GeneralException(
+                    ErrorStatus.COMMON400,
+                    Map.of("radiusM", "거리 필터를 쓰려면 위도와 경도가 필요합니다.")
+            );
+        }
+
+        if (request.getSigunguCode() != null && request.getSidoCode() == null) {
+            throw new GeneralException(
+                    ErrorStatus.COMMON400,
+                    Map.of("sigunguCode", "시군구 코드는 시도 코드와 함께 보내야 합니다.")
+            );
+        }
+    }
+
+    private Map<Long, Long> distancesOf(List<FacilityWithDistance> found) {
+        return found.stream()
+                .collect(Collectors.toMap(
+                        facility -> facility.facility().getFacilityId(),
+                        facility -> Math.round(facility.distanceMeter())
+                ));
+    }
+
+    /**
      * 시설 상세를 조회한다.
      *
      * <p>리뷰 목록과 만족도 목록은 담지 않는다. 각각 전용 API가 있고, 페이징 단위와 갱신 주기가

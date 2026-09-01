@@ -3,6 +3,7 @@ package com.freepets.domain.facility.converter;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
 import com.freepets.domain.facility.entity.CheckList;
@@ -38,9 +39,78 @@ public class FacilityConverter {
                 facility.getPetAllowed(),
                 facility.getMaxWeight(),
                 requirements,
-                facility.getPetScore(),
+                toDisplayScore(facility.getPetScore()),
                 PetFriendlyGrade.labelOf(facility.getPetScore(), reviewCount),
                 reviewCount
+        );
+    }
+
+    /**
+     * 목록 요약의 점수는 정수로 내린다. 화면이 "87점"처럼 보여주기 때문이다.
+     *
+     * <p>등급 판정에는 이 값을 쓰지 않는다. 87.96이 88이 되며 한 등급 올라가면 안 되므로,
+     * 판정은 언제나 반올림 전 원점수로 한다.
+     */
+    private static Integer toDisplayScore(Double petScore) {
+        return petScore == null ? null : (int) Math.round(petScore);
+    }
+
+    /**
+     * 발자국 랭킹 목록을 만든다.
+     *
+     * <p>{@code rank}는 페이지를 가로질러 이어져야 하므로 현재 페이지 위치에서 시작한다.
+     *
+     * @param distances 시설 ID → 사용자 위치로부터의 거리(m). 좌표를 안 보냈으면 빈 맵이다
+     * @param page      0부터 시작하는 페이지 번호
+     * @param size      페이지 크기
+     * @param total     페이징 이전, 조건에 맞는 전체 시설 수
+     */
+    public static FacilityResponseDTO.RankingResult toRankingResult(
+            List<Facility> facilities,
+            Map<Long, Long> distances,
+            int page,
+            int size,
+            long total
+    ) {
+        int firstRank = page * size + 1;
+
+        List<FacilityResponseDTO.RankingItem> items = IntStream.range(0, facilities.size())
+                .mapToObj(index -> toRankingItem(
+                        facilities.get(index),
+                        distances.get(facilities.get(index).getFacilityId()),
+                        firstRank + index
+                ))
+                .toList();
+
+        return new FacilityResponseDTO.RankingResult(items, total);
+    }
+
+    private static FacilityResponseDTO.RankingItem toRankingItem(
+            Facility facility,
+            Long distanceM,
+            int rank
+    ) {
+        // 정렬에 쓴 값을 그대로 보여준다. 점수로 다시 판정하면 정렬 순서와 배지가 어긋날 수 있다.
+        //
+        // 등급이 있으면 점수도 반드시 있다(applyReviewAggregate가 둘을 함께 채운다). 랭킹 쿼리는
+        // 등급을 받은 시설만 뽑으므로 아래 점수 언박싱은 안전하다.
+        PetFriendlyGrade grade = PetFriendlyGrade.ofLevel(facility.getPawGradeLevel());
+
+        return new FacilityResponseDTO.RankingItem(
+                rank,
+                facility.getFacilityId(),
+                facility.getName(),
+                facility.getCategory(),
+                facility.getSido(),
+                facility.getSigungu(),
+                distanceM,
+                facility.getPetAllowed(),
+                new FacilityResponseDTO.PawGrade(
+                        PetFriendlyGrade.levelOf(grade),
+                        PetFriendlyGrade.displayLabelOf(grade, facility.getReviewCount())
+                ),
+                Numbers.roundToOneDecimal(facility.getPetScore()),
+                facility.getReviewCount()
         );
     }
 

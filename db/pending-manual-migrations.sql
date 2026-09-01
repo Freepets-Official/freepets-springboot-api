@@ -17,3 +17,28 @@ ALTER TABLE pet_checks ALTER COLUMN pet_id DROP NOT NULL;
 -- 컬럼 자체를 정리하는 게 맞다 — 실행 전 팀 확인 필요.
 -- 상태: ⬜ 미적용 (팀 논의 후 진행)
 -- ALTER TABLE pet_checks DROP COLUMN pet_id;
+
+-- ============================================================
+-- 2026-09-01 — 발자국 랭킹 집계 캐시 (#45, feat/#45-facility-ranking-api)
+-- ============================================================
+-- 랭킹은 전체 시설을 친화도 점수순으로 정렬해야 해서, 조회 시점 집계로는 매 요청마다 리뷰
+-- 전체를 group by 하게 된다. 그래서 점수·리뷰 수·등급을 시설에 저장해두기로 했다.
+--
+-- review_count / paw_grade_level 컬럼과 idx_facilities_paw_grade_ranking 인덱스는
+-- ddl-auto=update가 자동으로 만든다. 타입 변경은 자동으로 안 되므로 아래만 수동 조치가 필요하다.
+--
+-- pet_score를 정수에서 실수로 바꾼다. 등급 판정은 반올림 전 원점수로 해야 하는데,
+-- 87.96을 88로 저장하면 88점이 기준인 4등급으로 잘못 올라간다.
+-- 현재 이 컬럼은 값을 채우는 코드가 없어 전 행이 null이라 안전하다.
+--
+-- 상태: ⬜ 미적용
+ALTER TABLE facilities ALTER COLUMN pet_score TYPE double precision;
+
+-- ddl-auto가 정렬 방향까지 반영하지 못해 인덱스가 안 생겼다면 아래를 직접 실행한다.
+-- 랭킹의 정렬 순서와 같아야 인덱스만 읽고 페이징이 끝난다.
+-- 상태: ⬜ 미적용 (자동 생성되면 실행 불필요)
+-- CREATE INDEX IF NOT EXISTS idx_facilities_paw_grade_ranking
+--     ON facilities (paw_grade_level DESC, pet_score DESC, facility_id);
+
+-- 위 ALTER 뒤에 기존 리뷰를 시설 캐시에 1회 반영해야 한다.
+--   ./gradlew facilityGradeBackfill

@@ -24,16 +24,20 @@ import com.freepets.global.apiPayload.exception.GeneralException;
 import com.freepets.global.util.GeoUtils;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * GET /api/v1/courses/preset — 지역×테마 조합을 서버가 계산해 {@code courses(source=PRESET)}에
  * 캐시한다. 캐시 히트/미스와 무관하게 {@code score}/{@code distanceM}은 매 조회마다 새로 계산한다
  * — 캐시가 아끼는 건 "후보 스캔 + 정렬 + 조립"(무거운 부분)이고, 이미 정해진 스톱 목록에 대한
  * 점수·거리 재계산은 가볍다. 리뷰가 계속 쌓이는 걸 감안하면 오히려 매번 최신값을 보여주는 쪽이
- * 낫다. 나이틀리 재계산 트리거(스케줄러)는 이번 범위에 포함하지 않는다 — 최초 조회 시 캐시가
- * 없으면 그 자리에서 계산해 채워두는 지연 생성만 우선 구현한다(FacilityConditionLlmParser가
- * NOT_PROCESSED를 처음 만났을 때 채우는 것과 같은 패턴).
+ * 낫다.
+ *
+ * <p>최초 조회 시 캐시가 없으면 그 자리에서 계산해 채워두는 지연 생성(lazy) + {@link
+ * CoursePresetScheduler}의 나이틀리 재계산(이미 캐시된 조합의 스톱 구성을 새로 고침), 두 경로 모두
+ * 이 서비스를 쓴다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -51,19 +55,57 @@ public class CoursePresetService {
             String sigungu,
             CourseTheme theme
     ) {
-        String area = buildAreaKey(sido, sigungu);
-
-        Course course = courseRepository.findBySourceAndAreaAndTheme(CourseSource.PRESET, area, theme)
-                .orElseGet(() -> courseRepository.save(compute(sido, sigungu, theme, area)));
+        Course course = courseRepository.findBySourceAndSidoAndSigunguAndTheme(CourseSource.PRESET, sido, sigungu, theme)
+                .orElseGet(() -> courseRepository.save(newCourse(sido, sigungu, theme)));
 
         return toResult(course);
     }
 
-    private Course compute(
+    /**
+     * {@link CoursePresetScheduler}가 쓴다. 이미 캐시된 지역×테마 조합 전부를 훑어 스톱 구성을
+     * 다시 계산한다 — 후보가 하한 밑으로 떨어진 조합은 캐시를 지우지 않고 직전 스톱 구성을 그대로
+     * 남겨둔다(일시적으로 후보가 줄었다고 이미 보여주던 코스를 갑자기 비울 이유는 없다).
+     */
+    public void recalculateAll() {
+        List<Course> presets = courseRepository.findAllBySource(CourseSource.PRESET);
+        for (Course course : presets) {
+            try {
+                recalculate(course);
+            } catch (GeneralException exception) {
+                log.warn("프리셋 코스 재계산을 건너뜁니다 — sido={}, sigungu={}, theme={}, 사유={}",
+                        course.getSido(), course.getSigungu(), course.getTheme(), exception.getMessage());
+            }
+        }
+    }
+
+    private void recalculate(Course course) {
+        List<Facility> stops = computeStops(course.getSido(), course.getSigungu(), course.getTheme());
+        course.update(titleOf(course.getSido(), course.getSigungu(), course.getTheme()), null, stops);
+    }
+
+    private Course newCourse(
             String sido,
             String sigungu,
-            CourseTheme theme,
-            String area
+            CourseTheme theme
+    ) {
+        List<Facility> stops = computeStops(sido, sigungu, theme);
+
+        Course course = Course.builder()
+                .name(titleOf(sido, sigungu, theme))
+                .source(CourseSource.PRESET)
+                .sido(sido)
+                .sigungu(sigungu)
+                .theme(theme)
+                .build();
+        course.replaceStops(stops);
+
+        return course;
+    }
+
+    private List<Facility> computeStops(
+            String sido,
+            String sigungu,
+            CourseTheme theme
     ) {
         List<Facility> candidates = facilityRepository.findPresetCandidates(sido, sigungu, theme.getCategories());
         if (candidates.size() < MINIMUM_CANDIDATE_COUNT) {
@@ -84,16 +126,7 @@ public class CoursePresetService {
             throw new GeneralException(ErrorStatus.COURSE4001);
         }
 
-        String title = "%s %s 코스".formatted(sigungu != null ? sigungu : sido, theme.getLabel());
-        Course course = Course.builder()
-                .name(title)
-                .source(CourseSource.PRESET)
-                .area(area)
-                .theme(theme)
-                .build();
-        course.replaceStops(stops);
-
-        return course;
+        return stops;
     }
 
     private CourseResponseDTO.PresetCourseResult toResult(Course course) {
@@ -126,11 +159,12 @@ public class CoursePresetService {
                 .collect(Collectors.toMap(FacilityReviewAggregate::facilityId, FacilityReviewAggregate::averageScore));
     }
 
-    private String buildAreaKey(
+    private String titleOf(
             String sido,
-            String sigungu
+            String sigungu,
+            CourseTheme theme
     ) {
-        return sigungu != null ? sido + " " + sigungu : sido;
+        return "%s %s 코스".formatted(sigungu != null ? sigungu : sido, theme.getLabel());
     }
 
 }

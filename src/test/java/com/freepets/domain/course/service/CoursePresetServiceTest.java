@@ -56,13 +56,14 @@ class CoursePresetServiceTest {
         Course cached = Course.builder()
                 .name("강릉 애견 카페 코스")
                 .source(CourseSource.PRESET)
-                .area("강원 강릉시")
+                .sido("강원")
+                .sigungu("강릉시")
                 .theme(CourseTheme.PET_CAFE)
                 .build();
         cached.replaceStops(List.of(cafe));
         ReflectionTestUtils.setField(cached, "courseId", 101L);
 
-        when(courseRepository.findBySourceAndAreaAndTheme(CourseSource.PRESET, "강원 강릉시", CourseTheme.PET_CAFE))
+        when(courseRepository.findBySourceAndSidoAndSigunguAndTheme(CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE))
                 .thenReturn(Optional.of(cached));
         when(reviewRepository.aggregateByFacilityIdIn(anyCollection(), any()))
                 .thenReturn(List.of(aggregateOf(1L, 88.0)));
@@ -78,7 +79,7 @@ class CoursePresetServiceTest {
 
     @Test
     void 후보가_2곳_미만이면_COURSE4001() {
-        when(courseRepository.findBySourceAndAreaAndTheme(CourseSource.PRESET, "강원 강릉시", CourseTheme.PET_CAFE))
+        when(courseRepository.findBySourceAndSidoAndSigunguAndTheme(CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE))
                 .thenReturn(Optional.empty());
         when(facilityRepository.findPresetCandidates("강원", "강릉시", CourseTheme.PET_CAFE.getCategories()))
                 .thenReturn(List.of(facility(1L, "카페A", FacilityCategory.CAFE)));
@@ -92,7 +93,7 @@ class CoursePresetServiceTest {
         Facility cafeHigh = facility(1L, "카페A", FacilityCategory.CAFE);
         Facility cafeLow = facility(2L, "카페B", FacilityCategory.CAFE);
 
-        when(courseRepository.findBySourceAndAreaAndTheme(CourseSource.PRESET, "강원 강릉시", CourseTheme.PET_CAFE))
+        when(courseRepository.findBySourceAndSidoAndSigunguAndTheme(CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE))
                 .thenReturn(Optional.empty());
         when(facilityRepository.findPresetCandidates("강원", "강릉시", CourseTheme.PET_CAFE.getCategories()))
                 .thenReturn(List.of(cafeLow, cafeHigh)); // 순서 뒤섞여 들어와도 점수 desc로 정렬돼야 함
@@ -111,6 +112,31 @@ class CoursePresetServiceTest {
         assertThat(result.stops()).hasSize(2);
         assertThat(result.stops().get(0).facilityId()).isEqualTo(1L); // 점수 90이 70보다 먼저
         assertThat(result.stops().get(0).distanceM()).isEqualTo(0.0); // 시작점 자기 자신
+    }
+
+    @Test
+    void 재계산은_캐시된_스톱_구성을_새로_계산해_갱신한다() {
+        Facility cafeOld = facility(1L, "카페구", FacilityCategory.CAFE);
+        Facility cafeNew = facility(2L, "카페신", FacilityCategory.CAFE);
+        Course cached = Course.builder()
+                .name("강릉 애견 카페 코스")
+                .source(CourseSource.PRESET)
+                .sido("강원")
+                .sigungu("강릉시")
+                .theme(CourseTheme.PET_CAFE)
+                .build();
+        cached.replaceStops(List.of(cafeOld));
+
+        when(courseRepository.findAllBySource(CourseSource.PRESET)).thenReturn(List.of(cached));
+        when(facilityRepository.findPresetCandidates("강원", "강릉시", CourseTheme.PET_CAFE.getCategories()))
+                .thenReturn(List.of(cafeNew));
+
+        coursePresetService.recalculateAll();
+
+        // 새 후보가 1곳뿐이라 최소 후보 수(2)를 못 채워 예외가 나지만, recalculateAll이 잡아서
+        // 배치 전체가 죽지 않고 기존 캐시(cafeOld)를 그대로 남겨두는지 확인.
+        assertThat(cached.getStops()).extracting(stop -> stop.getFacility().getFacilityId())
+                .containsExactly(1L);
     }
 
     private FacilityReviewAggregate aggregateOf(

@@ -56,9 +56,15 @@ public class Course extends BaseEntity {
     @Column(nullable = false, length = 20)
     private CourseSource source;
 
-    // PRESET 캐시의 지역 축. Facility.sido와 동일한 값으로 비교한다(자유텍스트 아님).
-    @Column(length = 30)
-    private String area;
+    // PRESET 캐시의 지역 축. Facility.sido/sigungu와 동일한 값으로 비교한다(자유텍스트 아님).
+    // 나이틀리 재계산 배치가 다시 조회할 때 하나의 문자열(예: "강원 강릉시")을 sido/sigungu로
+    // 역분해하면 지명에 공백이 섞인 경우 깨질 수 있어(예: "경기 수원시 영통구") 처음부터 컬럼을
+    // 나눈다. sigungu는 시/도 전체 대상일 때 null.
+    @Column(length = 20)
+    private String sido;
+
+    @Column(length = 20)
+    private String sigungu;
 
     // PRESET 캐시의 테마 축. CUSTOM은 항상 null.
     @Enumerated(EnumType.STRING)
@@ -76,14 +82,16 @@ public class Course extends BaseEntity {
             String name,
             String description,
             CourseSource source,
-            String area,
+            String sido,
+            String sigungu,
             CourseTheme theme
     ) {
         this.user = user;
         this.name = name;
         this.description = description;
         this.source = source;
-        this.area = area;
+        this.sido = sido;
+        this.sigungu = sigungu;
         this.theme = theme;
     }
 

@@ -1,5 +1,6 @@
 package com.freepets.domain.course.dto;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import com.freepets.domain.facility.entity.FacilityCategory;
@@ -64,6 +65,20 @@ public class CourseResponseDTO {
              * 코스 동선의 시작점을 기준점으로 삼는다 — 첫 스톱 자신은 항상 0.
              */
             double distanceM
+    ) {}
+
+    // GET /api/v1/courses(내 코스), POST/PUT 응답 — CUSTOM 코스.
+    public record MyCourse(
+            Long courseId,
+            String name,
+            String description,
+            List<Long> stopIds,
+            LocalDateTime createdAt
+    ) {}
+
+    // DELETE /api/v1/courses/{courseId} 응답.
+    public record DeleteResult(
+            Long courseId
     ) {}
 
 }

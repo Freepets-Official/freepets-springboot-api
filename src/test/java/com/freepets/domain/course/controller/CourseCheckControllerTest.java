@@ -39,20 +39,21 @@ class CourseCheckControllerTest {
     void 코스_일괄_검증에_성공하면_200과_스톱별_결과를_반환한다() throws Exception {
         CourseCheckResponseDTO.CourseCheckResult result = new CourseCheckResponseDTO.CourseCheckResult(
                 PetCheckResult.DENIED,
+                1L,
                 List.of(
                         new CourseCheckResponseDTO.Stop(
                                 new CourseCheckResponseDTO.FacilitySummary(3L, "산책로", FacilityCategory.TOUR),
                                 "10:00",
                                 List.of(new CourseCheckResponseDTO.StopVerdict(1L, "몽이", PetCheckResult.ALLOWED, "모든 조건을 충족해 출입 가능합니다", List.of())),
                                 PetCheckResult.ALLOWED,
-                                List.of()
+                                null
                         ),
                         new CourseCheckResponseDTO.Stop(
                                 new CourseCheckResponseDTO.FacilitySummary(7L, "카페", FacilityCategory.CAFE),
                                 "11:30",
                                 List.of(new CourseCheckResponseDTO.StopVerdict(2L, "보리", PetCheckResult.DENIED, "체중 초과", List.of())),
                                 PetCheckResult.DENIED,
-                                List.of(new CourseCheckResponseDTO.Alternative(15L, "대형견카페", 1.2))
+                                new CourseCheckResponseDTO.Alternative(15L, "대형견카페", 1.2)
                         )
                 )
         );
@@ -64,11 +65,12 @@ class CourseCheckControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.result.overall").value("DENIED"))
+                .andExpect(jsonPath("$.result.blockedCount").value(1))
                 .andExpect(jsonPath("$.result.stops[0].time").value("10:00"))
-                .andExpect(jsonPath("$.result.stops[0].alternatives").isEmpty())
+                .andExpect(jsonPath("$.result.stops[0].alternative").doesNotExist())
                 .andExpect(jsonPath("$.result.stops[1].overall").value("DENIED"))
-                .andExpect(jsonPath("$.result.stops[1].alternatives[0].facilityId").value(15))
-                .andExpect(jsonPath("$.result.stops[1].alternatives[0].distanceKm").value(1.2));
+                .andExpect(jsonPath("$.result.stops[1].alternative.facilityId").value(15))
+                .andExpect(jsonPath("$.result.stops[1].alternative.distanceKm").value(1.2));
     }
 
     @Test

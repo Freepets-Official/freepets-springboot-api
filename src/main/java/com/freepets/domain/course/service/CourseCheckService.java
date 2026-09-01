@@ -3,17 +3,18 @@ package com.freepets.domain.course.service;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.course.dto.CourseCheckResponseDTO;
-import com.freepets.domain.facility.entity.AlternativeFacility;
 import com.freepets.domain.facility.entity.Facility;
-import com.freepets.domain.facility.repository.AlternativeFacilityRepository;
+import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
@@ -28,6 +29,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.global.util.GeoUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -37,8 +39,13 @@ import lombok.RequiredArgsConstructor;
  * {@code pet_checks} 이력에 남긴다(08-course-check.md "확인 필요" 1번, 이력으로 남기는 쪽으로 결정).
  *
  * <p>{@code CONDITIONAL}은 대안을 제안하지 않고 통과 처리한다 — 반려동물이 못 들어가는 게 아니라
- * 조건부로 들어갈 수 있는 것이므로. 대신 {@code verdicts[].conditions}/{@code reason}으로 무슨
- * 조건인지 그대로 알려준다. {@code DENIED}인 스톱에만 {@code alternatives}를 채운다.
+ * 조건부로 들어갈 수 있는 것이므로. {@code DENIED}인 스톱만 대안을 찾는다.
+ *
+ * <p>대안은 미리 저장해둔 테이블을 찾는 게 아니라 그 자리에서 계산한다(08-course-check.md
+ * "같은 카테고리·그룹 통과·거리순") — 같은 {@code category} · 이 코스에 이미 없음 · 선택한
+ * 반려동물 전체가 {@code judgeGroup}을 통과(DENIED 아님)하는 시설 중 가장 가까운 1곳. 조건에
+ * 맞는 곳이 하나도 없으면 {@code null} — 프론트가 "같은 성격의 대체 시설을 찾지 못했어요. 이
+ * 스톱은 빼는 것을 권장해요"로 안내한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -57,7 +64,6 @@ public class CourseCheckService {
     private final PetRepository petRepository;
     private final FacilityRepository facilityRepository;
     private final PetCheckRepository petCheckRepository;
-    private final AlternativeFacilityRepository alternativeFacilityRepository;
     private final PetCheckJudgeService petCheckJudgeService;
 
     public CourseCheckResponseDTO.CourseCheckResult checkCourse(
@@ -69,9 +75,11 @@ public class CourseCheckService {
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
         List<Pet> pets = findOwnedPets(userId, petIds);
         List<Facility> facilitiesInOrder = findFacilitiesInOrder(facilityIds);
+        Set<Long> courseFacilityIds = Set.copyOf(facilityIds);
 
         List<CourseCheckResponseDTO.Stop> stops = new ArrayList<>();
         PetCheckResult courseOverall = PetCheckResult.ALLOWED;
+        long blockedCount = 0;
 
         for (int i = 0; i < facilitiesInOrder.size(); i++) {
             Facility facility = facilitiesInOrder.get(i);
@@ -79,18 +87,59 @@ public class CourseCheckService {
 
             saveAsHistory(user, facility, verdict);
 
+            boolean isDenied = verdict.overall() == PetCheckResult.DENIED;
             stops.add(new CourseCheckResponseDTO.Stop(
                     toFacilitySummary(facility),
                     stopTimeOf(i),
                     toStopVerdicts(verdict),
                     verdict.overall(),
-                    verdict.overall() == PetCheckResult.DENIED ? alternativesOf(facility) : List.of()
+                    isDenied ? findAlternative(facility, courseFacilityIds, pets) : null
             ));
 
+            if (isDenied) {
+                blockedCount++;
+            }
             courseOverall = PetCheckResult.mostSevere(courseOverall, verdict.overall());
         }
 
-        return new CourseCheckResponseDTO.CourseCheckResult(courseOverall, stops);
+        return new CourseCheckResponseDTO.CourseCheckResult(courseOverall, blockedCount, stops);
+    }
+
+    private CourseCheckResponseDTO.Alternative findAlternative(
+            Facility blockedFacility,
+            Set<Long> courseFacilityIds,
+            List<Pet> pets
+    ) {
+        List<Facility> candidates = facilityRepository
+                .findAllByCategoryAndIsActiveTrueAndPetAllowedNotAndFacilityIdNotIn(
+                        blockedFacility.getCategory(), PetAllowed.DENIED, courseFacilityIds
+                );
+
+        return candidates.stream()
+                .filter(candidate -> candidate.getLat() != null && candidate.getLng() != null)
+                .filter(candidate -> petCheckJudgeService.judgeGroup(pets, candidate).overall() != PetCheckResult.DENIED)
+                .map(candidate -> Map.entry(candidate, distanceFrom(blockedFacility, candidate)))
+                .min(Comparator.comparingDouble(Map.Entry::getValue))
+                .map(nearest -> toAlternative(nearest.getKey(), nearest.getValue()))
+                .orElse(null);
+    }
+
+    private double distanceFrom(
+            Facility origin,
+            Facility target
+    ) {
+        return GeoUtils.distanceMeters(origin.getLat(), origin.getLng(), target.getLat(), target.getLng());
+    }
+
+    private CourseCheckResponseDTO.Alternative toAlternative(
+            Facility alternative,
+            double distanceMeters
+    ) {
+        return new CourseCheckResponseDTO.Alternative(
+                alternative.getFacilityId(),
+                alternative.getName(),
+                Math.round(distanceMeters / 100.0) / 10.0 // km, 소수 첫째 자리
+        );
     }
 
     private void saveAsHistory(
@@ -121,22 +170,6 @@ public class CourseCheckService {
                         petVerdict.conditions()
                 ))
                 .toList();
-    }
-
-    private List<CourseCheckResponseDTO.Alternative> alternativesOf(Facility facility) {
-        return alternativeFacilityRepository
-                .findAllByFacilityFacilityIdOrderByDistanceKmAsc(facility.getFacilityId()).stream()
-                .map(this::toAlternative)
-                .toList();
-    }
-
-    private CourseCheckResponseDTO.Alternative toAlternative(AlternativeFacility alternativeFacility) {
-        Facility alternative = alternativeFacility.getAlternativeFacility();
-        return new CourseCheckResponseDTO.Alternative(
-                alternative.getFacilityId(),
-                alternative.getName(),
-                alternativeFacility.getDistanceKm().doubleValue()
-        );
     }
 
     private CourseCheckResponseDTO.FacilitySummary toFacilitySummary(Facility facility) {

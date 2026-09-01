@@ -109,6 +109,17 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
             @Param("categories") Collection<FacilityCategory> categories
     );
 
+    /**
+     * {@code POST /api/v1/ai/course-check}가 DENIED 스톱의 대안을 찾을 때 쓴다. "같은 카테고리 ·
+     * 이미 코스에 없음"까지만 DB에서 거르고, "그룹 전체가 갈 수 있는지"(판별)와 "거리순 1곳"은
+     * 후보 수가 줄어든 뒤 서비스 레이어에서 처리한다 — {@code findPresetCandidates}와 같은 이유.
+     */
+    List<Facility> findAllByCategoryAndIsActiveTrueAndPetAllowedNotAndFacilityIdNotIn(
+            FacilityCategory category,
+            PetAllowed excludedPetAllowed,
+            Collection<Long> excludedFacilityIds
+    );
+
     Optional<Facility> findByContentId(String contentId);
 
     List<Facility> findByContentIdIn(Collection<String> contentIds);

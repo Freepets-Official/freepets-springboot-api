@@ -274,9 +274,6 @@ public class Facility extends BaseEntity {
     @OneToMany(mappedBy = "facility", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CheckList> checkLists = new ArrayList<>();
 
-    @OneToMany(mappedBy = "facility", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<AlternativeFacility> alternativeFacilities = new ArrayList<>();
-
     @Builder
     private Facility(
             String contentId,

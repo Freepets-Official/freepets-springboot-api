@@ -56,6 +56,38 @@ class CourseControllerTest {
     private CourseCommandService courseCommandService;
 
     // ------------------------------------------------------------------
+    // GET /courses/regions
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("지역 목록 조회에 성공하면 200을 반환한다")
+    void 지역_목록_조회에_성공하면_200을_반환한다() throws Exception {
+        CourseResponseDTO.RegionList result = new CourseResponseDTO.RegionList(
+                List.of(new CourseResponseDTO.SidoRegion("강원특별자치도", List.of("강릉시", "속초시")))
+        );
+        when(coursePresetService.getRegions()).thenReturn(result);
+
+        mockMvc.perform(get("/api/v1/courses/regions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.sidos[0].sido").value("강원특별자치도"))
+                .andExpect(jsonPath("$.result.sidos[0].sigungus[0]").value("강릉시"));
+    }
+
+    @Test
+    @DisplayName("테마 목록 조회에 성공하면 200을 반환한다")
+    void 테마_목록_조회에_성공하면_200을_반환한다() throws Exception {
+        CourseResponseDTO.ThemeList result = new CourseResponseDTO.ThemeList(
+                List.of(new CourseResponseDTO.ThemeOption(CourseTheme.PET_CAFE, "애견 카페"))
+        );
+        when(coursePresetService.getThemes()).thenReturn(result);
+
+        mockMvc.perform(get("/api/v1/courses/themes"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.themes[0].value").value("PET_CAFE"))
+                .andExpect(jsonPath("$.result.themes[0].label").value("애견 카페"));
+    }
+
+    // ------------------------------------------------------------------
     // GET /courses/preset
     // ------------------------------------------------------------------
 

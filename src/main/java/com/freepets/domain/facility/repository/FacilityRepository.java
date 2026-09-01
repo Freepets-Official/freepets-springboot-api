@@ -92,6 +92,20 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
     );
 
     /**
+     * {@code GET /api/v1/courses/regions}가 지역 선택 드롭다운을 채울 때 쓴다 — 동반 가능
+     * 시설이 실제로 있는 (sido, sigungu) 조합만 내려준다. {@code sido}는 항상 값이 있고,
+     * {@code sigungu}는 없을 수 있다(시/군/구 단위 데이터가 없는 시설).
+     */
+    @Query("""
+            select distinct facility.sido as sido, facility.sigungu as sigungu from Facility facility
+            where facility.isActive = true
+            and facility.petAllowed <> com.freepets.domain.facility.entity.PetAllowed.DENIED
+            and facility.sido is not null
+            order by facility.sido, facility.sigungu
+            """)
+    List<SidoSigungu> findDistinctRegions();
+
+    /**
      * {@code GET /api/v1/courses/preset} 배치가 지역×테마 후보를 뽑을 때 쓴다. {@code sigungu}가
      * 없으면 {@code sido} 전체를 대상으로 한다 — 파라미터가 null이면 그 조건은 무시된다.
      */

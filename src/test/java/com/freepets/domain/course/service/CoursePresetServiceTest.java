@@ -28,6 +28,7 @@ import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.facility.repository.SidoSigungu;
 import com.freepets.domain.review.repository.FacilityReviewAggregate;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.global.apiPayload.exception.GeneralException;
@@ -112,6 +113,51 @@ class CoursePresetServiceTest {
         assertThat(result.stops()).hasSize(2);
         assertThat(result.stops().get(0).facilityId()).isEqualTo(1L); // 점수 90이 70보다 먼저
         assertThat(result.stops().get(0).distanceM()).isEqualTo(0.0); // 시작점 자기 자신
+    }
+
+    @Test
+    void 테마_목록은_enum_전체를_라벨과_함께_반환한다() {
+        CourseResponseDTO.ThemeList result = coursePresetService.getThemes();
+
+        assertThat(result.themes()).hasSize(CourseTheme.values().length);
+        assertThat(result.themes()).extracting(CourseResponseDTO.ThemeOption::value)
+                .contains(CourseTheme.PET_CAFE);
+        assertThat(result.themes()).extracting(CourseResponseDTO.ThemeOption::label)
+                .contains("애견 카페");
+    }
+
+    @Test
+    void 지역_목록은_시도별로_시군구를_묶어서_반환하고_시군구_없는_경우도_다룬다() {
+        when(facilityRepository.findDistinctRegions()).thenReturn(List.of(
+                sidoSigungu("강원특별자치도", "강릉시"),
+                sidoSigungu("강원특별자치도", "속초시"),
+                sidoSigungu("세종특별자치시", null) // 시/군/구 단위가 없는 광역시급 지역
+        ));
+
+        CourseResponseDTO.RegionList result = coursePresetService.getRegions();
+
+        assertThat(result.sidos()).hasSize(2);
+        assertThat(result.sidos().get(0).sido()).isEqualTo("강원특별자치도");
+        assertThat(result.sidos().get(0).sigungus()).containsExactly("강릉시", "속초시");
+        assertThat(result.sidos().get(1).sido()).isEqualTo("세종특별자치시");
+        assertThat(result.sidos().get(1).sigungus()).isEmpty();
+    }
+
+    private SidoSigungu sidoSigungu(
+            String sido,
+            String sigungu
+    ) {
+        return new SidoSigungu() {
+            @Override
+            public String getSido() {
+                return sido;
+            }
+
+            @Override
+            public String getSigungu() {
+                return sigungu;
+            }
+        };
     }
 
     @Test

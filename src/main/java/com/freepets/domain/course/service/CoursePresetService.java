@@ -1,6 +1,9 @@
 package com.freepets.domain.course.service;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -16,6 +19,7 @@ import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.facility.repository.SidoSigungu;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.repository.FacilityReviewAggregate;
 import com.freepets.domain.review.repository.ReviewRepository;
@@ -49,6 +53,40 @@ public class CoursePresetService {
     private final FacilityRepository facilityRepository;
     private final ReviewRepository reviewRepository;
     private final CourseAssemblyService courseAssemblyService;
+
+    /**
+     * GET /api/v1/courses/themes — 테마 선택 드롭다운용. {@link CourseTheme}은 DB가 아니라
+     * 코드에 고정된 값이라 프론트가 값·라벨을 하드코딩하지 않게 서버가 그대로 내려준다.
+     */
+    public CourseResponseDTO.ThemeList getThemes() {
+        List<CourseResponseDTO.ThemeOption> themes = Arrays.stream(CourseTheme.values())
+                .map(theme -> new CourseResponseDTO.ThemeOption(theme, theme.getLabel()))
+                .toList();
+
+        return new CourseResponseDTO.ThemeList(themes);
+    }
+
+    /**
+     * GET /api/v1/courses/regions — 지역 선택 드롭다운용. 자유텍스트 입력을 받으면 "강원"처럼
+     * 실제 저장된 값("강원특별자치도")과 다른 표기를 보내 후보가 0건이 되는 문제가 있어서, 실제
+     * 동반 가능 시설이 있는 (sido, sigungu) 조합만 골라서 준다.
+     */
+    public CourseResponseDTO.RegionList getRegions() {
+        Map<String, List<String>> sigungusBySido = new LinkedHashMap<>();
+
+        for (SidoSigungu region : facilityRepository.findDistinctRegions()) {
+            List<String> sigungus = sigungusBySido.computeIfAbsent(region.getSido(), key -> new ArrayList<>());
+            if (region.getSigungu() != null) {
+                sigungus.add(region.getSigungu());
+            }
+        }
+
+        List<CourseResponseDTO.SidoRegion> sidos = sigungusBySido.entrySet().stream()
+                .map(entry -> new CourseResponseDTO.SidoRegion(entry.getKey(), entry.getValue()))
+                .toList();
+
+        return new CourseResponseDTO.RegionList(sidos);
+    }
 
     public CourseResponseDTO.PresetCourseResult getPreset(
             String sido,

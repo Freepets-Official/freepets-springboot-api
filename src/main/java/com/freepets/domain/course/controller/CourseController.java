@@ -82,7 +82,23 @@ public class CourseController {
         );
     }
 
-    // 로그인 불필요 — 유일하게 인증 없이 쓸 수 있는 코스 모드(07-courses.md 참고).
+    // 로그인 불필요 — preset과 마찬가지로 로그인 전 지역 선택 드롭다운에 쓴다.
+    @GetMapping("/regions")
+    public ApiResponse<CourseResponseDTO.RegionList> getRegions() {
+        return ApiResponse.onSuccess(
+                coursePresetService.getRegions()
+        );
+    }
+
+    // 로그인 불필요 — regions와 같은 이유로, 테마 선택 드롭다운에 쓴다.
+    @GetMapping("/themes")
+    public ApiResponse<CourseResponseDTO.ThemeList> getThemes() {
+        return ApiResponse.onSuccess(
+                coursePresetService.getThemes()
+        );
+    }
+
+    // 로그인 불필요 — regions/themes와 함께 로그인 전에도 쓸 수 있는 코스 모드(07-courses.md 참고).
     @GetMapping("/preset")
     public ApiResponse<CourseResponseDTO.PresetCourseResult> getPresetCourse(
             @RequestParam @NotEmpty(message = "지역을 선택해주세요.") String sido,

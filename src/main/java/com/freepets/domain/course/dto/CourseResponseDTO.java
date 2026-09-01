@@ -3,6 +3,7 @@ package com.freepets.domain.course.dto;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.review.entity.Tag;
 
@@ -45,6 +46,29 @@ public class CourseResponseDTO {
             boolean matchedByKind,
             boolean matchedByBreedSize,
             String reason
+    ) {}
+
+    // GET /api/v1/courses/themes 응답 — preset의 theme 드롭다운용. CourseTheme은 DB가 아니라
+    // 코드에 고정된 값이라 서버가 어떤 값·라벨을 쓰는지 프론트가 하드코딩하지 않게 내려준다.
+    public record ThemeList(
+            List<ThemeOption> themes
+    ) {}
+
+    public record ThemeOption(
+            CourseTheme value,
+            String label
+    ) {}
+
+    // GET /api/v1/courses/regions 응답 — preset의 sido/sigungu 드롭다운용.
+    public record RegionList(
+            List<SidoRegion> sidos
+    ) {}
+
+    public record SidoRegion(
+            String sido,
+
+            /** 시/도 전체를 아우르는 시설만 있으면 빈 배열 — 이때 sigungu 없이 sido만으로 조회한다. */
+            List<String> sigungus
     ) {}
 
     // GET /api/v1/courses/preset 응답.

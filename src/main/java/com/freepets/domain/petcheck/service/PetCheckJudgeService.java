@@ -99,8 +99,8 @@ public class PetCheckJudgeService {
         // 맹견 배제 시설이 아니면서 맹견을 데려온 경우 — 동반 자체는 되지만 맹견 전용 요구조건
         // (예: 입마개 착용)이 있으면 CONDITIONAL 조건으로 안내해야 한다. 배제 시설이면 아래
         // denialReasons에서 이미 DENIED로 끊기므로 여기 조건에 넣을 필요가 없다.
-        boolean appliesDangerousBreedRequiredItems = !facility.isDangerousBreedExcluded() && pet.isDangerousBreed();
-        List<String> applicableConditions = applicableConditions(requirements, facility, appliesDangerousBreedRequiredItems);
+        boolean isDangerousBreedRequiredItemsApplicable = !facility.isDangerousBreedExcluded() && pet.isDangerousBreed();
+        List<String> applicableConditions = applicableConditions(requirements, facility, isDangerousBreedRequiredItemsApplicable);
 
         // DENIED급 사유는 하나 찾자마자 바로 끊지 않고 전부 모은다 — 체중초과만 알려주고
         // 고쳐서 다시 왔더니 예방접종 문제로 또 막히는 식의 반복 확인을 막기 위함.
@@ -178,10 +178,10 @@ public class PetCheckJudgeService {
     private List<String> applicableConditions(
             List<Requirement> requirements,
             Facility facility,
-            boolean appliesDangerousBreedRequiredItems
+            boolean isDangerousBreedRequiredItemsApplicable
     ) {
         Set<String> conditions = new LinkedHashSet<>(conditionTexts(requirements));
-        if (appliesDangerousBreedRequiredItems) {
+        if (isDangerousBreedRequiredItemsApplicable) {
             conditions.addAll(facility.getDangerousBreedRequiredItems());
         }
         conditions.addAll(facility.getRequiredItems());

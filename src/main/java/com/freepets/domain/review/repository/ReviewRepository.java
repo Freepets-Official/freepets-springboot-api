@@ -87,4 +87,29 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             @Param("excludedStatus") ReviewReportStatus excludedStatus
     );
 
+    /**
+     * {@link #aggregateByFacilityId}의 다건 버전 — 지역 프리셋 코스(preset) 배치가 후보 시설
+     * 여러 곳의 점수를 한 번에 매길 때 쓴다. 후보 수만큼 단건 쿼리를 반복하면 배치 하나가 시설
+     * 수만큼 쿼리를 날리게 되므로 묶어서 조회한다.
+     */
+    @Query("select new com.freepets.domain.review.repository.FacilityReviewAggregate("
+            + "review.facility.facilityId, "
+            + "count(review), "
+            + "cast(avg" + SCORE_100 + " as double), "
+            + "cast(avg(review.ratingSpace) as double), "
+            + "cast(avg(review.ratingStaff) as double), "
+            + "cast(avg(review.ratingAmenity) as double)) "
+            + "from Review review "
+            + "where review.facility.facilityId in :facilityIds "
+            + "and review.deletedAt is null "
+            + "and not exists ("
+            + "select report.reportId from ReviewReport report "
+            + "where report.review.reviewId = review.reviewId "
+            + "and report.status = :excludedStatus) "
+            + "group by review.facility.facilityId")
+    List<FacilityReviewAggregate> aggregateByFacilityIdIn(
+            @Param("facilityIds") Collection<Long> facilityIds,
+            @Param("excludedStatus") ReviewReportStatus excludedStatus
+    );
+
 }

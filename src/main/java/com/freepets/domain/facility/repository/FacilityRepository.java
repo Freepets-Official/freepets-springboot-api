@@ -80,6 +80,60 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
      */
     String ORDER_BY_DISTANCE = "order by " + DISTANCE_METER + ", facility.facilityId";
 
+    /**
+     * "취향 비슷한 새곳"(similar) 카테고리 기반 후보 풀 — 좋아한 시설들의 카테고리와 겹치면서,
+     * 아직 안 가봤고, 시설 단위로는 동반 자체가 막히지 않은 곳. 개별 반려동물 판별(DENIED 여부)은
+     * 후보 수가 줄어든 뒤 서비스 레이어에서 {@code PetCheckJudgeService}로 한 번 더 거른다.
+     */
+    List<Facility> findAllByIsActiveTrueAndPetAllowedNotAndFacilityIdNotInAndCategoryIn(
+            PetAllowed excludedPetAllowed,
+            Collection<Long> excludedFacilityIds,
+            Collection<FacilityCategory> categories
+    );
+
+    /**
+     * {@code GET /api/v1/courses/regions}가 지역 선택 드롭다운을 채울 때 쓴다 — 동반 가능
+     * 시설이 실제로 있는 (sido, sigungu) 조합만 내려준다. {@code sido}는 항상 값이 있고,
+     * {@code sigungu}는 없을 수 있다(시/군/구 단위 데이터가 없는 시설).
+     */
+    @Query("""
+            select distinct facility.sido as sido, facility.sigungu as sigungu from Facility facility
+            where facility.isActive = true
+            and facility.petAllowed <> com.freepets.domain.facility.entity.PetAllowed.DENIED
+            and facility.sido is not null
+            order by facility.sido, facility.sigungu
+            """)
+    List<SidoSigungu> findDistinctRegions();
+
+    /**
+     * {@code GET /api/v1/courses/preset} 배치가 지역×테마 후보를 뽑을 때 쓴다. {@code sigungu}가
+     * 없으면 {@code sido} 전체를 대상으로 한다 — 파라미터가 null이면 그 조건은 무시된다.
+     */
+    @Query("""
+            select facility from Facility facility
+            where facility.isActive = true
+            and facility.petAllowed <> com.freepets.domain.facility.entity.PetAllowed.DENIED
+            and facility.sido = :sido
+            and (:sigungu is null or facility.sigungu = :sigungu)
+            and facility.category in :categories
+            """)
+    List<Facility> findPresetCandidates(
+            @Param("sido") String sido,
+            @Param("sigungu") String sigungu,
+            @Param("categories") Collection<FacilityCategory> categories
+    );
+
+    /**
+     * {@code POST /api/v1/ai/course-check}가 DENIED 스톱의 대안을 찾을 때 쓴다. "같은 카테고리 ·
+     * 이미 코스에 없음"까지만 DB에서 거르고, "그룹 전체가 갈 수 있는지"(판별)와 "거리순 1곳"은
+     * 후보 수가 줄어든 뒤 서비스 레이어에서 처리한다 — {@code findPresetCandidates}와 같은 이유.
+     */
+    List<Facility> findAllByCategoryAndIsActiveTrueAndPetAllowedNotAndFacilityIdNotIn(
+            FacilityCategory category,
+            PetAllowed excludedPetAllowed,
+            Collection<Long> excludedFacilityIds
+    );
+
     Optional<Facility> findByContentId(String contentId);
 
     List<Facility> findByContentIdIn(Collection<String> contentIds);

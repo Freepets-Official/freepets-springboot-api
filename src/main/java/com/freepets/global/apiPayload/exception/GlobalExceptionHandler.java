@@ -9,8 +9,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.exc.InvalidFormatException;
 
@@ -82,6 +84,42 @@ public class GlobalExceptionHandler {
         } else {
             errors.put(UNKNOWN_FIELD, "요청 본문의 형식이 올바르지 않습니다.");
         }
+
+        return ResponseEntity
+                .status(ErrorStatus.COMMON400.getHttpStatus())
+                .body(ApiResponse.onFailure(ErrorStatus.COMMON400, errors));
+    }
+
+    /**
+     * 필수 {@code @RequestParam}이 아예 안 왔을 때. 예: {@code GET /courses/preset}에서
+     * {@code sido}를 안 보냄.
+     *
+     * <p>이 핸들러가 없으면 catch-all에 걸려 500이 나간다 — 폼 검증({@code @Valid} 본문)과 달리
+     * 쿼리 파라미터 자체가 없는 경우는 스프링이 컨트롤러 메소드에 진입하기도 전에 예외를 던져서
+     * {@code @Validated}의 {@link ConstraintViolationException} 경로도 안 탄다.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Map<String, String>>> handleMissingServletRequestParameterException(MissingServletRequestParameterException exception) {
+        Map<String, String> errors = new HashMap<>();
+        errors.put(exception.getParameterName(), exception.getParameterName() + "은(는) 필수입니다.");
+
+        return ResponseEntity
+                .status(ErrorStatus.COMMON400.getHttpStatus())
+                .body(ApiResponse.onFailure(ErrorStatus.COMMON400, errors));
+    }
+
+    /**
+     * {@code @RequestParam}/{@code @PathVariable}이 선언된 타입(주로 enum)으로 변환되지 못한
+     * 경우. 예: {@code ?theme=INVALID}처럼 {@code CourseTheme}에 없는 값.
+     *
+     * <p>본문 검증({@link HttpMessageNotReadableException})의 enum 케이스와 같은 이유로 이
+     * 핸들러가 없으면 catch-all에 걸려 500이 나간다 — 쿼리 파라미터/경로 변수는 요청 본문이
+     * 아니라서 그 핸들러를 안 타고 이쪽으로 온다.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Map<String, String>>> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException exception) {
+        Map<String, String> errors = new HashMap<>();
+        errors.put(exception.getName(), describeAllowedValues(exception.getName(), exception.getRequiredType()));
 
         return ResponseEntity
                 .status(ErrorStatus.COMMON400.getHttpStatus())

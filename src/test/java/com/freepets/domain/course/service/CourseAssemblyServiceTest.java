@@ -57,14 +57,41 @@ class CourseAssemblyServiceTest {
 
     @Test
     void 최근접_이웃_방식으로_동선이_왔다갔다하지_않게_재정렬한다() {
-        // 1(0,0) 점수1위 시작 → 가장 가까운 3(0,0.001) → 그 다음 2(0,10)
+        // 1(0,0) 점수1위 시작 → 가장 가까운 3(약 111m) → 그 다음 2(약 2.2km, 둘 다 5km 상한 이내)
         Facility first = facility(1L, "A", FacilityCategory.CAFE, "0", "0");
-        Facility far = facility(2L, "B", FacilityCategory.TOUR, "0", "10");
-        Facility near = facility(3L, "C", FacilityCategory.RESTAURANT, "0", "0.001");
+        Facility far = facility(2L, "B", FacilityCategory.TOUR, "0.02", "0");
+        Facility near = facility(3L, "C", FacilityCategory.RESTAURANT, "0.001", "0");
 
         List<Facility> result = courseAssemblyService.assemble(List.of(first, far, near));
 
         assertThat(result).extracting(Facility::getFacilityId).containsExactly(1L, 3L, 2L);
+    }
+
+    @Test
+    void 이미_채택된_스톱과_5km_넘게_떨어진_후보는_점수가_높아도_제외된다() {
+        // near(약 1.1km)는 채택, far(약 111km, 위도 1도 차이)는 점수가 더 높아도(먼저 순회) 제외돼야 한다.
+        Facility anchor = facility(1L, "앵커", FacilityCategory.CAFE, "0", "0");
+        Facility far = facility(2L, "먼곳", FacilityCategory.TOUR, "1.0", "0");
+        Facility near = facility(3L, "가까운곳", FacilityCategory.RESTAURANT, "0.01", "0");
+
+        List<Facility> result = courseAssemblyService.assemble(List.of(anchor, far, near));
+
+        assertThat(result).extracting(Facility::getFacilityId).containsExactlyInAnyOrder(1L, 3L);
+    }
+
+    @Test
+    void 카테고리_다양성_미적용_조립도_한_카테고리가_절반을_넘지_못한다() {
+        // 카페 3곳 + 관광지 1곳, limit=4 → 카테고리 2종이라 상한 = ceil(4/2) = 2. 카페는 2곳까지만.
+        Facility cafeA = facility(1L, "카페A", FacilityCategory.CAFE, "0", "0");
+        Facility cafeB = facility(2L, "카페B", FacilityCategory.CAFE, "0.001", "0");
+        Facility cafeC = facility(3L, "카페C", FacilityCategory.CAFE, "0.002", "0");
+        Facility tour = facility(4L, "관광지A", FacilityCategory.TOUR, "0.003", "0");
+
+        List<Facility> result = courseAssemblyService.assembleWithoutCategoryDiversity(
+                List.of(cafeA, cafeB, cafeC, tour), 4
+        );
+
+        assertThat(result).extracting(Facility::getFacilityId).containsExactlyInAnyOrder(1L, 2L, 4L);
     }
 
     @Test

@@ -106,8 +106,12 @@ public class CourseSimilarService {
                 ).reversed())
                 .toList();
 
-        // 5) 카테고리 다양성 + 거리순 조립.
+        // 5) 카테고리 다양성 + 거리 제약 + 동선 조립. 거리 제약 때문에 후보는 충분해도 실제
+        // 채택된 스톱은 더 줄 수 있어 여기서 한 번 더 확인한다(3번의 사전 확인만으론 부족).
         List<Facility> stops = courseAssemblyService.assemble(candidatesScoreDescSorted);
+        if (stops.size() < MINIMUM_CANDIDATE_COUNT) {
+            throw new GeneralException(ErrorStatus.COURSE4003);
+        }
 
         List<CourseResponseDTO.SimilarStop> stopDtos = stops.stream()
                 .map(facility -> toSimilarStop(facility, likedTags, tagsByFacilityId, pets))

@@ -14,6 +14,7 @@ import com.freepets.domain.facility.entity.FacilityCategory;
 class CourseAssemblyServiceTest {
 
     private final CourseAssemblyService courseAssemblyService = new CourseAssemblyService();
+    private static final double DEFAULT_DISTANCE = CourseAssemblyService.DEFAULT_MAX_STOP_DISTANCE_METERS;
 
     @Test
     void 같은_카테고리는_점수가_가장_높은_1곳만_채택한다() {
@@ -22,7 +23,7 @@ class CourseAssemblyServiceTest {
         Facility tour = facility(2L, "관광지A", FacilityCategory.TOUR, "37.001", "128.001");
         Facility cafeLow = facility(3L, "카페B", FacilityCategory.CAFE, "37.002", "128.002");
 
-        List<Facility> result = courseAssemblyService.assemble(List.of(cafeHigh, tour, cafeLow));
+        List<Facility> result = courseAssemblyService.assemble(List.of(cafeHigh, tour, cafeLow), DEFAULT_DISTANCE);
 
         assertThat(result).extracting(Facility::getFacilityId).containsExactlyInAnyOrder(1L, 2L);
     }
@@ -37,7 +38,7 @@ class CourseAssemblyServiceTest {
                 facility(5L, "E", FacilityCategory.SHOPPING, "37.04", "128.04")
         );
 
-        List<Facility> result = courseAssemblyService.assemble(candidates);
+        List<Facility> result = courseAssemblyService.assemble(candidates, DEFAULT_DISTANCE);
 
         assertThat(result).hasSize(CourseAssemblyService.MAX_RECOMMENDED_STOPS);
     }
@@ -50,7 +51,7 @@ class CourseAssemblyServiceTest {
                 .build();
         ReflectionTestUtils.setField(noCoordinate, "facilityId", 9L);
 
-        List<Facility> result = courseAssemblyService.assemble(List.of(noCoordinate));
+        List<Facility> result = courseAssemblyService.assemble(List.of(noCoordinate), DEFAULT_DISTANCE);
 
         assertThat(result).isEmpty();
     }
@@ -62,7 +63,7 @@ class CourseAssemblyServiceTest {
         Facility far = facility(2L, "B", FacilityCategory.TOUR, "0.02", "0");
         Facility near = facility(3L, "C", FacilityCategory.RESTAURANT, "0.001", "0");
 
-        List<Facility> result = courseAssemblyService.assemble(List.of(first, far, near));
+        List<Facility> result = courseAssemblyService.assemble(List.of(first, far, near), DEFAULT_DISTANCE);
 
         assertThat(result).extracting(Facility::getFacilityId).containsExactly(1L, 3L, 2L);
     }
@@ -74,7 +75,7 @@ class CourseAssemblyServiceTest {
         Facility far = facility(2L, "먼곳", FacilityCategory.TOUR, "1.0", "0");
         Facility near = facility(3L, "가까운곳", FacilityCategory.RESTAURANT, "0.01", "0");
 
-        List<Facility> result = courseAssemblyService.assemble(List.of(anchor, far, near));
+        List<Facility> result = courseAssemblyService.assemble(List.of(anchor, far, near), DEFAULT_DISTANCE);
 
         assertThat(result).extracting(Facility::getFacilityId).containsExactlyInAnyOrder(1L, 3L);
     }
@@ -88,7 +89,7 @@ class CourseAssemblyServiceTest {
         Facility tour = facility(4L, "관광지A", FacilityCategory.TOUR, "0.003", "0");
 
         List<Facility> result = courseAssemblyService.assembleWithoutCategoryDiversity(
-                List.of(cafeA, cafeB, cafeC, tour), 4
+                List.of(cafeA, cafeB, cafeC, tour), 4, DEFAULT_DISTANCE
         );
 
         assertThat(result).extracting(Facility::getFacilityId).containsExactlyInAnyOrder(1L, 2L, 4L);
@@ -102,7 +103,7 @@ class CourseAssemblyServiceTest {
         Facility cafeC = facility(3L, "카페C", FacilityCategory.CAFE, "37.002", "128.002");
 
         List<Facility> result = courseAssemblyService.assembleWithoutCategoryDiversity(
-                List.of(cafeA, cafeB, cafeC), 4
+                List.of(cafeA, cafeB, cafeC), 4, DEFAULT_DISTANCE
         );
 
         assertThat(result).extracting(Facility::getFacilityId).containsExactlyInAnyOrder(1L, 2L, 3L);
@@ -114,7 +115,7 @@ class CourseAssemblyServiceTest {
         Facility cafeB = facility(2L, "카페B", FacilityCategory.CAFE, "37.001", "128.001");
 
         List<Facility> result = courseAssemblyService.assembleWithoutCategoryDiversity(
-                List.of(cafeA, cafeB), 1
+                List.of(cafeA, cafeB), 1, DEFAULT_DISTANCE
         );
 
         assertThat(result).hasSize(1);

@@ -40,8 +40,10 @@ public class CourseLikedService {
 
     public CourseResponseDTO.LikedCourseResult getLikedCourse(
             Long userId,
-            List<Long> petIds
+            List<Long> petIds,
+            Double maxDistanceM
     ) {
+        double maxDistanceMeters = maxDistanceM != null ? maxDistanceM : CourseAssemblyService.DEFAULT_MAX_STOP_DISTANCE_METERS;
         List<Pet> pets = findOwnedPets(userId, petIds);
 
         // 1) 후보 풀 — petIds 중 최소 한 마리가 방문 기록을 남긴 시설.
@@ -76,7 +78,7 @@ public class CourseLikedService {
 
         // 4) 카테고리 다양성 + 거리 제약 + 동선 조립. 거리 제약 때문에 후보는 충분해도 실제
         // 채택된 스톱은 더 줄 수 있어 여기서 한 번 더 확인한다(2번의 사전 확인만으론 부족).
-        List<Facility> stops = courseAssemblyService.assemble(candidatesScoreDescSorted);
+        List<Facility> stops = courseAssemblyService.assemble(candidatesScoreDescSorted, maxDistanceMeters);
         if (stops.size() < MINIMUM_CANDIDATE_COUNT) {
             throw new GeneralException(ErrorStatus.COURSE4002);
         }

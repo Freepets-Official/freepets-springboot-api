@@ -70,7 +70,7 @@ class CourseSimilarServiceTest {
         when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
         when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of());
 
-        assertThatThrownBy(() -> courseSimilarService.getSimilarCourse(1L, List.of(5L)))
+        assertThatThrownBy(() -> courseSimilarService.getSimilarCourse(1L, List.of(5L), null))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -91,7 +91,7 @@ class CourseSimilarServiceTest {
         when(petCheckJudgeService.judgeGroup(any(), any()))
                 .thenReturn(new PetCheckJudgeService.GroupVerdict(PetCheckResult.DENIED, List.of()));
 
-        assertThatThrownBy(() -> courseSimilarService.getSimilarCourse(1L, List.of(5L)))
+        assertThatThrownBy(() -> courseSimilarService.getSimilarCourse(1L, List.of(5L), null))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -122,7 +122,7 @@ class CourseSimilarServiceTest {
         when(reviewPetRepository.findAllByReview_Facility_FacilityIdAndReview_DeletedAtIsNull(3L))
                 .thenReturn(List.of());
 
-        CourseResponseDTO.SimilarCourseResult result = courseSimilarService.getSimilarCourse(1L, List.of(5L));
+        CourseResponseDTO.SimilarCourseResult result = courseSimilarService.getSimilarCourse(1L, List.of(5L), null);
 
         assertThat(result.title()).isEqualTo("취향과 비슷한 새로운 곳");
         assertThat(result.stops()).hasSize(2);

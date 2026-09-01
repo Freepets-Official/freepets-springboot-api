@@ -153,7 +153,7 @@ class CourseControllerTest {
                 "몽이가 좋아한 곳",
                 List.of(new CourseResponseDTO.LikedStop(1L, "카페A", FacilityCategory.CAFE, 9.4, List.of()))
         );
-        when(courseLikedService.getLikedCourse(isNull(), eq(List.of(1L, 2L)))).thenReturn(result);
+        when(courseLikedService.getLikedCourse(isNull(), eq(List.of(1L, 2L)), isNull())).thenReturn(result);
 
         mockMvc.perform(get("/api/v1/courses/liked").param("petIds", "1,2"))
                 .andExpect(status().isOk())
@@ -175,7 +175,7 @@ class CourseControllerTest {
         CourseResponseDTO.SimilarCourseResult result = new CourseResponseDTO.SimilarCourseResult(
                 "취향과 비슷한 새로운 곳", List.of()
         );
-        when(courseSimilarService.getSimilarCourse(isNull(), eq(List.of(1L)))).thenReturn(result);
+        when(courseSimilarService.getSimilarCourse(isNull(), eq(List.of(1L)), isNull())).thenReturn(result);
 
         mockMvc.perform(get("/api/v1/courses/similar").param("petIds", "1"))
                 .andExpect(status().isOk())

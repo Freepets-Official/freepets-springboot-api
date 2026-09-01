@@ -25,6 +25,8 @@ import com.freepets.domain.course.service.CourseSimilarService;
 import com.freepets.global.apiPayload.ApiResponse;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.RequiredArgsConstructor;
 
@@ -113,20 +115,28 @@ public class CourseController {
     @GetMapping("/liked")
     public ApiResponse<CourseResponseDTO.LikedCourseResult> getLikedCourse(
             @AuthenticationPrincipal Long userId,
-            @RequestParam @NotEmpty(message = "반려동물을 1마리 이상 선택해주세요.") List<Long> petIds
+            @RequestParam @NotEmpty(message = "반려동물을 1마리 이상 선택해주세요.") List<Long> petIds,
+            @RequestParam(required = false)
+            @Min(value = 500, message = "거리는 500m 이상이어야 합니다.")
+            @Max(value = 50000, message = "거리는 50000m 이하여야 합니다.")
+            Double maxDistanceM
     ) {
         return ApiResponse.onSuccess(
-                courseLikedService.getLikedCourse(userId, petIds)
+                courseLikedService.getLikedCourse(userId, petIds, maxDistanceM)
         );
     }
 
     @GetMapping("/similar")
     public ApiResponse<CourseResponseDTO.SimilarCourseResult> getSimilarCourse(
             @AuthenticationPrincipal Long userId,
-            @RequestParam @NotEmpty(message = "반려동물을 1마리 이상 선택해주세요.") List<Long> petIds
+            @RequestParam @NotEmpty(message = "반려동물을 1마리 이상 선택해주세요.") List<Long> petIds,
+            @RequestParam(required = false)
+            @Min(value = 500, message = "거리는 500m 이상이어야 합니다.")
+            @Max(value = 50000, message = "거리는 50000m 이하여야 합니다.")
+            Double maxDistanceM
     ) {
         return ApiResponse.onSuccess(
-                courseSimilarService.getSimilarCourse(userId, petIds)
+                courseSimilarService.getSimilarCourse(userId, petIds, maxDistanceM)
         );
     }
 

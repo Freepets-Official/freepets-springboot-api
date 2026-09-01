@@ -58,7 +58,7 @@ class CourseLikedServiceTest {
         when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
         when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of());
 
-        assertThatThrownBy(() -> courseLikedService.getLikedCourse(1L, List.of(5L)))
+        assertThatThrownBy(() -> courseLikedService.getLikedCourse(1L, List.of(5L), null))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -74,7 +74,7 @@ class CourseLikedServiceTest {
         when(petSatisfactionRepository.findAverageScoreByFacilityIdIn(Set.of(10L)))
                 .thenReturn(List.of(averageOf(10L, 6.0))); // 6.5 미만
 
-        assertThatThrownBy(() -> courseLikedService.getLikedCourse(1L, List.of(5L)))
+        assertThatThrownBy(() -> courseLikedService.getLikedCourse(1L, List.of(5L), null))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -96,7 +96,7 @@ class CourseLikedServiceTest {
                 .thenReturn(List.of(averageOf(10L, 9.8), averageOf(11L, 8.0)));
         when(facilityRepository.findAllById(anyCollection())).thenReturn(List.of(facilityA, facilityB));
 
-        CourseResponseDTO.LikedCourseResult result = courseLikedService.getLikedCourse(1L, List.of(5L, 6L));
+        CourseResponseDTO.LikedCourseResult result = courseLikedService.getLikedCourse(1L, List.of(5L, 6L), null);
 
         assertThat(result.title()).isEqualTo("몽이·보리가 좋아한 곳");
         assertThat(result.stops()).hasSize(2);

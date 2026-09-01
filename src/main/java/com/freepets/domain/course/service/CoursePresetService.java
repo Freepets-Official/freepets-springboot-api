@@ -157,8 +157,12 @@ public class CoursePresetService {
                 ).reversed())
                 .toList();
 
+        // preset은 여러 사용자가 공유하는 캐시라 요청마다 다른 거리값을 받을 수 없다 — 기본값
+        // 고정. 사용자별로 조정 가능한 건 liked/similar(캐시하지 않고 매 요청 재계산)뿐이다.
         List<Facility> stops = courseAssemblyService.assembleWithoutCategoryDiversity(
-                candidatesScoreDescSorted, CourseAssemblyService.MAX_RECOMMENDED_STOPS
+                candidatesScoreDescSorted,
+                CourseAssemblyService.MAX_RECOMMENDED_STOPS,
+                CourseAssemblyService.DEFAULT_MAX_STOP_DISTANCE_METERS
         );
         if (stops.size() < MINIMUM_CANDIDATE_COUNT) {
             throw new GeneralException(ErrorStatus.COURSE4001);

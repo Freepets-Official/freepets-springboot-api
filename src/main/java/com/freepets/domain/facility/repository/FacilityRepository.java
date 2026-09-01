@@ -80,6 +80,17 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
      */
     String ORDER_BY_DISTANCE = "order by " + DISTANCE_METER + ", facility.facilityId";
 
+    /**
+     * "취향 비슷한 새곳"(similar) 카테고리 기반 후보 풀 — 좋아한 시설들의 카테고리와 겹치면서,
+     * 아직 안 가봤고, 시설 단위로는 동반 자체가 막히지 않은 곳. 개별 반려동물 판별(DENIED 여부)은
+     * 후보 수가 줄어든 뒤 서비스 레이어에서 {@code PetCheckJudgeService}로 한 번 더 거른다.
+     */
+    List<Facility> findAllByIsActiveTrueAndPetAllowedNotAndFacilityIdNotInAndCategoryIn(
+            PetAllowed excludedPetAllowed,
+            Collection<Long> excludedFacilityIds,
+            Collection<FacilityCategory> categories
+    );
+
     Optional<Facility> findByContentId(String contentId);
 
     List<Facility> findByContentIdIn(Collection<String> contentIds);

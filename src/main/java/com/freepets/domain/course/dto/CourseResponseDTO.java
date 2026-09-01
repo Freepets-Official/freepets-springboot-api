@@ -3,6 +3,7 @@ package com.freepets.domain.course.dto;
 import java.util.List;
 
 import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.domain.review.entity.Tag;
 
 public class CourseResponseDTO {
 
@@ -28,6 +29,21 @@ public class CourseResponseDTO {
             Long petId,
             String petName,
             float score
+    ) {}
+
+    // GET /api/v1/courses/similar 응답.
+    public record SimilarCourseResult(
+            String title,
+            List<SimilarStop> stops
+    ) {}
+
+    public record SimilarStop(
+            Long facilityId,
+            String name,
+            List<Tag> matchedTags,
+            boolean matchedByKind,
+            boolean matchedByBreedSize,
+            String reason
     ) {}
 
 }

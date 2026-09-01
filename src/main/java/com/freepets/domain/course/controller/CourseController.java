@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.freepets.domain.course.dto.CourseResponseDTO;
 import com.freepets.domain.course.service.CourseLikedService;
+import com.freepets.domain.course.service.CourseSimilarService;
 import com.freepets.global.apiPayload.ApiResponse;
 
 import jakarta.validation.constraints.NotEmpty;
@@ -25,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 public class CourseController {
 
     private final CourseLikedService courseLikedService;
+    private final CourseSimilarService courseSimilarService;
 
     @GetMapping("/liked")
     public ApiResponse<CourseResponseDTO.LikedCourseResult> getLikedCourse(
@@ -33,6 +35,16 @@ public class CourseController {
     ) {
         return ApiResponse.onSuccess(
                 courseLikedService.getLikedCourse(userId, petIds)
+        );
+    }
+
+    @GetMapping("/similar")
+    public ApiResponse<CourseResponseDTO.SimilarCourseResult> getSimilarCourse(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam @NotEmpty(message = "반려동물을 1마리 이상 선택해주세요.") List<Long> petIds
+    ) {
+        return ApiResponse.onSuccess(
+                courseSimilarService.getSimilarCourse(userId, petIds)
         );
     }
 

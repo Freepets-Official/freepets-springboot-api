@@ -8,6 +8,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.global.entity.BaseEntity;
 
 import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.ColumnDefault;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -76,6 +77,15 @@ public class Course extends BaseEntity {
     @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CourseStop> stops = new ArrayList<>();
 
+    // CUSTOM 코스를 다른 사용자에게도 "둘러보기" 목록에 공개할지. CUSTOM만 의미 있는 값이고
+    // (트리플의 "다른 여행자 코스"처럼), PRESET은 이미 공용이라 이 값과 무관하게 항상 조회 가능,
+    // RECOMMENDED는 애초에 이 테이블에 저장되지 않아 해당 없음. 기본값 false(비공개).
+    // Facility.isDangerousBreedExcluded와 같은 이유로 @ColumnDefault 필요 — 라이브 DB엔 이미
+    // courses가 있어(PRESET 캐시), 기본값 없이 컬럼만 추가하면 NOT NULL 위반으로 마이그레이션이 실패한다.
+    @ColumnDefault("false")
+    @Column(name = "is_public", nullable = false)
+    private boolean isPublic;
+
     @Builder
     private Course(
             User user,
@@ -84,7 +94,8 @@ public class Course extends BaseEntity {
             CourseSource source,
             String sido,
             String sigungu,
-            CourseTheme theme
+            CourseTheme theme,
+            boolean isPublic
     ) {
         this.user = user;
         this.name = name;
@@ -93,6 +104,7 @@ public class Course extends BaseEntity {
         this.sido = sido;
         this.sigungu = sigungu;
         this.theme = theme;
+        this.isPublic = isPublic;
     }
 
     /**
@@ -123,6 +135,14 @@ public class Course extends BaseEntity {
 
     public boolean isOwnedBy(Long userId) {
         return user != null && user.getId().equals(userId);
+    }
+
+    /**
+     * 공개 여부만 바꾼다. update()에 넣지 않고 분리한 이유는 update()를 PRESET 나이틀리
+     * 재계산(CoursePresetService)도 같이 쓰는데, PRESET엔 공개 여부 개념이 없어서다.
+     */
+    public void updateVisibility(boolean isPublic) {
+        this.isPublic = isPublic;
     }
 
 }

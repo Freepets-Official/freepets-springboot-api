@@ -56,7 +56,8 @@ public enum ErrorStatus implements BaseErrorCode {
     COURSE4002(BAD_REQUEST, "COURSE4002", "만족도 데이터가 부족해 취향 코스를 만들 수 없습니다."),
     COURSE4003(BAD_REQUEST, "COURSE4003", "취향 프로필을 만들 데이터가 부족합니다."),
     COURSE4041(NOT_FOUND, "COURSE4041", "존재하지 않는 코스입니다."),
-    COURSE4042(FORBIDDEN, "COURSE4042", "본인 코스만 수정·삭제할 수 있습니다.");
+    COURSE4042(FORBIDDEN, "COURSE4042", "본인 코스만 수정·삭제할 수 있습니다."),
+    COURSE4043(NOT_FOUND, "COURSE4043", "존재하지 않는 스톱 순서입니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

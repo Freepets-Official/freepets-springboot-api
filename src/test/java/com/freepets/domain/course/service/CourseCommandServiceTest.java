@@ -40,6 +40,9 @@ class CourseCommandServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private CourseAssemblyService courseAssemblyService;
+
     @InjectMocks
     private CourseCommandService courseCommandService;
 
@@ -58,6 +61,24 @@ class CourseCommandServiceTest {
         CourseResponseDTO.MyCourse result = courseCommandService.createCourse(1L, request("강릉 코스", List.of(1L, 2L)));
 
         assertThat(result.stopIds()).containsExactly(1L, 2L);
+    }
+
+    @Test
+    void 공개_여부를_담아_생성하면_isPublic이_그대로_저장된다() {
+        User user = user(1L);
+        Facility a = facility(1L, "A");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(facilityRepository.findAllById(List.of(1L))).thenReturn(List.of(a));
+        when(courseRepository.save(org.mockito.ArgumentMatchers.any(Course.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CourseRequestDTO.SaveRequest request = request("강릉 코스", List.of(1L));
+        request.setIsPublic(true);
+
+        CourseResponseDTO.MyCourse result = courseCommandService.createCourse(1L, request);
+
+        assertThat(result.isPublic()).isTrue();
     }
 
     @Test
@@ -106,6 +127,82 @@ class CourseCommandServiceTest {
         CourseResponseDTO.DeleteResult result = courseCommandService.deleteCourse(1L, 10L);
 
         assertThat(result.courseId()).isEqualTo(10L);
+    }
+
+    @Test
+    void 경로_최적화는_저장_없이_재정렬된_stopIds만_반환한다() {
+        Facility a = facility(1L, "A");
+        Facility b = facility(2L, "B");
+        when(facilityRepository.findAllById(List.of(1L, 2L))).thenReturn(List.of(a, b));
+        when(courseAssemblyService.reorderForCustomEdit(List.of(a, b))).thenReturn(List.of(b, a));
+
+        CourseResponseDTO.OrderResult result = courseCommandService.optimizeOrder(List.of(1L, 2L));
+
+        assertThat(result.stopIds()).containsExactly(2L, 1L);
+        org.mockito.Mockito.verifyNoInteractions(courseRepository);
+    }
+
+    @Test
+    void 경로_최적화_시_존재하지_않는_시설이_있으면_FACILITY4001() {
+        when(facilityRepository.findAllById(List.of(1L, 999L))).thenReturn(List.of(facility(1L, "A")));
+
+        assertThatThrownBy(() -> courseCommandService.optimizeOrder(List.of(1L, 999L)))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 스톱_교체는_그_자리만_바꾸고_나머지_순서는_그대로_유지한다() {
+        // 1·2·3·4·5(순서 0~4)에서 순서 3(네 번째, 시설 4)만 시설 6으로 바꾸면 1·2·3·6·5가 되어야 한다.
+        Course course = ownedCourseWithStops(1L, 2L, 3L, 4L, 5L);
+        Facility six = facility(6L, "F");
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(6L)).thenReturn(Optional.of(six));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.replaceStop(1L, 10L, 3, 6L);
+
+        assertThat(result.stopIds()).containsExactly(1L, 2L, 3L, 6L, 5L);
+    }
+
+    @Test
+    void 스톱_교체_시_범위를_벗어난_순서면_COURSE4043() {
+        Course course = ownedCourseWithStops(1L, 2L, 3L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        assertThatThrownBy(() -> courseCommandService.replaceStop(1L, 10L, 3, 6L))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 스톱_교체_시_존재하지_않는_시설이면_FACILITY4001() {
+        Course course = ownedCourseWithStops(1L, 2L, 3L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> courseCommandService.replaceStop(1L, 10L, 1, 999L))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 스톱_교체_시_본인_코스가_아니면_COURSE4042() {
+        Course course = ownedCourseWithStops(1L, 2L, 3L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        assertThatThrownBy(() -> courseCommandService.replaceStop(2L, 10L, 1, 6L))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    private Course ownedCourseWithStops(Long... facilityIds) {
+        Course course = Course.builder()
+                .user(user(1L))
+                .name("몽이 코스")
+                .source(CourseSource.CUSTOM)
+                .build();
+        List<Facility> stops = List.of(facilityIds).stream()
+                .map(id -> facility(id, "시설" + id))
+                .toList();
+        course.replaceStops(stops);
+        ReflectionTestUtils.setField(course, "courseId", 10L);
+        return course;
     }
 
     private CourseRequestDTO.SaveRequest request(

@@ -11,6 +11,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.course.dto.CourseResponseDTO;
@@ -57,6 +59,36 @@ class CourseQueryServiceTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).stopIds()).containsExactly(1L, 2L);
+    }
+
+    @Test
+    void 공개_코스_목록을_소유자_닉네임과_함께_반환한다() {
+        User user = User.builder()
+                .email("test@freepets.com")
+                .passwordHash("hash")
+                .nickname("테스터")
+                .provider(Provider.LOCAL)
+                .build();
+        ReflectionTestUtils.setField(user, "id", 1L);
+
+        Course course = Course.builder()
+                .user(user)
+                .name("몽이 코스")
+                .source(CourseSource.CUSTOM)
+                .isPublic(true)
+                .build();
+        course.replaceStops(List.of(facility(1L, "A")));
+        ReflectionTestUtils.setField(course, "courseId", 10L);
+
+        PageRequest pageable = PageRequest.of(0, 15);
+        when(courseRepository.findAllBySourceAndIsPublicTrueOrderByCreatedAtDesc(CourseSource.CUSTOM, pageable))
+                .thenReturn(new PageImpl<>(List.of(course), pageable, 1));
+
+        CourseResponseDTO.PublicCourseResult result = courseQueryService.getPublicCourses(pageable);
+
+        assertThat(result.total()).isEqualTo(1);
+        assertThat(result.items().get(0).ownerNickname()).isEqualTo("테스터");
+        assertThat(result.items().get(0).stopIds()).containsExactly(1L);
     }
 
     private Facility facility(

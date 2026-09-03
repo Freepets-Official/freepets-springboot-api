@@ -1,8 +1,10 @@
 package com.freepets.domain.course.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -17,6 +19,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -24,6 +27,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.freepets.domain.course.dto.CourseRequestDTO;
 import com.freepets.domain.course.dto.CourseResponseDTO;
 import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.course.service.CourseCommandService;
@@ -190,7 +194,7 @@ class CourseControllerTest {
     @DisplayName("내 코스 목록 조회에 성공하면 200을 반환한다")
     void 내_코스_목록_조회에_성공하면_200을_반환한다() throws Exception {
         when(courseQueryService.getMyCourses(isNull())).thenReturn(List.of(
-                new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(1L, 2L), LocalDateTime.now())
+                new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(1L, 2L), LocalDateTime.now(), false)
         ));
 
         mockMvc.perform(get("/api/v1/courses"))
@@ -203,7 +207,7 @@ class CourseControllerTest {
     @DisplayName("코스 생성에 성공하면 200을 반환한다")
     void 코스_생성에_성공하면_200을_반환한다() throws Exception {
         when(courseCommandService.createCourse(isNull(), any()))
-                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", "설명", List.of(1L, 2L), LocalDateTime.now()));
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", "설명", List.of(1L, 2L), LocalDateTime.now(), false));
 
         mockMvc.perform(post("/api/v1/courses")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -240,13 +244,55 @@ class CourseControllerTest {
     @DisplayName("코스 수정에 성공하면 200을 반환한다")
     void 코스_수정에_성공하면_200을_반환한다() throws Exception {
         when(courseCommandService.updateCourse(isNull(), eq(10L), any()))
-                .thenReturn(new CourseResponseDTO.MyCourse(10L, "변경된 이름", null, List.of(3L), LocalDateTime.now()));
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "변경된 이름", null, List.of(3L), LocalDateTime.now(), true));
 
         mockMvc.perform(put("/api/v1/courses/{courseId}", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"변경된 이름\",\"stopIds\":[3]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.name").value("변경된 이름"));
+                .andExpect(jsonPath("$.result.name").value("변경된 이름"))
+                // record 접근자가 isPublic()이라 Jackson 기본값(public)으로 깎이지 않는지 확인.
+                .andExpect(jsonPath("$.result.isPublic").value(true));
+    }
+
+    @Test
+    @DisplayName("isPublic 요청 필드가 그대로 바인딩된다")
+    void isPublic_요청_필드가_그대로_바인딩된다() throws Exception {
+        when(courseCommandService.createCourse(isNull(), any()))
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(1L), LocalDateTime.now(), true));
+
+        mockMvc.perform(post("/api/v1/courses")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"몽이 코스\",\"stopIds\":[1],\"isPublic\":true}"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<CourseRequestDTO.SaveRequest> captor = ArgumentCaptor.forClass(CourseRequestDTO.SaveRequest.class);
+        verify(courseCommandService).createCourse(isNull(), captor.capture());
+        assertThat(captor.getValue().isPublic()).isTrue();
+    }
+
+    @Test
+    @DisplayName("스톱 교체에 성공하면 200과 교체된 코스를 반환한다")
+    void 스톱_교체에_성공하면_200과_교체된_코스를_반환한다() throws Exception {
+        when(courseCommandService.replaceStop(isNull(), eq(10L), eq(3), eq(6L)))
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(1L, 2L, 3L, 6L, 5L), LocalDateTime.now(), false));
+
+        mockMvc.perform(put("/api/v1/courses/{courseId}/stops/{stopOrder}", 10L, 3)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"facilityId\":6}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.stopIds[3]").value(6));
+    }
+
+    @Test
+    @DisplayName("스톱 교체 시 facilityId가 없으면 400을 반환한다")
+    void 스톱_교체_시_facilityId가_없으면_400을_반환한다() throws Exception {
+        mockMvc.perform(put("/api/v1/courses/{courseId}/stops/{stopOrder}", 10L, 3)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(courseCommandService);
     }
 
     @Test
@@ -258,6 +304,58 @@ class CourseControllerTest {
         mockMvc.perform(delete("/api/v1/courses/{courseId}", 10L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.courseId").value(10));
+    }
+
+    // ------------------------------------------------------------------
+    // POST /courses/optimize-order
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("경로 최적화에 성공하면 200과 재정렬된 stopIds를 반환한다")
+    void 경로_최적화에_성공하면_200과_재정렬된_stopIds를_반환한다() throws Exception {
+        when(courseCommandService.optimizeOrder(List.of(1L, 2L, 3L)))
+                .thenReturn(new CourseResponseDTO.OrderResult(List.of(1L, 3L, 2L)));
+
+        mockMvc.perform(post("/api/v1/courses/optimize-order")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stopIds\":[1,2,3]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.stopIds[0]").value(1))
+                .andExpect(jsonPath("$.result.stopIds[1]").value(3))
+                .andExpect(jsonPath("$.result.stopIds[2]").value(2));
+    }
+
+    @Test
+    @DisplayName("경로 최적화 시 스톱이 비어있으면 400을 반환한다")
+    void 경로_최적화_시_스톱이_비어있으면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/courses/optimize-order")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stopIds\":[]}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(courseCommandService);
+    }
+
+    // ------------------------------------------------------------------
+    // GET /courses/public
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("공개 코스 목록 조회에 성공하면 200을 반환한다")
+    void 공개_코스_목록_조회에_성공하면_200을_반환한다() throws Exception {
+        CourseResponseDTO.PublicCourseResult result = new CourseResponseDTO.PublicCourseResult(
+                List.of(new CourseResponseDTO.PublicCourse(
+                        10L, "몽이 코스", "설명", "테스터", List.of(1L, 2L), LocalDateTime.now()
+                )),
+                1
+        );
+        when(courseQueryService.getPublicCourses(any())).thenReturn(result);
+
+        mockMvc.perform(get("/api/v1/courses/public"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items[0].courseId").value(10))
+                .andExpect(jsonPath("$.result.items[0].ownerNickname").value("테스터"))
+                .andExpect(jsonPath("$.result.total").value(1));
     }
 
 }

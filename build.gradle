@@ -50,7 +50,14 @@ dependencies {
 	implementation 'software.amazon.awssdk:s3:2.29.52'
 
 	// anthropic (claude) — 시설 조건 파싱(FacilityConditionLlmParser)
-	implementation 'com.anthropic:anthropic-java:2.34.0'
+	// swagger-annotations(비-jakarta, 2.2.31)를 같이 끌고 오는데, springdoc이 쓰는
+	// swagger-annotations-jakarta(2.2.47)와 클래스명(io.swagger.v3.oas.annotations.media.Schema)이
+	// 겹쳐서 클래스패스에 둘 다 올라가면 어느 쪽이 로드되느냐에 따라 NoSuchMethodError($dynamicRef)가
+	// 난다 — springdoc이 신버전 API를 호출했는데 구버전 클래스가 로드된 경우. 우리는 이 SDK가
+	// swagger-annotations를 실제로 쓰는 기능(도구 스키마 자동생성 등)은 안 쓰므로 제외한다.
+	implementation('com.anthropic:anthropic-java:2.34.0') {
+		exclude group: 'io.swagger.core.v3', module: 'swagger-annotations'
+	}
 }
 
 tasks.named('test') {

@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
@@ -104,6 +105,23 @@ public class CourseAssemblyService {
         }
 
         return reorderByNearestNeighbor(selected);
+    }
+
+    /**
+     * CUSTOM 코스를 직접 편집(검색해서 추가·삭제·순서 변경)한 뒤 동선만 다듬고 싶을 때 쓴다.
+     * {@link #select}와 달리 카테고리 상한·거리 제약으로 스톱을 걸러내지 않는다 — 사용자가 이미
+     * 고른 스톱은 전부 유지하고 순서만 최근접 이웃 방식으로 재배치한다.
+     *
+     * <p>좌표 없는 시설은 재배치 대상에서 빠진다(거리 계산 불가) — 다만 스톱 자체를 잃으면 안 되니
+     * 원래 상대 순서를 유지한 채 재배치된 목록 뒤에 그대로 붙인다.
+     */
+    public List<Facility> reorderForCustomEdit(List<Facility> stopsInOrder) {
+        Map<Boolean, List<Facility>> partitioned = stopsInOrder.stream()
+                .collect(Collectors.partitioningBy(facility -> facility.getLat() != null && facility.getLng() != null));
+
+        List<Facility> reordered = new ArrayList<>(reorderByNearestNeighbor(partitioned.get(true)));
+        reordered.addAll(partitioned.get(false));
+        return reordered;
     }
 
     private boolean isTooFarFromAll(

@@ -3,6 +3,7 @@ package com.freepets.domain.course.dto;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.review.entity.Tag;
@@ -97,12 +98,39 @@ public class CourseResponseDTO {
             String name,
             String description,
             List<Long> stopIds,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+
+            // record 접근자가 isPublic()이므로 JSON 프로퍼티명을 ApiResponse.isSuccess와 같은
+            // 이유로 isPublic으로 명시 고정(Jackson 기본값은 public으로 깎는다).
+            @JsonProperty("isPublic")
+            boolean isPublic
     ) {}
 
     // DELETE /api/v1/courses/{courseId} 응답.
     public record DeleteResult(
             Long courseId
+    ) {}
+
+    // GET /api/v1/courses/public 응답 — 다른 사용자가 공개한 CUSTOM 코스 둘러보기(트리플의
+    // "다른 여행자 코스" 참고). 그대로 stopIds를 담아 POST /courses에 넣으면 내 코스로 복사(fork)된다.
+    public record PublicCourseResult(
+            List<PublicCourse> items,
+            long total
+    ) {}
+
+    public record PublicCourse(
+            Long courseId,
+            String name,
+            String description,
+            String ownerNickname,
+            List<Long> stopIds,
+            LocalDateTime createdAt
+    ) {}
+
+    // POST /api/v1/courses/optimize-order 응답. 저장하지 않고 순서만 다듬어 미리 보여준다 —
+    // 그대로 쓰려면 이어서 이 stopIds를 POST/PUT /courses에 넣어 호출해야 한다.
+    public record OrderResult(
+            List<Long> stopIds
     ) {}
 
 }

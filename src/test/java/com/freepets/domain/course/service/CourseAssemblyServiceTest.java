@@ -121,6 +121,33 @@ class CourseAssemblyServiceTest {
         assertThat(result).hasSize(1);
     }
 
+    @Test
+    void 직접_편집_재정렬은_카테고리_상한_없이_모든_스톱을_최근접_이웃으로_재배치한다() {
+        // 카페 3곳(같은 카테고리라 assemble()이었다면 1곳만 남았을 상황) — 재정렬은 다 유지한다.
+        Facility first = facility(1L, "A", FacilityCategory.CAFE, "0", "0");
+        Facility far = facility(2L, "B", FacilityCategory.CAFE, "0.02", "0");
+        Facility near = facility(3L, "C", FacilityCategory.CAFE, "0.001", "0");
+
+        List<Facility> result = courseAssemblyService.reorderForCustomEdit(List.of(first, far, near));
+
+        assertThat(result).extracting(Facility::getFacilityId).containsExactly(1L, 3L, 2L);
+    }
+
+    @Test
+    void 직접_편집_재정렬에서_좌표_없는_시설은_원래_상대_순서를_유지한_채_뒤에_붙는다() {
+        Facility withCoordinate = facility(1L, "A", FacilityCategory.CAFE, "0", "0");
+        Facility noCoordinate1 = Facility.builder().name("좌표없음1").category(FacilityCategory.CAFE).build();
+        ReflectionTestUtils.setField(noCoordinate1, "facilityId", 8L);
+        Facility noCoordinate2 = Facility.builder().name("좌표없음2").category(FacilityCategory.CAFE).build();
+        ReflectionTestUtils.setField(noCoordinate2, "facilityId", 9L);
+
+        List<Facility> result = courseAssemblyService.reorderForCustomEdit(
+                List.of(noCoordinate1, withCoordinate, noCoordinate2)
+        );
+
+        assertThat(result).extracting(Facility::getFacilityId).containsExactly(1L, 8L, 9L);
+    }
+
     private Facility facility(
             Long facilityId,
             String name,

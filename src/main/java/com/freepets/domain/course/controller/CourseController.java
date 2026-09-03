@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.freepets.domain.course.dto.CourseRequestDTO;
 import com.freepets.domain.course.dto.CourseResponseDTO;
+import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.course.service.CourseCommandService;
 import com.freepets.domain.course.service.CourseLikedService;
@@ -150,6 +151,14 @@ public class CourseController {
         );
     }
 
+    // 로그인 불필요 — regions/themes와 같은 이유로, 거리 슬라이더에 쓴다.
+    @GetMapping("/distance-options")
+    public ApiResponse<CourseResponseDTO.DistanceOptionList> getDistanceOptions() {
+        return ApiResponse.onSuccess(
+                coursePresetService.getDistanceOptions()
+        );
+    }
+
     // 로그인 불필요 — regions/themes와 함께 로그인 전에도 쓸 수 있는 코스 모드(07-courses.md 참고).
     //
     // sido/sigungu는 DB(Facility.sido/sigungu)에 실제로 있는 값과 비교되는 자유 텍스트라 엄밀히는
@@ -173,10 +182,12 @@ public class CourseController {
             @Parameter(description = "시/군/구. 비우면 시/도 전체 대상 — 실제 값은 GET /courses/regions 응답 참고")
             @RequestParam(required = false) String sigungu,
             @Parameter(description = "코스 테마 — 라벨은 GET /courses/themes 참고")
-            @RequestParam CourseTheme theme
+            @RequestParam CourseTheme theme,
+            @Parameter(description = "스톱 간 최대 거리 — 라벨은 GET /courses/distance-options 참고, 생략하면 5km")
+            @RequestParam(required = false) CourseDistanceOption maxDistanceM
     ) {
         return ApiResponse.onSuccess(
-                coursePresetService.getPreset(sido, sigungu, theme)
+                coursePresetService.getPreset(sido, sigungu, theme, maxDistanceM)
         );
     }
 
@@ -184,13 +195,17 @@ public class CourseController {
     public ApiResponse<CourseResponseDTO.LikedCourseResult> getLikedCourse(
             @AuthenticationPrincipal Long userId,
             @RequestParam @NotEmpty(message = "반려동물을 1마리 이상 선택해주세요.") List<Long> petIds,
-            @RequestParam(required = false)
-            @Min(value = 500, message = "거리는 500m 이상이어야 합니다.")
-            @Max(value = 50000, message = "거리는 50000m 이하여야 합니다.")
-            Double maxDistanceM
+            @Parameter(description = "스톱 간 최대 거리 — 라벨은 GET /courses/distance-options 참고, 생략하면 5km")
+            @RequestParam(required = false) CourseDistanceOption maxDistanceM,
+            @Parameter(description = "시/도로 후보를 좁힌다 — 생략하면 전국 대상. 실제 값은 GET /courses/regions 참고")
+            @RequestParam(required = false) String sido,
+            @Parameter(description = "시/군/구로 후보를 좁힌다 — sido 없이는 무시된다")
+            @RequestParam(required = false) String sigungu,
+            @Parameter(description = "테마로 후보를 좁힌다 — 라벨은 GET /courses/themes 참고")
+            @RequestParam(required = false) CourseTheme theme
     ) {
         return ApiResponse.onSuccess(
-                courseLikedService.getLikedCourse(userId, petIds, maxDistanceM)
+                courseLikedService.getLikedCourse(userId, petIds, maxDistanceM, sido, sigungu, theme)
         );
     }
 
@@ -198,13 +213,17 @@ public class CourseController {
     public ApiResponse<CourseResponseDTO.SimilarCourseResult> getSimilarCourse(
             @AuthenticationPrincipal Long userId,
             @RequestParam @NotEmpty(message = "반려동물을 1마리 이상 선택해주세요.") List<Long> petIds,
-            @RequestParam(required = false)
-            @Min(value = 500, message = "거리는 500m 이상이어야 합니다.")
-            @Max(value = 50000, message = "거리는 50000m 이하여야 합니다.")
-            Double maxDistanceM
+            @Parameter(description = "스톱 간 최대 거리 — 라벨은 GET /courses/distance-options 참고, 생략하면 5km")
+            @RequestParam(required = false) CourseDistanceOption maxDistanceM,
+            @Parameter(description = "시/도로 후보를 좁힌다 — 생략하면 전국 대상. 실제 값은 GET /courses/regions 참고")
+            @RequestParam(required = false) String sido,
+            @Parameter(description = "시/군/구로 후보를 좁힌다 — sido 없이는 무시된다")
+            @RequestParam(required = false) String sigungu,
+            @Parameter(description = "테마로 후보를 좁힌다 — 라벨은 GET /courses/themes 참고")
+            @RequestParam(required = false) CourseTheme theme
     ) {
         return ApiResponse.onSuccess(
-                courseSimilarService.getSimilarCourse(userId, petIds, maxDistanceM)
+                courseSimilarService.getSimilarCourse(userId, petIds, maxDistanceM, sido, sigungu, theme)
         );
     }
 

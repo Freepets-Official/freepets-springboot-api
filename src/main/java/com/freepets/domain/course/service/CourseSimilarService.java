@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.course.dto.CourseResponseDTO;
+import com.freepets.domain.course.entity.CourseDistanceOption;
+import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
@@ -62,9 +64,12 @@ public class CourseSimilarService {
     public CourseResponseDTO.SimilarCourseResult getSimilarCourse(
             Long userId,
             List<Long> petIds,
-            Double maxDistanceM
+            CourseDistanceOption maxDistanceM,
+            String sido,
+            String sigungu,
+            CourseTheme theme
     ) {
-        double maxDistanceMeters = maxDistanceM != null ? maxDistanceM : CourseAssemblyService.DEFAULT_MAX_STOP_DISTANCE_METERS;
+        double maxDistanceMeters = (maxDistanceM != null ? maxDistanceM : CourseDistanceOption.FIVE_KM).getMeters();
         List<Pet> pets = findOwnedPets(userId, petIds);
 
         // 1) 취향 프로필 — 좋아한(=만족도 기록을 남긴) 곳들의 category ∪ review tag.
@@ -74,7 +79,7 @@ public class CourseSimilarService {
                 .collect(Collectors.toSet());
 
         if (likedFacilityIds.isEmpty()) {
-            return getPopularFallbackCourse(pets, maxDistanceMeters);
+            return getPopularFallbackCourse(pets, maxDistanceMeters, sido, sigungu, theme);
         }
 
         Set<FacilityCategory> likedCategories = satisfactions.stream()
@@ -96,8 +101,10 @@ public class CourseSimilarService {
         }
 
         // 3) "동반 가능"은 시설 단위 사실(petAllowed)이 아니라 실제 판별 기준 — 선택한 반려동물
-        // 전체가 DENIED로 막히지 않는 시설만 남긴다.
+        // 전체가 DENIED로 막히지 않는 시설만 남긴다. 지역·테마는 선택 사항이라 넘어오지 않으면
+        // 통과시킨다.
         List<Facility> eligibleCandidates = candidatesById.values().stream()
+                .filter(facility -> matchesRegionAndTheme(facility, sido, sigungu, theme))
                 .filter(facility -> petCheckJudgeService.judgeGroup(pets, facility).overall() != PetCheckResult.DENIED)
                 .toList();
 
@@ -134,11 +141,15 @@ public class CourseSimilarService {
      */
     private CourseResponseDTO.SimilarCourseResult getPopularFallbackCourse(
             List<Pet> pets,
-            double maxDistanceMeters
+            double maxDistanceMeters,
+            String sido,
+            String sigungu,
+            CourseTheme theme
     ) {
         List<Facility> candidates = facilityRepository.findAllByIsActiveTrueAndPetAllowedNot(PetAllowed.DENIED);
 
         List<Facility> eligibleCandidates = candidates.stream()
+                .filter(facility -> matchesRegionAndTheme(facility, sido, sigungu, theme))
                 .filter(facility -> petCheckJudgeService.judgeGroup(pets, facility).overall() != PetCheckResult.DENIED)
                 .toList();
 
@@ -185,6 +196,23 @@ public class CourseSimilarService {
                 false,
                 "아직 취향 데이터가 부족해서 지금 평점이 좋은 곳을 보여드려요"
         );
+    }
+
+    // CourseLikedService.matchesRegionAndTheme와 같은 이유 — sido/sigungu/theme 셋 다 선택
+    // 사항이라 넘어오지 않은 조건은 통과시킨다.
+    private boolean matchesRegionAndTheme(
+            Facility facility,
+            String sido,
+            String sigungu,
+            CourseTheme theme
+    ) {
+        if (sido != null && !sido.equals(facility.getSido())) {
+            return false;
+        }
+        if (sigungu != null && !sigungu.equals(facility.getSigungu())) {
+            return false;
+        }
+        return theme == null || theme.getCategories().contains(facility.getCategory());
     }
 
     private int similarityScore(

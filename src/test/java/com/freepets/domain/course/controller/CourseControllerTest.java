@@ -29,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.freepets.domain.course.dto.CourseRequestDTO;
 import com.freepets.domain.course.dto.CourseResponseDTO;
+import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.course.service.CourseCommandService;
 import com.freepets.domain.course.service.CourseLikedService;
@@ -91,6 +92,21 @@ class CourseControllerTest {
                 .andExpect(jsonPath("$.result.themes[0].label").value("애견 카페"));
     }
 
+    @Test
+    @DisplayName("거리 선택지 조회에 성공하면 200을 반환한다")
+    void 거리_선택지_조회에_성공하면_200을_반환한다() throws Exception {
+        CourseResponseDTO.DistanceOptionList result = new CourseResponseDTO.DistanceOptionList(
+                List.of(new CourseResponseDTO.DistanceOption(CourseDistanceOption.FIVE_KM, "5km", 5000))
+        );
+        when(coursePresetService.getDistanceOptions()).thenReturn(result);
+
+        mockMvc.perform(get("/api/v1/courses/distance-options"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.options[0].value").value("FIVE_KM"))
+                .andExpect(jsonPath("$.result.options[0].label").value("5km"))
+                .andExpect(jsonPath("$.result.options[0].meters").value(5000));
+    }
+
     // ------------------------------------------------------------------
     // GET /courses/preset
     // ------------------------------------------------------------------
@@ -102,7 +118,7 @@ class CourseControllerTest {
                 101L, "강릉시 애견 카페 코스",
                 List.of(new CourseResponseDTO.PresetStop(1L, "카페A", FacilityCategory.CAFE, 88.4, 0.0))
         );
-        when(coursePresetService.getPreset(eq("강원"), eq("강릉시"), eq(CourseTheme.PET_CAFE))).thenReturn(result);
+        when(coursePresetService.getPreset(eq("강원"), eq("강릉시"), eq(CourseTheme.PET_CAFE), isNull())).thenReturn(result);
 
         mockMvc.perform(get("/api/v1/courses/preset")
                         .param("sido", "강원")
@@ -114,6 +130,22 @@ class CourseControllerTest {
                 .andExpect(jsonPath("$.result.title").value("강릉시 애견 카페 코스"))
                 .andExpect(jsonPath("$.result.stops[0].facilityId").value(1))
                 .andExpect(jsonPath("$.result.stops[0].category").value("CAFE"));
+    }
+
+    @Test
+    @DisplayName("preset에 거리를 지정하면 그대로 서비스에 전달된다")
+    void preset에_거리를_지정하면_그대로_서비스에_전달된다() throws Exception {
+        CourseResponseDTO.PresetCourseResult result = new CourseResponseDTO.PresetCourseResult(101L, "강릉시 애견 카페 코스", List.of());
+        when(coursePresetService.getPreset(eq("강원"), eq("강릉시"), eq(CourseTheme.PET_CAFE), eq(CourseDistanceOption.TWENTY_KM)))
+                .thenReturn(result);
+
+        mockMvc.perform(get("/api/v1/courses/preset")
+                        .param("sido", "강원")
+                        .param("sigungu", "강릉시")
+                        .param("theme", "PET_CAFE")
+                        .param("maxDistanceM", "TWENTY_KM"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.courseId").value(101));
     }
 
     @Test
@@ -157,7 +189,7 @@ class CourseControllerTest {
                 "몽이가 좋아한 곳",
                 List.of(new CourseResponseDTO.LikedStop(1L, "카페A", FacilityCategory.CAFE, 9.4, List.of()))
         );
-        when(courseLikedService.getLikedCourse(isNull(), eq(List.of(1L, 2L)), isNull())).thenReturn(result);
+        when(courseLikedService.getLikedCourse(isNull(), eq(List.of(1L, 2L)), isNull(), isNull(), isNull(), isNull())).thenReturn(result);
 
         mockMvc.perform(get("/api/v1/courses/liked").param("petIds", "1,2"))
                 .andExpect(status().isOk())
@@ -174,14 +206,49 @@ class CourseControllerTest {
     }
 
     @Test
+    @DisplayName("liked에 거리·지역·테마를 지정하면 그대로 서비스에 전달된다")
+    void liked에_거리_지역_테마를_지정하면_그대로_서비스에_전달된다() throws Exception {
+        CourseResponseDTO.LikedCourseResult result = new CourseResponseDTO.LikedCourseResult("몽이가 좋아한 곳", List.of());
+        when(courseLikedService.getLikedCourse(
+                isNull(), eq(List.of(1L)), eq(CourseDistanceOption.TEN_KM), eq("강원특별자치도"), eq("강릉시"), eq(CourseTheme.HEALING)
+        )).thenReturn(result);
+
+        mockMvc.perform(get("/api/v1/courses/liked")
+                        .param("petIds", "1")
+                        .param("maxDistanceM", "TEN_KM")
+                        .param("sido", "강원특별자치도")
+                        .param("sigungu", "강릉시")
+                        .param("theme", "HEALING"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.title").value("몽이가 좋아한 곳"));
+    }
+
+    @Test
     @DisplayName("similar 조회에 성공하면 200을 반환한다")
     void similar_조회에_성공하면_200을_반환한다() throws Exception {
         CourseResponseDTO.SimilarCourseResult result = new CourseResponseDTO.SimilarCourseResult(
                 "취향과 비슷한 새로운 곳", true, List.of()
         );
-        when(courseSimilarService.getSimilarCourse(isNull(), eq(List.of(1L)), isNull())).thenReturn(result);
+        when(courseSimilarService.getSimilarCourse(isNull(), eq(List.of(1L)), isNull(), isNull(), isNull(), isNull())).thenReturn(result);
 
         mockMvc.perform(get("/api/v1/courses/similar").param("petIds", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.title").value("취향과 비슷한 새로운 곳"));
+    }
+
+    @Test
+    @DisplayName("similar에 거리·지역·테마를 지정하면 그대로 서비스에 전달된다")
+    void similar에_거리_지역_테마를_지정하면_그대로_서비스에_전달된다() throws Exception {
+        CourseResponseDTO.SimilarCourseResult result = new CourseResponseDTO.SimilarCourseResult("취향과 비슷한 새로운 곳", true, List.of());
+        when(courseSimilarService.getSimilarCourse(
+                isNull(), eq(List.of(1L)), eq(CourseDistanceOption.ONE_KM), eq("강원특별자치도"), isNull(), eq(CourseTheme.PET_CAFE)
+        )).thenReturn(result);
+
+        mockMvc.perform(get("/api/v1/courses/similar")
+                        .param("petIds", "1")
+                        .param("maxDistanceM", "ONE_KM")
+                        .param("sido", "강원특별자치도")
+                        .param("theme", "PET_CAFE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.title").value("취향과 비슷한 새로운 곳"));
     }

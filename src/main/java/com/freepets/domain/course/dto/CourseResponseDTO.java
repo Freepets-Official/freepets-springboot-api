@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.review.entity.Tag;
@@ -66,6 +67,17 @@ public class CourseResponseDTO {
     // GET /api/v1/courses/regions 응답 — preset의 sido/sigungu 드롭다운용.
     public record RegionList(
             List<SidoRegion> sidos
+    ) {}
+
+    // GET /api/v1/courses/distance-options 응답 — 거리 슬라이더 선택지 목록.
+    public record DistanceOptionList(
+            List<DistanceOption> options
+    ) {}
+
+    public record DistanceOption(
+            CourseDistanceOption value,
+            String label,
+            int meters
     ) {}
 
     public record SidoRegion(

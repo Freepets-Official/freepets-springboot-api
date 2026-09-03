@@ -22,6 +22,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.course.dto.CourseResponseDTO;
 import com.freepets.domain.course.entity.Course;
+import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.course.entity.CourseSource;
 import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.course.repository.CourseRepository;
@@ -60,16 +61,19 @@ class CoursePresetServiceTest {
                 .sido("강원")
                 .sigungu("강릉시")
                 .theme(CourseTheme.PET_CAFE)
+                .distanceOption(CourseDistanceOption.FIVE_KM)
                 .build();
         cached.replaceStops(List.of(cafe));
         ReflectionTestUtils.setField(cached, "courseId", 101L);
 
-        when(courseRepository.findBySourceAndSidoAndSigunguAndTheme(CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE))
+        when(courseRepository.findBySourceAndSidoAndSigunguAndThemeAndDistanceOption(
+                CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM
+        ))
                 .thenReturn(Optional.of(cached));
         when(reviewRepository.aggregateByFacilityIdIn(anyCollection(), any()))
                 .thenReturn(List.of(aggregateOf(1L, 88.0)));
 
-        CourseResponseDTO.PresetCourseResult result = coursePresetService.getPreset("강원", "강릉시", CourseTheme.PET_CAFE);
+        CourseResponseDTO.PresetCourseResult result = coursePresetService.getPreset("강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM);
 
         assertThat(result.courseId()).isEqualTo(101L);
         assertThat(result.stops()).hasSize(1);
@@ -80,12 +84,14 @@ class CoursePresetServiceTest {
 
     @Test
     void 후보가_2곳_미만이면_COURSE4001() {
-        when(courseRepository.findBySourceAndSidoAndSigunguAndTheme(CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE))
+        when(courseRepository.findBySourceAndSidoAndSigunguAndThemeAndDistanceOption(
+                CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM
+        ))
                 .thenReturn(Optional.empty());
         when(facilityRepository.findPresetCandidates("강원", "강릉시", CourseTheme.PET_CAFE.getCategories()))
                 .thenReturn(List.of(facility(1L, "카페A", FacilityCategory.CAFE)));
 
-        assertThatThrownBy(() -> coursePresetService.getPreset("강원", "강릉시", CourseTheme.PET_CAFE))
+        assertThatThrownBy(() -> coursePresetService.getPreset("강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -94,7 +100,9 @@ class CoursePresetServiceTest {
         Facility cafeHigh = facility(1L, "카페A", FacilityCategory.CAFE);
         Facility cafeLow = facility(2L, "카페B", FacilityCategory.CAFE);
 
-        when(courseRepository.findBySourceAndSidoAndSigunguAndTheme(CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE))
+        when(courseRepository.findBySourceAndSidoAndSigunguAndThemeAndDistanceOption(
+                CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM
+        ))
                 .thenReturn(Optional.empty());
         when(facilityRepository.findPresetCandidates("강원", "강릉시", CourseTheme.PET_CAFE.getCategories()))
                 .thenReturn(List.of(cafeLow, cafeHigh)); // 순서 뒤섞여 들어와도 점수 desc로 정렬돼야 함
@@ -106,7 +114,7 @@ class CoursePresetServiceTest {
             return saved;
         });
 
-        CourseResponseDTO.PresetCourseResult result = coursePresetService.getPreset("강원", "강릉시", CourseTheme.PET_CAFE);
+        CourseResponseDTO.PresetCourseResult result = coursePresetService.getPreset("강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM);
 
         assertThat(result.courseId()).isEqualTo(202L);
         assertThat(result.title()).isEqualTo("강릉시 애견 카페 코스");
@@ -124,6 +132,19 @@ class CoursePresetServiceTest {
                 .contains(CourseTheme.PET_CAFE);
         assertThat(result.themes()).extracting(CourseResponseDTO.ThemeOption::label)
                 .contains("애견 카페");
+    }
+
+    @Test
+    void 거리_선택지_목록은_enum_전체를_라벨_미터와_함께_반환한다() {
+        CourseResponseDTO.DistanceOptionList result = coursePresetService.getDistanceOptions();
+
+        assertThat(result.options()).hasSize(CourseDistanceOption.values().length);
+        assertThat(result.options()).extracting(CourseResponseDTO.DistanceOption::value)
+                .contains(CourseDistanceOption.FIVE_KM);
+        assertThat(result.options()).extracting(CourseResponseDTO.DistanceOption::label)
+                .contains("5km");
+        assertThat(result.options()).extracting(CourseResponseDTO.DistanceOption::meters)
+                .contains(5000);
     }
 
     @Test
@@ -170,6 +191,7 @@ class CoursePresetServiceTest {
                 .sido("강원")
                 .sigungu("강릉시")
                 .theme(CourseTheme.PET_CAFE)
+                .distanceOption(CourseDistanceOption.FIVE_KM)
                 .build();
         cached.replaceStops(List.of(cafeOld));
 

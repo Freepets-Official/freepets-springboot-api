@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.course.dto.CourseResponseDTO;
+import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
@@ -89,7 +90,7 @@ class CourseSimilarServiceTest {
         when(reviewPetRepository.findAllByReview_Facility_FacilityIdAndReview_DeletedAtIsNull(any()))
                 .thenReturn(List.of());
 
-        CourseResponseDTO.SimilarCourseResult result = courseSimilarService.getSimilarCourse(1L, List.of(5L), null);
+        CourseResponseDTO.SimilarCourseResult result = courseSimilarService.getSimilarCourse(1L, List.of(5L), null, null, null, null);
 
         assertThat(result.title()).isEqualTo("지금 인기 있는 곳");
         assertThat(result.isPersonalized()).isFalse();
@@ -104,7 +105,7 @@ class CourseSimilarServiceTest {
         when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of());
         when(facilityRepository.findAllByIsActiveTrueAndPetAllowedNot(PetAllowed.DENIED)).thenReturn(List.of());
 
-        assertThatThrownBy(() -> courseSimilarService.getSimilarCourse(1L, List.of(5L), null))
+        assertThatThrownBy(() -> courseSimilarService.getSimilarCourse(1L, List.of(5L), null, null, null, null))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -125,7 +126,7 @@ class CourseSimilarServiceTest {
         when(petCheckJudgeService.judgeGroup(any(), any()))
                 .thenReturn(new PetCheckJudgeService.GroupVerdict(PetCheckResult.DENIED, List.of()));
 
-        assertThatThrownBy(() -> courseSimilarService.getSimilarCourse(1L, List.of(5L), null))
+        assertThatThrownBy(() -> courseSimilarService.getSimilarCourse(1L, List.of(5L), null, null, null, null))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -156,12 +157,41 @@ class CourseSimilarServiceTest {
         when(reviewPetRepository.findAllByReview_Facility_FacilityIdAndReview_DeletedAtIsNull(3L))
                 .thenReturn(List.of());
 
-        CourseResponseDTO.SimilarCourseResult result = courseSimilarService.getSimilarCourse(1L, List.of(5L), null);
+        CourseResponseDTO.SimilarCourseResult result = courseSimilarService.getSimilarCourse(1L, List.of(5L), null, null, null, null);
 
         assertThat(result.title()).isEqualTo("취향과 비슷한 새로운 곳");
         assertThat(result.stops()).hasSize(2);
         assertThat(result.stops().get(0).facilityId()).isEqualTo(2L); // 카테고리(3)+태그(1)=4점이 관광지(3점)보다 높음
         assertThat(result.stops().get(0).matchedTags()).containsExactly(Tag.SPACIOUS);
+    }
+
+    @Test
+    void 테마_필터를_지정하면_카테고리가_다른_후보는_제외되고_최종_후보가_부족하면_COURSE4003() {
+        // 필터 없으면 카페(카테고리 매치)·관광지(태그 매치) 둘 다 후보가 되지만, PET_CAFE
+        // 테마(카테고리=CAFE)를 지정하면 관광지 후보가 제외되어 후보가 1곳으로 줄어야 한다.
+        User user = user(1L);
+        Pet 몽이 = pet(5L, user, "몽이");
+        Facility liked = facility(1L, "좋아한카페", FacilityCategory.CAFE, true);
+        Facility candidateCafe = facility(2L, "후보카페A", FacilityCategory.CAFE, true);
+        Facility candidateTour = facility(3L, "후보관광지", FacilityCategory.TOUR, true);
+        PetSatisfaction satisfaction = PetSatisfaction.builder().pet(몽이).facility(liked).score(9.0f).build();
+
+        when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
+        when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of(satisfaction));
+        when(reviewTagRepository.findDistinctTagsByFacilityIdIn(Set.of(1L))).thenReturn(Set.of(Tag.SPACIOUS));
+        when(facilityRepository.findAllByIsActiveTrueAndPetAllowedNotAndFacilityIdNotInAndCategoryIn(
+                PetAllowed.DENIED, Set.of(1L), Set.of(FacilityCategory.CAFE)
+        )).thenReturn(List.of(candidateCafe));
+        when(reviewTagRepository.findFacilityIdsByTagInExcluding(Set.of(Tag.SPACIOUS), Set.of(1L)))
+                .thenReturn(List.of(3L));
+        when(facilityRepository.findAllById(List.of(3L))).thenReturn(List.of(candidateTour));
+        // 테마 필터가 관광지 후보를 먼저 걸러내 judgeGroup은 남은 카페 후보에만 호출된다.
+        when(petCheckJudgeService.judgeGroup(any(), any()))
+                .thenReturn(new PetCheckJudgeService.GroupVerdict(PetCheckResult.ALLOWED, List.of()));
+
+        assertThatThrownBy(() -> courseSimilarService
+                .getSimilarCourse(1L, List.of(5L), null, null, null, CourseTheme.PET_CAFE))
+                .isInstanceOf(GeneralException.class);
     }
 
     private User user(Long id) {

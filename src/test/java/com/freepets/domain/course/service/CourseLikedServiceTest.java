@@ -58,7 +58,7 @@ class CourseLikedServiceTest {
         when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
         when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of());
 
-        assertThatThrownBy(() -> courseLikedService.getLikedCourse(1L, List.of(5L), null))
+        assertThatThrownBy(() -> courseLikedService.getLikedCourse(1L, List.of(5L), null, null, null, null))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -74,7 +74,7 @@ class CourseLikedServiceTest {
         when(petSatisfactionRepository.findAverageScoreByFacilityIdIn(Set.of(10L)))
                 .thenReturn(List.of(averageOf(10L, 6.0))); // 6.5 미만
 
-        assertThatThrownBy(() -> courseLikedService.getLikedCourse(1L, List.of(5L), null))
+        assertThatThrownBy(() -> courseLikedService.getLikedCourse(1L, List.of(5L), null, null, null, null))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -96,7 +96,7 @@ class CourseLikedServiceTest {
                 .thenReturn(List.of(averageOf(10L, 9.8), averageOf(11L, 8.0)));
         when(facilityRepository.findAllById(anyCollection())).thenReturn(List.of(facilityA, facilityB));
 
-        CourseResponseDTO.LikedCourseResult result = courseLikedService.getLikedCourse(1L, List.of(5L, 6L), null);
+        CourseResponseDTO.LikedCourseResult result = courseLikedService.getLikedCourse(1L, List.of(5L, 6L), null, null, null, null);
 
         assertThat(result.title()).isEqualTo("몽이·보리가 좋아한 곳");
         assertThat(result.stops()).hasSize(2);
@@ -104,6 +104,58 @@ class CourseLikedServiceTest {
         assertThat(result.stops().get(0).avgSatisfaction()).isEqualTo(9.8);
         assertThat(result.stops().get(0).reasonPets()).hasSize(1);
         assertThat(result.stops().get(0).reasonPets().get(0).petName()).isEqualTo("몽이");
+    }
+
+    @Test
+    void 지역_필터를_지정하면_다른_지역_후보는_제외된다() {
+        User user = user(1L);
+        Pet 몽이 = pet(5L, user, "몽이");
+        Facility facilityA = facility(10L, "카페A", FacilityCategory.CAFE);
+        Facility facilityB = facility(11L, "관광지A", FacilityCategory.TOUR);
+        Facility facilityC = facility(12L, "다른지역카페", FacilityCategory.RESTAURANT);
+        ReflectionTestUtils.setField(facilityA, "sido", "강원특별자치도");
+        ReflectionTestUtils.setField(facilityB, "sido", "강원특별자치도");
+        ReflectionTestUtils.setField(facilityC, "sido", "서울특별시");
+
+        PetSatisfaction satisfactionA = PetSatisfaction.builder().pet(몽이).facility(facilityA).score(9.8f).build();
+        PetSatisfaction satisfactionB = PetSatisfaction.builder().pet(몽이).facility(facilityB).score(9.0f).build();
+        PetSatisfaction satisfactionC = PetSatisfaction.builder().pet(몽이).facility(facilityC).score(8.5f).build();
+
+        when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
+        when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L)))
+                .thenReturn(List.of(satisfactionA, satisfactionB, satisfactionC));
+        when(petSatisfactionRepository.findAverageScoreByFacilityIdIn(anyCollection()))
+                .thenReturn(List.of(averageOf(10L, 9.8), averageOf(11L, 9.0), averageOf(12L, 8.5)));
+        when(facilityRepository.findAllById(anyCollection())).thenReturn(List.of(facilityA, facilityB, facilityC));
+
+        CourseResponseDTO.LikedCourseResult result = courseLikedService
+                .getLikedCourse(1L, List.of(5L), null, "강원특별자치도", null, null);
+
+        assertThat(result.stops()).extracting(CourseResponseDTO.LikedStop::facilityId)
+                .containsExactlyInAnyOrder(10L, 11L);
+    }
+
+    @Test
+    void 지역_필터로_최종_후보가_2곳_미만이면_COURSE4002() {
+        User user = user(1L);
+        Pet 몽이 = pet(5L, user, "몽이");
+        Facility facilityA = facility(10L, "카페A", FacilityCategory.CAFE);
+        Facility facilityB = facility(11L, "다른지역카페", FacilityCategory.TOUR);
+        ReflectionTestUtils.setField(facilityA, "sido", "강원특별자치도");
+        ReflectionTestUtils.setField(facilityB, "sido", "서울특별시");
+
+        PetSatisfaction satisfactionA = PetSatisfaction.builder().pet(몽이).facility(facilityA).score(9.8f).build();
+        PetSatisfaction satisfactionB = PetSatisfaction.builder().pet(몽이).facility(facilityB).score(9.0f).build();
+
+        when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
+        when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L)))
+                .thenReturn(List.of(satisfactionA, satisfactionB));
+        when(petSatisfactionRepository.findAverageScoreByFacilityIdIn(anyCollection()))
+                .thenReturn(List.of(averageOf(10L, 9.8), averageOf(11L, 9.0)));
+        when(facilityRepository.findAllById(anyCollection())).thenReturn(List.of(facilityA, facilityB));
+
+        assertThatThrownBy(() -> courseLikedService.getLikedCourse(1L, List.of(5L), null, "강원특별자치도", null, null))
+                .isInstanceOf(GeneralException.class);
     }
 
     private FacilityAverageSatisfaction averageOf(

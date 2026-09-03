@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.course.dto.CourseResponseDTO;
+import com.freepets.domain.course.entity.CourseDistanceOption;
+import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.pet.entity.Pet;
@@ -41,9 +43,12 @@ public class CourseLikedService {
     public CourseResponseDTO.LikedCourseResult getLikedCourse(
             Long userId,
             List<Long> petIds,
-            Double maxDistanceM
+            CourseDistanceOption maxDistanceM,
+            String sido,
+            String sigungu,
+            CourseTheme theme
     ) {
-        double maxDistanceMeters = maxDistanceM != null ? maxDistanceM : CourseAssemblyService.DEFAULT_MAX_STOP_DISTANCE_METERS;
+        double maxDistanceMeters = (maxDistanceM != null ? maxDistanceM : CourseDistanceOption.FIVE_KM).getMeters();
         List<Pet> pets = findOwnedPets(userId, petIds);
 
         // 1) 후보 풀 — petIds 중 최소 한 마리가 방문 기록을 남긴 시설.
@@ -75,6 +80,14 @@ public class CourseLikedService {
 
         // 3) avgSatisfaction desc 순서를 보존한 채로 Facility 엔티티 로드.
         List<Facility> candidatesScoreDescSorted = loadInOrder(finalCandidateFacilityIds);
+
+        // 3-1) 지역·테마 필터(둘 다 선택 사항) — 지정 안 하면 기존과 동일하게 전부 대상.
+        candidatesScoreDescSorted = candidatesScoreDescSorted.stream()
+                .filter(facility -> matchesRegionAndTheme(facility, sido, sigungu, theme))
+                .toList();
+        if (candidatesScoreDescSorted.size() < MINIMUM_CANDIDATE_COUNT) {
+            throw new GeneralException(ErrorStatus.COURSE4002);
+        }
 
         // 4) 카테고리 다양성 + 거리 제약 + 동선 조립. 거리 제약 때문에 후보는 충분해도 실제
         // 채택된 스톱은 더 줄 수 있어 여기서 한 번 더 확인한다(2번의 사전 확인만으론 부족).
@@ -119,6 +132,23 @@ public class CourseLikedService {
                 avgSatisfaction,
                 reasonPets
         );
+    }
+
+    // CourseSimilarService.matchesRegionAndTheme와 같은 이유 — sido/sigungu/theme 셋 다 선택
+    // 사항이라 넘어오지 않은 조건은 통과시킨다.
+    private boolean matchesRegionAndTheme(
+            Facility facility,
+            String sido,
+            String sigungu,
+            CourseTheme theme
+    ) {
+        if (sido != null && !sido.equals(facility.getSido())) {
+            return false;
+        }
+        if (sigungu != null && !sigungu.equals(facility.getSigungu())) {
+            return false;
+        }
+        return theme == null || theme.getCategories().contains(facility.getCategory());
     }
 
     /** {@code IN} 조회는 순서를 보장하지 않아, 점수 desc로 정렬된 id 순서를 다시 입혀준다. */

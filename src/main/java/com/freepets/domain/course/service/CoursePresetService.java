@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.course.dto.CourseResponseDTO;
 import com.freepets.domain.course.entity.Course;
+import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.course.entity.CourseSource;
 import com.freepets.domain.course.entity.CourseStop;
 import com.freepets.domain.course.entity.CourseTheme;
@@ -71,6 +72,19 @@ public class CoursePresetService {
      * 실제 저장된 값("강원특별자치도")과 다른 표기를 보내 후보가 0건이 되는 문제가 있어서, 실제
      * 동반 가능 시설이 있는 (sido, sigungu) 조합만 골라서 준다.
      */
+    /**
+     * GET /api/v1/courses/distance-options — 거리 슬라이더 선택지. preset은 이 값도 캐시 키에
+     * 들어가는 고정 구간이라(CourseDistanceOption 참고) DB가 아니라 코드에 고정된 값을 그대로
+     * 내려준다 — themes와 같은 이유.
+     */
+    public CourseResponseDTO.DistanceOptionList getDistanceOptions() {
+        List<CourseResponseDTO.DistanceOption> options = Arrays.stream(CourseDistanceOption.values())
+                .map(option -> new CourseResponseDTO.DistanceOption(option, option.getLabel(), option.getMeters()))
+                .toList();
+
+        return new CourseResponseDTO.DistanceOptionList(options);
+    }
+
     public CourseResponseDTO.RegionList getRegions() {
         Map<String, List<String>> sigungusBySido = new LinkedHashMap<>();
 
@@ -91,10 +105,13 @@ public class CoursePresetService {
     public CourseResponseDTO.PresetCourseResult getPreset(
             String sido,
             String sigungu,
-            CourseTheme theme
+            CourseTheme theme,
+            CourseDistanceOption maxDistanceM
     ) {
-        Course course = courseRepository.findBySourceAndSidoAndSigunguAndTheme(CourseSource.PRESET, sido, sigungu, theme)
-                .orElseGet(() -> courseRepository.save(newCourse(sido, sigungu, theme)));
+        CourseDistanceOption distanceOption = maxDistanceM != null ? maxDistanceM : CourseDistanceOption.FIVE_KM;
+        Course course = courseRepository
+                .findBySourceAndSidoAndSigunguAndThemeAndDistanceOption(CourseSource.PRESET, sido, sigungu, theme, distanceOption)
+                .orElseGet(() -> courseRepository.save(newCourse(sido, sigungu, theme, distanceOption)));
 
         return toResult(course);
     }
@@ -117,16 +134,19 @@ public class CoursePresetService {
     }
 
     private void recalculate(Course course) {
-        List<Facility> stops = computeStops(course.getSido(), course.getSigungu(), course.getTheme());
+        // 기존에 캐시된 조합은 이미 distanceOption을 갖고 있다 — 이 값 자체는 재계산 대상이
+        // 아니라 조합의 정체성(캐시 키)이므로 그대로 재사용한다.
+        List<Facility> stops = computeStops(course.getSido(), course.getSigungu(), course.getTheme(), course.getDistanceOption());
         course.update(titleOf(course.getSido(), course.getSigungu(), course.getTheme()), null, stops);
     }
 
     private Course newCourse(
             String sido,
             String sigungu,
-            CourseTheme theme
+            CourseTheme theme,
+            CourseDistanceOption distanceOption
     ) {
-        List<Facility> stops = computeStops(sido, sigungu, theme);
+        List<Facility> stops = computeStops(sido, sigungu, theme, distanceOption);
 
         Course course = Course.builder()
                 .name(titleOf(sido, sigungu, theme))
@@ -134,6 +154,7 @@ public class CoursePresetService {
                 .sido(sido)
                 .sigungu(sigungu)
                 .theme(theme)
+                .distanceOption(distanceOption)
                 .build();
         course.replaceStops(stops);
 
@@ -143,7 +164,8 @@ public class CoursePresetService {
     private List<Facility> computeStops(
             String sido,
             String sigungu,
-            CourseTheme theme
+            CourseTheme theme,
+            CourseDistanceOption distanceOption
     ) {
         List<Facility> candidates = facilityRepository.findPresetCandidates(sido, sigungu, theme.getCategories());
         if (candidates.size() < MINIMUM_CANDIDATE_COUNT) {
@@ -157,12 +179,10 @@ public class CoursePresetService {
                 ).reversed())
                 .toList();
 
-        // preset은 여러 사용자가 공유하는 캐시라 요청마다 다른 거리값을 받을 수 없다 — 기본값
-        // 고정. 사용자별로 조정 가능한 건 liked/similar(캐시하지 않고 매 요청 재계산)뿐이다.
         List<Facility> stops = courseAssemblyService.assembleWithoutCategoryDiversity(
                 candidatesScoreDescSorted,
                 CourseAssemblyService.MAX_RECOMMENDED_STOPS,
-                CourseAssemblyService.DEFAULT_MAX_STOP_DISTANCE_METERS
+                distanceOption.getMeters()
         );
         if (stops.size() < MINIMUM_CANDIDATE_COUNT) {
             throw new GeneralException(ErrorStatus.COURSE4001);

@@ -143,6 +143,8 @@ class CourseLikedServiceTest {
         Facility facilityA = facility(10L, "카페A", FacilityCategory.CAFE); // PET_CAFE 매치
         Facility facilityB = facility(11L, "관광지A", FacilityCategory.TOUR); // SEASIDE_WALK 매치
         Facility facilityC = facility(12L, "식당A", FacilityCategory.RESTAURANT); // 둘 다 불일치
+        ReflectionTestUtils.setField(facilityA, "smallCategoryCode", "FD050100"); // 카페
+        ReflectionTestUtils.setField(facilityB, "smallCategoryCode", "NA020900"); // 해변. 해수욕장
 
         PetSatisfaction satisfactionA = PetSatisfaction.builder().pet(몽이).facility(facilityA).score(9.8f).build();
         PetSatisfaction satisfactionB = PetSatisfaction.builder().pet(몽이).facility(facilityB).score(9.0f).build();

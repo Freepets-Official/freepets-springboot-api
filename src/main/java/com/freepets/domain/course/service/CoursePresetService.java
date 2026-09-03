@@ -138,8 +138,7 @@ public class CoursePresetService {
             return toResult(course);
         }
 
-        Set<FacilityCategory> categories = categoriesOf(themes);
-        List<Facility> pool = computeStops(sido, sigungu, categories, distanceOption);
+        List<Facility> pool = computeStops(sido, sigungu, themes, distanceOption);
         return new CourseResponseDTO.PresetCourseResult(null, titleOf(sido, sigungu, themes), toStopDtos(sampleForDisplay(pool)));
     }
 
@@ -183,8 +182,7 @@ public class CoursePresetService {
         // 기존에 캐시된 조합은 이미 distanceOption을 갖고 있다 — 이 값 자체는 재계산 대상이
         // 아니라 조합의 정체성(캐시 키)이므로 그대로 재사용한다. 캐시는 단일 테마 조합만 갖고
         // 있으므로(다중 테마는 애초에 저장되지 않는다) Set.of(theme)로 감싸도 안전하다.
-        Set<FacilityCategory> categories = categoriesOf(Set.of(course.getTheme()));
-        List<Facility> stops = computeStops(course.getSido(), course.getSigungu(), categories, course.getDistanceOption());
+        List<Facility> stops = computeStops(course.getSido(), course.getSigungu(), Set.of(course.getTheme()), course.getDistanceOption());
         course.update(titleOf(course.getSido(), course.getSigungu(), Set.of(course.getTheme())), null, stops);
     }
 
@@ -194,7 +192,7 @@ public class CoursePresetService {
             CourseTheme theme,
             CourseDistanceOption distanceOption
     ) {
-        List<Facility> stops = computeStops(sido, sigungu, theme.getCategories(), distanceOption);
+        List<Facility> stops = computeStops(sido, sigungu, Set.of(theme), distanceOption);
 
         Course course = Course.builder()
                 .name(titleOf(sido, sigungu, Set.of(theme)))
@@ -212,10 +210,16 @@ public class CoursePresetService {
     private List<Facility> computeStops(
             String sido,
             String sigungu,
-            Set<FacilityCategory> categories,
+            Set<CourseTheme> themes,
             CourseDistanceOption distanceOption
     ) {
-        List<Facility> candidates = facilityRepository.findPresetCandidates(sido, sigungu, categories);
+        // 대분류(categories)로 DB에서 1차로 넉넉히 좁히고, 소분류(smallCategoryCodes)로 정밀
+        // 확인한다 — TOUR 하나가 여러 테마에 걸쳐 있어(예: 산속 사찰도 TOUR) 대분류만으로는
+        // "바다 산책" 같은 구체적인 테마를 정확히 못 고른다(CourseTheme 클래스 주석 참고).
+        Set<FacilityCategory> categories = categoriesOf(themes);
+        List<Facility> candidates = facilityRepository.findPresetCandidates(sido, sigungu, categories).stream()
+                .filter(facility -> themes.stream().anyMatch(theme -> theme.matchesFacilityDetail(facility)))
+                .toList();
         if (candidates.size() < MINIMUM_CANDIDATE_COUNT) {
             throw new GeneralException(ErrorStatus.COURSE4001);
         }

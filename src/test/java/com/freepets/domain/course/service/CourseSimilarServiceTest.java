@@ -179,6 +179,7 @@ class CourseSimilarServiceTest {
         Facility liked = facility(1L, "좋아한카페", FacilityCategory.CAFE, true);
         Facility candidateCafe = facility(2L, "후보카페A", FacilityCategory.CAFE, true);
         Facility candidateTour = facility(3L, "후보관광지", FacilityCategory.TOUR, true);
+        ReflectionTestUtils.setField(candidateCafe, "smallCategoryCode", "FD050100"); // 카페 — PET_CAFE 매치
         PetSatisfaction satisfaction = PetSatisfaction.builder().pet(몽이).facility(liked).score(9.0f).build();
 
         when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));

@@ -99,6 +99,25 @@ class CoursePresetServiceTest {
     }
 
     @Test
+    void 대분류만_같고_소분류가_다르면_후보에서_제외된다() {
+        // TOUR 하나가 SEASIDE_WALK·SIGHTSEEING 등 여러 테마에 걸쳐 있어, 대분류만 보면 산속
+        // 고궁도 "바다 산책" 후보로 잘못 섞일 수 있었다 — 소분류(lclsSystm3)까지 확인해야 한다.
+        Facility beach = facility(1L, "해변A", FacilityCategory.TOUR, "NA020900"); // 해변. 해수욕장
+        Facility palace = facility(2L, "고궁A", FacilityCategory.TOUR, "HS010100"); // 고궁(SIGHTSEEING 소속)
+
+        when(courseRepository.findBySourceAndSidoAndSigunguAndThemeAndDistanceOption(
+                CourseSource.PRESET, "강원", "강릉시", CourseTheme.SEASIDE_WALK, CourseDistanceOption.FIVE_KM
+        )).thenReturn(Optional.empty());
+        when(facilityRepository.findPresetCandidates("강원", "강릉시", CourseTheme.SEASIDE_WALK.getCategories()))
+                .thenReturn(List.of(beach, palace));
+
+        // 후보가 결국 1곳(beach)뿐이라 최소 후보 수(2) 미달로 예외가 나야 한다 — palace가 섞여
+        // 2곳이 됐다면(소분류 확인이 빠졌다는 뜻) 이 예외 대신 성공 응답이 돌아온다.
+        assertThatThrownBy(() -> coursePresetService.getPreset("강원", "강릉시", Set.of(CourseTheme.SEASIDE_WALK), CourseDistanceOption.FIVE_KM))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
     void 캐시_미스면_계산해서_저장하고_courseId를_채워_돌려준다() {
         Facility cafeHigh = facility(1L, "카페A", FacilityCategory.CAFE);
         Facility cafeLow = facility(2L, "카페B", FacilityCategory.CAFE);
@@ -193,7 +212,7 @@ class CoursePresetServiceTest {
     @Test
     void 테마를_여러_개_고르면_캐시하지_않고_즉시_계산한다() {
         Facility cafe = facility(1L, "카페A", FacilityCategory.CAFE);
-        Facility tour = facility(2L, "관광지A", FacilityCategory.TOUR);
+        Facility tour = facility(2L, "해변A", FacilityCategory.TOUR, "NA020900"); // 해변. 해수욕장 — SEASIDE_WALK 매칭
         Set<FacilityCategory> unionCategories = Set.of(FacilityCategory.CAFE, FacilityCategory.TOUR, FacilityCategory.LEISURE);
 
         when(facilityRepository.findPresetCandidates("강원", "강릉시", unionCategories))
@@ -334,16 +353,30 @@ class CoursePresetServiceTest {
         return new FacilityReviewAggregate(facilityId, 5, averageScore, 4.0, 4.0, 4.0);
     }
 
+    // CourseTheme.matchesFacilityDetail이 category뿐 아니라 smallCategoryCode도 확인하므로,
+    // 이 파일 대부분을 차지하는 CAFE(PET_CAFE 테마 테스트용) 시설은 기본으로 매칭되는 소분류
+    // 코드(FD050100 카페)를 넣어준다 — CAFE가 아니거나 다른 테마로 매칭시킬 시설은 아래 4개짜리
+    // 오버로드로 직접 코드를 지정한다.
     private Facility facility(
             Long facilityId,
             String name,
             FacilityCategory category
+    ) {
+        return facility(facilityId, name, category, category == FacilityCategory.CAFE ? "FD050100" : null);
+    }
+
+    private Facility facility(
+            Long facilityId,
+            String name,
+            FacilityCategory category,
+            String smallCategoryCode
     ) {
         Facility facility = Facility.builder()
                 .name(name)
                 .category(category)
                 .lat(new BigDecimal("37.0"))
                 .lng(new BigDecimal("128.0"))
+                .smallCategoryCode(smallCategoryCode)
                 .build();
         ReflectionTestUtils.setField(facility, "facilityId", facilityId);
         return facility;

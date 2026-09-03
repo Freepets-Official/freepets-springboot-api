@@ -280,7 +280,7 @@ public class CourseSimilarService {
             return false;
         }
         return themes == null || themes.isEmpty()
-                || themes.stream().anyMatch(theme -> theme.getCategories().contains(facility.getCategory()));
+                || themes.stream().anyMatch(theme -> theme.matchesFacilityDetail(facility));
     }
 
     /**

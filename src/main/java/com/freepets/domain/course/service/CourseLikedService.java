@@ -152,7 +152,7 @@ public class CourseLikedService {
             return false;
         }
         return themes == null || themes.isEmpty()
-                || themes.stream().anyMatch(theme -> theme.getCategories().contains(facility.getCategory()));
+                || themes.stream().anyMatch(theme -> theme.matchesFacilityDetail(facility));
     }
 
     /** {@code IN} 조회는 순서를 보장하지 않아, 점수 desc로 정렬된 id 순서를 다시 입혀준다. */

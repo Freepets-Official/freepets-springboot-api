@@ -2,7 +2,9 @@ package com.freepets.domain.course.service;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +45,12 @@ import lombok.extern.slf4j.Slf4j;
  * <p>최초 조회 시 캐시가 없으면 그 자리에서 계산해 채워두는 지연 생성(lazy) + {@link
  * CoursePresetScheduler}의 나이틀리 재계산(이미 캐시된 조합의 스톱 구성을 새로 고침), 두 경로 모두
  * 이 서비스를 쓴다.
+ *
+ * <p>캐시에는 실제 표시 개수({@link CourseAssemblyService#MAX_RECOMMENDED_STOPS})보다 넉넉한
+ * 풀({@link #PRESET_POOL_SIZE})을 저장해두고, 조회할 때마다 그중 일부를 무작위로 뽑아 보여준다
+ * ({@link #sampleForDisplay}) — 같은 조합을 반복 조회해도 매번 똑같은 4곳만 나오면 지루하다는
+ * 피드백 반영. 캐시가 아끼는 "후보 스캔 + 조립" 자체는 그대로 재사용하고, 저장해둔 풀 안에서
+ * 고르는 가벼운 연산만 매 조회마다 다시 한다.
  */
 @Slf4j
 @Service
@@ -51,6 +59,9 @@ import lombok.extern.slf4j.Slf4j;
 public class CoursePresetService {
 
     private static final int MINIMUM_CANDIDATE_COUNT = 2;
+
+    /** 표시 개수(4)보다 넉넉하게 캐시해둬야 조회할 때마다 다른 조합을 뽑아 보여줄 여지가 생긴다. */
+    private static final int PRESET_POOL_SIZE = 8;
 
     private final CourseRepository courseRepository;
     private final FacilityRepository facilityRepository;
@@ -128,8 +139,8 @@ public class CoursePresetService {
         }
 
         Set<FacilityCategory> categories = categoriesOf(themes);
-        List<Facility> stops = computeStops(sido, sigungu, categories, distanceOption);
-        return new CourseResponseDTO.PresetCourseResult(null, titleOf(sido, sigungu, themes), toStopDtos(stops));
+        List<Facility> pool = computeStops(sido, sigungu, categories, distanceOption);
+        return new CourseResponseDTO.PresetCourseResult(null, titleOf(sido, sigungu, themes), toStopDtos(sampleForDisplay(pool)));
     }
 
     /**
@@ -216,25 +227,70 @@ public class CoursePresetService {
                 ).reversed())
                 .toList();
 
-        List<Facility> stops = courseAssemblyService.assembleWithoutCategoryDiversity(
+        List<Facility> pool = courseAssemblyService.assembleWithoutCategoryDiversity(
                 candidatesScoreDescSorted,
-                CourseAssemblyService.MAX_RECOMMENDED_STOPS,
+                PRESET_POOL_SIZE,
                 distanceOption.getMeters()
         );
-        if (stops.size() < MINIMUM_CANDIDATE_COUNT) {
+        if (pool.size() < MINIMUM_CANDIDATE_COUNT) {
             throw new GeneralException(ErrorStatus.COURSE4001);
         }
 
-        return stops;
+        return pool;
     }
 
     private CourseResponseDTO.PresetCourseResult toResult(Course course) {
-        List<Facility> facilitiesInOrder = course.getStops().stream()
+        List<Facility> pool = course.getStops().stream()
                 .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
                 .map(CourseStop::getFacility)
                 .toList();
 
-        return new CourseResponseDTO.PresetCourseResult(course.getCourseId(), course.getName(), toStopDtos(facilitiesInOrder));
+        return new CourseResponseDTO.PresetCourseResult(course.getCourseId(), course.getName(), toStopDtos(sampleForDisplay(pool)));
+    }
+
+    /**
+     * 캐시(혹은 다중 테마 즉시 계산)가 만들어둔 풀(최대 {@link #PRESET_POOL_SIZE}개)에서 매
+     * 조회마다 표시 개수({@link CourseAssemblyService#MAX_RECOMMENDED_STOPS})만큼 무작위로 뽑는다.
+     * 풀이 이미 표시 개수 이하면 그대로 반환한다(뽑을 게 없음 — 매번 똑같이 나오는 게 당연함).
+     *
+     * <p>카테고리 상한(전체의 절반)은 풀을 만들 때 이미 한 번 적용됐지만, 풀 크기(8) 기준으로
+     * 계산된 값이라 무작위로 4개만 뽑으면 그 상한이 더는 안 맞을 수 있다 — 그래서 표시 개수(4)
+     * 기준으로 다시 계산해 뽑는 동안 재적용한다. 상한 때문에 표시 개수를 못 채우면(예: 후보가
+     * 한 카테고리로 쏠려 있어서) 남은 자리는 상한 없이 채운다 — 풀 크기 안에서는 항상 최대한
+     * 채워서 보여준다.
+     */
+    private List<Facility> sampleForDisplay(List<Facility> pool) {
+        int displaySize = CourseAssemblyService.MAX_RECOMMENDED_STOPS;
+        if (pool.size() <= displaySize) {
+            return pool;
+        }
+
+        List<Facility> shuffled = new ArrayList<>(pool);
+        Collections.shuffle(shuffled);
+
+        int maxPerCategory = (int) Math.ceil(displaySize / 2.0);
+        Map<FacilityCategory, Integer> countByCategory = new HashMap<>();
+        List<Facility> sampled = new ArrayList<>();
+        for (Facility facility : shuffled) {
+            if (sampled.size() >= displaySize) {
+                break;
+            }
+            if (countByCategory.getOrDefault(facility.getCategory(), 0) >= maxPerCategory) {
+                continue;
+            }
+            sampled.add(facility);
+            countByCategory.merge(facility.getCategory(), 1, Integer::sum);
+        }
+        for (Facility facility : shuffled) {
+            if (sampled.size() >= displaySize) {
+                break;
+            }
+            if (!sampled.contains(facility)) {
+                sampled.add(facility);
+            }
+        }
+
+        return courseAssemblyService.reorderForCustomEdit(sampled);
     }
 
     private List<CourseResponseDTO.PresetStop> toStopDtos(List<Facility> facilitiesInOrder) {

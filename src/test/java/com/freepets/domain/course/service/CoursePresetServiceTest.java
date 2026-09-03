@@ -9,6 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -122,6 +124,70 @@ class CoursePresetServiceTest {
         assertThat(result.stops()).hasSize(2);
         assertThat(result.stops().get(0).facilityId()).isEqualTo(1L); // 점수 90이 70보다 먼저
         assertThat(result.stops().get(0).distanceM()).isEqualTo(0.0); // 시작점 자기 자신
+    }
+
+    @Test
+    void 캐시된_풀이_표시_개수보다_크면_조회할_때마다_다른_구성이_나올_수_있다() {
+        // 풀(8곳)을 캐시해두고, 조회마다 그중 4곳을 무작위로 뽑아 보여준다 — 같은 조합을
+        // 반복 조회해도 매번 똑같은 4곳만 나오지 않는지 확인한다.
+        List<Facility> pool = new ArrayList<>();
+        for (long id = 1; id <= 8; id++) {
+            pool.add(facility(id, "카페" + id, FacilityCategory.CAFE));
+        }
+        Course cached = cachedCourseWithStops(pool);
+
+        when(courseRepository.findBySourceAndSidoAndSigunguAndThemeAndDistanceOption(
+                CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM
+        )).thenReturn(Optional.of(cached));
+        when(reviewRepository.aggregateByFacilityIdIn(anyCollection(), any())).thenReturn(List.of());
+
+        Set<List<Long>> distinctResults = new HashSet<>();
+        for (int i = 0; i < 30; i++) {
+            CourseResponseDTO.PresetCourseResult result = coursePresetService
+                    .getPreset("강원", "강릉시", Set.of(CourseTheme.PET_CAFE), CourseDistanceOption.FIVE_KM);
+            assertThat(result.stops()).hasSize(4); // 풀은 8곳이어도 표시는 항상 4곳
+            distinctResults.add(result.stops().stream().map(CourseResponseDTO.PresetStop::facilityId).toList());
+        }
+
+        assertThat(distinctResults).hasSizeGreaterThan(1); // 30번 다 똑같지는 않다
+    }
+
+    @Test
+    void 무작위로_뽑아도_카테고리_상한을_지킨다() {
+        // 풀 6곳 카페 + 2곳 관광지 — 표시 4곳 기준 상한(절반=2)이 무작위 추첨 후에도 지켜져야 한다.
+        List<Facility> pool = new ArrayList<>();
+        for (long id = 1; id <= 6; id++) {
+            pool.add(facility(id, "카페" + id, FacilityCategory.CAFE));
+        }
+        pool.add(facility(7L, "관광지A", FacilityCategory.TOUR));
+        pool.add(facility(8L, "관광지B", FacilityCategory.TOUR));
+        Course cached = cachedCourseWithStops(pool);
+
+        when(courseRepository.findBySourceAndSidoAndSigunguAndThemeAndDistanceOption(
+                CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM
+        )).thenReturn(Optional.of(cached));
+        when(reviewRepository.aggregateByFacilityIdIn(anyCollection(), any())).thenReturn(List.of());
+
+        for (int i = 0; i < 30; i++) {
+            CourseResponseDTO.PresetCourseResult result = coursePresetService
+                    .getPreset("강원", "강릉시", Set.of(CourseTheme.PET_CAFE), CourseDistanceOption.FIVE_KM);
+            long cafeCount = result.stops().stream().filter(stop -> stop.category() == FacilityCategory.CAFE).count();
+            assertThat(result.stops()).hasSize(4);
+            assertThat(cafeCount).isLessThanOrEqualTo(2);
+        }
+    }
+
+    private Course cachedCourseWithStops(List<Facility> stops) {
+        Course course = Course.builder()
+                .name("테스트 코스")
+                .source(CourseSource.PRESET)
+                .sido("강원")
+                .sigungu("강릉시")
+                .theme(CourseTheme.PET_CAFE)
+                .distanceOption(CourseDistanceOption.FIVE_KM)
+                .build();
+        course.replaceStops(stops);
+        return course;
     }
 
     @Test

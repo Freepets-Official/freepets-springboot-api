@@ -25,8 +25,11 @@ import com.freepets.domain.petcheck.service.PetCheckJudgeService;
 import com.freepets.domain.petsatisfaction.entity.PetSatisfaction;
 import com.freepets.domain.petsatisfaction.repository.PetSatisfactionRepository;
 import com.freepets.domain.review.entity.ReviewPet;
+import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.Tag;
+import com.freepets.domain.review.repository.FacilityReviewAggregate;
 import com.freepets.domain.review.repository.ReviewPetRepository;
+import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.review.repository.ReviewTagRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
@@ -44,11 +47,13 @@ public class CourseSimilarService {
 
     private static final int CATEGORY_MATCH_SCORE = 3;
     private static final int MINIMUM_CANDIDATE_COUNT = 2;
-    private static final String TITLE = "취향과 비슷한 새로운 곳";
+    private static final String PERSONALIZED_TITLE = "취향과 비슷한 새로운 곳";
+    private static final String POPULAR_FALLBACK_TITLE = "지금 인기 있는 곳";
 
     private final PetRepository petRepository;
     private final PetSatisfactionRepository petSatisfactionRepository;
     private final FacilityRepository facilityRepository;
+    private final ReviewRepository reviewRepository;
     private final ReviewTagRepository reviewTagRepository;
     private final ReviewPetRepository reviewPetRepository;
     private final PetCheckJudgeService petCheckJudgeService;
@@ -69,7 +74,7 @@ public class CourseSimilarService {
                 .collect(Collectors.toSet());
 
         if (likedFacilityIds.isEmpty()) {
-            throw new GeneralException(ErrorStatus.COURSE4003);
+            return getPopularFallbackCourse(pets, maxDistanceMeters);
         }
 
         Set<FacilityCategory> likedCategories = satisfactions.stream()
@@ -119,7 +124,67 @@ public class CourseSimilarService {
                 .map(facility -> toSimilarStop(facility, likedTags, tagsByFacilityId, pets))
                 .toList();
 
-        return new CourseResponseDTO.SimilarCourseResult(TITLE, stopDtos);
+        return new CourseResponseDTO.SimilarCourseResult(PERSONALIZED_TITLE, true, stopDtos);
+    }
+
+    /**
+     * 취향 프로필(만족도 기록)이 아예 없는 신규 유저용 대체 경로 — 카테고리/태그로 매치할 재료가
+     * 없으므로 개인화를 포기하고, 리뷰 평점 기준으로 "지금 인기 있는 곳"을 대신 추천한다. 실제
+     * 동반 가능 여부(judgeGroup)는 그대로 검증한다.
+     */
+    private CourseResponseDTO.SimilarCourseResult getPopularFallbackCourse(
+            List<Pet> pets,
+            double maxDistanceMeters
+    ) {
+        List<Facility> candidates = facilityRepository.findAllByIsActiveTrueAndPetAllowedNot(PetAllowed.DENIED);
+
+        List<Facility> eligibleCandidates = candidates.stream()
+                .filter(facility -> petCheckJudgeService.judgeGroup(pets, facility).overall() != PetCheckResult.DENIED)
+                .toList();
+
+        if (eligibleCandidates.size() < MINIMUM_CANDIDATE_COUNT) {
+            throw new GeneralException(ErrorStatus.COURSE4003);
+        }
+
+        List<Long> candidateIds = eligibleCandidates.stream().map(Facility::getFacilityId).toList();
+        Map<Long, Double> scoreById = reviewRepository.aggregateByFacilityIdIn(candidateIds, ReviewReportStatus.ACCEPTED).stream()
+                .collect(Collectors.toMap(FacilityReviewAggregate::facilityId, FacilityReviewAggregate::averageScore));
+
+        List<Facility> candidatesScoreDescSorted = eligibleCandidates.stream()
+                .sorted(Comparator.comparingDouble(
+                        (Facility facility) -> scoreById.getOrDefault(facility.getFacilityId(), 0.0)
+                ).reversed())
+                .toList();
+
+        List<Facility> stops = courseAssemblyService.assemble(candidatesScoreDescSorted, maxDistanceMeters);
+        if (stops.size() < MINIMUM_CANDIDATE_COUNT) {
+            throw new GeneralException(ErrorStatus.COURSE4003);
+        }
+
+        List<CourseResponseDTO.SimilarStop> stopDtos = stops.stream()
+                .map(facility -> toPopularFallbackStop(facility, pets))
+                .toList();
+
+        return new CourseResponseDTO.SimilarCourseResult(POPULAR_FALLBACK_TITLE, false, stopDtos);
+    }
+
+    private CourseResponseDTO.SimilarStop toPopularFallbackStop(
+            Facility facility,
+            List<Pet> selectedPets
+    ) {
+        List<ReviewPet> reviewPets = reviewPetRepository
+                .findAllByReview_Facility_FacilityIdAndReview_DeletedAtIsNull(facility.getFacilityId());
+        Set<Kind> reviewedKinds = reviewPets.stream().map(reviewPet -> reviewPet.getPet().getKind()).collect(Collectors.toSet());
+        boolean matchedByKind = selectedPets.stream().anyMatch(pet -> reviewedKinds.contains(pet.getKind()));
+
+        return new CourseResponseDTO.SimilarStop(
+                facility.getFacilityId(),
+                facility.getName(),
+                List.of(),
+                matchedByKind,
+                false,
+                "아직 취향 데이터가 부족해서 지금 평점이 좋은 곳을 보여드려요"
+        );
     }
 
     private int similarityScore(

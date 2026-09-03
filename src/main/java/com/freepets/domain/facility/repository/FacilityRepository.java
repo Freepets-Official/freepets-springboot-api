@@ -138,6 +138,13 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
 
     List<Facility> findByContentIdIn(Collection<String> contentIds);
 
+    /**
+     * "취향 비슷한 새곳"(similar)에서 취향 프로필(만족도 기록)이 아예 없는 신규 유저용 대체
+     * 후보 풀 — 좋아한 시설 기반 카테고리·태그 매치가 불가능하므로, 개인화 대신 리뷰 평점
+     * 기준으로 대체 추천한다.
+     */
+    List<Facility> findAllByIsActiveTrueAndPetAllowedNot(PetAllowed excludedPetAllowed);
+
     boolean existsByContentId(String contentId);
 
     /**

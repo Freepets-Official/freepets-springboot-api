@@ -177,7 +177,7 @@ class CourseControllerTest {
     @DisplayName("similar 조회에 성공하면 200을 반환한다")
     void similar_조회에_성공하면_200을_반환한다() throws Exception {
         CourseResponseDTO.SimilarCourseResult result = new CourseResponseDTO.SimilarCourseResult(
-                "취향과 비슷한 새로운 곳", List.of()
+                "취향과 비슷한 새로운 곳", true, List.of()
         );
         when(courseSimilarService.getSimilarCourse(isNull(), eq(List.of(1L)), isNull())).thenReturn(result);
 

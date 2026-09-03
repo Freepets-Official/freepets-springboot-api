@@ -34,9 +34,12 @@ public class CourseResponseDTO {
             float score
     ) {}
 
-    // GET /api/v1/courses/similar 응답.
+    // GET /api/v1/courses/similar 응답. isPersonalized=false는 취향 프로필(만족도 기록)이
+    // 아직 없는 신규 유저에게 리뷰 평점 기준 대체 추천을 보여준 것 — 프론트가 "취향 기반"인
+    // 척 하지 않도록 구분해서 내려준다.
     public record SimilarCourseResult(
             String title,
+            boolean isPersonalized,
             List<SimilarStop> stops
     ) {}
 

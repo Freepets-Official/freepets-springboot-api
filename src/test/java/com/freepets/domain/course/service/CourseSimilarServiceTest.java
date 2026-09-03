@@ -3,6 +3,7 @@ package com.freepets.domain.course.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -29,8 +30,10 @@ import com.freepets.domain.petcheck.entity.PetCheckResult;
 import com.freepets.domain.petcheck.service.PetCheckJudgeService;
 import com.freepets.domain.petsatisfaction.entity.PetSatisfaction;
 import com.freepets.domain.petsatisfaction.repository.PetSatisfactionRepository;
+import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.Tag;
 import com.freepets.domain.review.repository.ReviewPetRepository;
+import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.review.repository.ReviewTagRepository;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
@@ -49,6 +52,9 @@ class CourseSimilarServiceTest {
     private FacilityRepository facilityRepository;
 
     @Mock
+    private ReviewRepository reviewRepository;
+
+    @Mock
     private ReviewTagRepository reviewTagRepository;
 
     @Mock
@@ -64,11 +70,39 @@ class CourseSimilarServiceTest {
     private CourseSimilarService courseSimilarService;
 
     @Test
-    void 좋아한_시설이_없으면_COURSE4003() {
+    void 좋아한_시설이_없으면_인기_코스로_대체된다() {
+        // 취향 프로필(만족도 기록)이 아예 없는 신규 유저 — 카테고리/태그 매치가 불가능하므로
+        // 개인화를 포기하고 리뷰 평점 기준 대체 추천으로 넘어가야 한다.
+        User user = user(1L);
+        Pet 몽이 = pet(5L, user, "몽이");
+        Facility popularA = facility(10L, "인기카페", FacilityCategory.CAFE, true);
+        Facility popularB = facility(11L, "인기관광지", FacilityCategory.TOUR, true);
+
+        when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
+        when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of());
+        when(facilityRepository.findAllByIsActiveTrueAndPetAllowedNot(PetAllowed.DENIED))
+                .thenReturn(List.of(popularA, popularB));
+        when(petCheckJudgeService.judgeGroup(any(), any()))
+                .thenReturn(new PetCheckJudgeService.GroupVerdict(PetCheckResult.ALLOWED, List.of()));
+        when(reviewRepository.aggregateByFacilityIdIn(any(), eq(ReviewReportStatus.ACCEPTED)))
+                .thenReturn(List.of());
+        when(reviewPetRepository.findAllByReview_Facility_FacilityIdAndReview_DeletedAtIsNull(any()))
+                .thenReturn(List.of());
+
+        CourseResponseDTO.SimilarCourseResult result = courseSimilarService.getSimilarCourse(1L, List.of(5L), null);
+
+        assertThat(result.title()).isEqualTo("지금 인기 있는 곳");
+        assertThat(result.isPersonalized()).isFalse();
+        assertThat(result.stops()).hasSize(2);
+    }
+
+    @Test
+    void 취향_프로필도_없고_대체_후보도_부족하면_COURSE4003() {
         User user = user(1L);
         Pet 몽이 = pet(5L, user, "몽이");
         when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
         when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of());
+        when(facilityRepository.findAllByIsActiveTrueAndPetAllowedNot(PetAllowed.DENIED)).thenReturn(List.of());
 
         assertThatThrownBy(() -> courseSimilarService.getSimilarCourse(1L, List.of(5L), null))
                 .isInstanceOf(GeneralException.class);

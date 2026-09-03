@@ -17,9 +17,11 @@ import com.freepets.domain.facility.entity.FacilityCategory;
  * 산속 사찰 같은 안 어울리는 TOUR 시설이 섞여 나올 수 있었다. {@code smallCategoryCodes}는
  * 관광공사가 이미 매겨둔 훨씬 촘촘한 분류체계(lclsSystm3, {@link Facility#getSmallCategoryCode()})
  * 값으로, 실제로 이 테마에 어울리는 소분류만 정확히 골라낸다 — 새로 배치를 돌리거나 데이터를
- * 채울 필요 없이 이미 동기화 때 저장된 값을 그대로 쓴다. {@code categories}는 DB 쿼리에서 후보를
- * 1차로 좁히는 용도로 남겨두고({@link com.freepets.domain.facility.repository.FacilityRepository#findPresetCandidates}),
- * 최종 판정은 {@link #matchesFacilityDetail}이 소분류까지 확인한다.
+ * 채울 필요 없이 이미 동기화 때 저장된 값을 그대로 쓴다. 최종 판정({@link #matchesFacilityDetail})은
+ * 소분류만으로 하고, {@code categories}는 {@link
+ * com.freepets.domain.course.service.CoursePresetService}가 DB 쿼리에서 후보를 1차로 좁히는
+ * 용도로만 쓴다({@link com.freepets.domain.facility.repository.FacilityRepository#findPresetCandidates}) —
+ * 자세한 이유는 {@link #matchesFacilityDetail} 참고.
  *
  * <p>{@code categories}는 후보 시설을 고르는 필터다. PET_CAFE처럼 카테고리가 하나뿐인 테마는
  * liked/similar의 "카테고리당 1곳" 규칙을 적용하면 스톱이 1개로 줄어버리므로, preset은
@@ -72,10 +74,11 @@ public enum CourseTheme {
             )
     ),
 
-    /** 관광지(명소) 위주. */
+    /** 관광지(명소) 위주. categories에 LEISURE도 넣은 이유 — 실측 확인 시 이 소분류에 해당하는
+     * 시설 중 극소수(국립공원 등)가 우리 카테고리 기준 LEISURE로도 잡혀 있었다. */
     SIGHTSEEING(
             "관광지 위주",
-            Set.of(FacilityCategory.TOUR, FacilityCategory.CULTURE, FacilityCategory.FESTIVAL),
+            Set.of(FacilityCategory.TOUR, FacilityCategory.CULTURE, FacilityCategory.FESTIVAL, FacilityCategory.LEISURE),
             Set.of(
                     "HS010100", "HS010200", "HS010300", "HS010400", "HS010500", "HS010600", // 고궁~민속마을
                     "HS010700", "HS010800", "HS010900", "HS011000", "HS011100", "HS011200", // 사적지~기타역사유적지
@@ -91,11 +94,18 @@ public enum CourseTheme {
             )
     ),
 
-    /** 레포츠·액티비티 시설 위주. */
+    /**
+     * 레포츠·액티비티 시설 위주. categories에 TOUR·CULTURE·STAY도 넣은 이유 — EX(체험관광)·VE02
+     * (테마파크 등) 코드들이 실제로는 우리 카테고리 기준 대부분 TOUR(일부 CULTURE)로 잡혀 있어서,
+     * LEISURE로만 좁히면 이 코드들에 매칭되는 시설 대다수가 DB 쿼리 단계에서부터 못 나온다
+     * (실측 확인: EX01/02/03/06/07·VE02가 전부 TOUR, 일부만 CULTURE). STAY는 캠핑 코드(AC05)
+     * 중 극소수가 우리 카테고리 기준 STAY로도 잡혀 있어서 추가했다.
+     */
     ACTIVITY(
             "액티비티",
-            Set.of(FacilityCategory.LEISURE),
+            Set.of(FacilityCategory.LEISURE, FacilityCategory.TOUR, FacilityCategory.CULTURE, FacilityCategory.STAY),
             Set.of(
+                    "AC050100", "AC050200", "AC050300", "AC050400", // 일반야영장~글램핑장(캠핑)
                     "EX010100", // 전통문화체험
                     "EX020100", "EX020200", "EX020300", "EX020400", // 금속공예체험~기타공예체험
                     "EX030100", "EX030200", "EX030300", "EX030400", // 체험마을~체험어장
@@ -139,16 +149,26 @@ public enum CourseTheme {
         return categories;
     }
 
+    public Set<String> getSmallCategoryCodes() {
+        return smallCategoryCodes;
+    }
+
     /**
-     * 이 시설이 실제로 이 테마에 어울리는지 — 대분류(categories)와 소분류(smallCategoryCodes)를
-     * 둘 다 확인한다. 소분류 코드가 없는 시설(동기화 시점에 관광공사가 안 내려준 경우)은 이
-     * 테마에 속한다고 확신할 근거가 없으므로 제외한다 — "정확한 테마 매칭"이 이 필드를 만든
-     * 목적이라, 근거 없이 통과시키면 원래 문제(대분류만으로 뭉뚱그려짐)로 되돌아간다.
+     * 이 시설이 실제로 이 테마에 어울리는지 — 소분류(smallCategoryCodes)만으로 판정한다.
+     * 소분류 코드가 없는 시설(동기화 시점에 관광공사가 안 내려준 경우)은 이 테마에 속한다고
+     * 확신할 근거가 없으므로 제외한다.
+     *
+     * <p>대분류(categories)는 여기서 확인하지 않는다 — 처음엔 categories도 같이 확인했었는데,
+     * 실측해보니 관광공사 분류체계상 EX(체험관광)·VE02(테마파크 등) 코드가 우리 카테고리 기준
+     * TOUR로 잡혀 있어서, ACTIVITY의 categories를 LEISURE로만 좁혀뒀던 탓에 이미
+     * smallCategoryCodes에 넣어둔 시설 상당수(2,000여 건)가 대분류 게이트에서 먼저 걸려
+     * 제외되는 버그가 있었다. 게다가 liked/similar는 시설을 이 테마의 categories가 아니라
+     * "사용자가 좋아한 시설의 카테고리"로 먼저 걸러 가져오므로, 여기서 다시 categories를
+     * 확인하면 호출부에 따라 결과가 달라지는 문제도 있었다. categories는 대신
+     * {@link com.freepets.domain.course.service.CoursePresetService}가 DB 쿼리 1차 필터로만
+     * 쓴다.
      */
     public boolean matchesFacilityDetail(Facility facility) {
-        if (!categories.contains(facility.getCategory())) {
-            return false;
-        }
         // Set.of(...)의 contains(null)은 예외를 던지므로(불변 컬렉션의 알려진 특성) 먼저 걸러낸다.
         String smallCategoryCode = facility.getSmallCategoryCode();
         return smallCategoryCode != null && smallCategoryCodes.contains(smallCategoryCode);

@@ -73,6 +73,25 @@ public class FacilityResponseDTO {
     ) {}
 
     /**
+     * 지역 칩 하나. 시도 → 시군구 2단계 구조를 그대로 담는다.
+     *
+     * <p>코드와 이름을 함께 내려준다. 랭킹 조회는 코드로 거르지만 화면에는 이름을 보여줘야 하고,
+     * 프론트가 이름으로 코드를 되찾는 표를 따로 들고 있게 하면 지명이 바뀔 때 어긋난다.
+     *
+     * <p>화면 첫 칩인 "전국"은 담기지 않는다. 필터를 걸지 않는다는 뜻이라 프론트가 고정으로 그린다.
+     */
+    public record Region(
+            String sidoCode,
+            String sido,
+            List<Sigungu> sigungus
+    ) {}
+
+    public record Sigungu(
+            String sigunguCode,
+            String sigungu
+    ) {}
+
+    /**
      * 발자국 등급. 어느 등급에도 못 미치면 {@code level}이 0이고
      * {@code label}은 {@code "리뷰 수집 중 (n/10)"}이 된다.
      */

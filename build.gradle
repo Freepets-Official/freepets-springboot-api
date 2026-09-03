@@ -110,6 +110,33 @@ tasks.register('facilitySync', Test) {
 	outputs.upToDateWhen { false }
 }
 
+// 관광공사 법정동 코드를 지역 테이블에 적재한다. 지역 칩이 이 테이블을 읽는다.
+// 실행: ./gradlew regionSync
+tasks.register('regionSync', Test) {
+	group = 'application'
+	description = '관광공사 법정동 코드를 지역 테이블에 적재한다'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.RegionSyncRunner'
+	}
+
+	systemProperty 'region.sync', 'true'
+
+	// 전국이 250여 건이라 호출이 한두 번이면 끝난다.
+	timeout = Duration.ofMinutes(10)
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
 // 저장된 리뷰를 시설의 발자국 등급 캐시에 1회 반영한다. 캐시 도입 이전에 쌓인 리뷰를 채운다.
 // 실행: ./gradlew facilityGradeBackfill
 tasks.register('facilityGradeBackfill', Test) {

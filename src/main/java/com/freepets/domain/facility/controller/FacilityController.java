@@ -1,5 +1,7 @@
 package com.freepets.domain.facility.controller;
 
+import java.util.List;
+
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -63,6 +65,22 @@ public class FacilityController {
     ) {
         return ApiResponse.onSuccess(
                 facilityQueryService.getRanking(request)
+        );
+    }
+
+    /**
+     * 랭킹 화면의 지역 칩 목록을 조회한다.
+     *
+     * <p>발자국 등급을 받은 시설이 있는 지역만 내려간다. 프론트가 지역 상수를 들고 있지 않는 이유는,
+     * 관광공사 동기화로 시설이 계속 늘어 하드코딩한 목록이 실제 데이터와 어긋나기 때문이다.
+     *
+     * <p>{@code /{facilityId}}보다 먼저 선언할 필요는 없다. 경로 변수가 {@code Long}이라
+     * {@code regions}는 애초에 그쪽으로 매칭되지 않는다.
+     */
+    @GetMapping("/regions")
+    public ApiResponse<List<FacilityResponseDTO.Region>> getFacilityRegions() {
+        return ApiResponse.onSuccess(
+                facilityQueryService.getRegions()
         );
     }
 

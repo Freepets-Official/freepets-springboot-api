@@ -37,6 +37,7 @@ class FacilityControllerTest {
 
     private static final String SEARCH_PATH = "/api/v1/facilities/search";
     private static final String RANKING_PATH = "/api/v1/facilities/ranking";
+    private static final String REGIONS_PATH = "/api/v1/facilities/regions";
 
     @Autowired
     private MockMvc mockMvc;
@@ -352,5 +353,40 @@ class FacilityControllerTest {
                 .andExpect(jsonPath("$.result.radiusM").exists());
 
         verifyNoInteractions(facilityQueryService);
+    }
+
+    // ------------------------------------------------------------------
+    // 지역 목록
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("지역 목록 조회에 성공하면 200과 시도·시군구를 반환한다")
+    void 지역_목록_조회에_성공하면_200과_시도_시군구를_반환한다() throws Exception {
+        when(facilityQueryService.getRegions()).thenReturn(List.of(
+                new FacilityResponseDTO.Region("32", "강원특별자치도", List.of(
+                        new FacilityResponseDTO.Sigungu("1", "강릉시"),
+                        new FacilityResponseDTO.Sigungu("5", "속초시")
+                ))
+        ));
+
+        mockMvc.perform(get(REGIONS_PATH))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result[0].sidoCode").value("32"))
+                .andExpect(jsonPath("$.result[0].sido").value("강원특별자치도"))
+                .andExpect(jsonPath("$.result[0].sigungus[0].sigunguCode").value("1"))
+                .andExpect(jsonPath("$.result[0].sigungus[0].sigungu").value("강릉시"))
+                .andExpect(jsonPath("$.result[0].sigungus[1].sigungu").value("속초시"));
+    }
+
+    @Test
+    @DisplayName("지역 목록이 비어도 200과 빈 배열을 반환한다")
+    void 지역_목록이_비어도_200과_빈_배열을_반환한다() throws Exception {
+        when(facilityQueryService.getRegions()).thenReturn(List.of());
+
+        mockMvc.perform(get(REGIONS_PATH))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").isArray())
+                .andExpect(jsonPath("$.result").isEmpty());
     }
 }

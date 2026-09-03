@@ -1,14 +1,17 @@
 package com.freepets.domain.facility.converter;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
 import com.freepets.domain.facility.entity.CheckList;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.PetFriendlyGrade;
+import com.freepets.domain.facility.entity.Region;
 import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.domain.facility.repository.FacilityWithDistance;
 import com.freepets.domain.pet.entity.Kind;
@@ -131,6 +134,44 @@ public class FacilityConverter {
                 .toList();
 
         return new FacilityResponseDTO.FacilitySearchResult(items, total);
+    }
+
+    /**
+     * 지역 목록을 시도 → 시군구 2단계 칩 구조로 접는다.
+     *
+     * <p>입력은 행정구역 코드 순으로 정렬돼 온다. 그 순서를 그대로 유지해야 하므로 기본
+     * {@code HashMap}이 아니라 {@link LinkedHashMap}으로 묶는다. 기본 맵은 넣은 순서를 지키지 않아
+     * 정렬이 깨진다.
+     *
+     * <p>등급 시설이 없는 지역도 그대로 내려간다. 사용자가 "여긴 아직 없구나"를 아는 편이
+     * 칩이 통째로 사라지는 것보다 덜 헷갈린다.
+     */
+    public static List<FacilityResponseDTO.Region> toRegions(List<Region> regions) {
+        Map<String, List<Region>> bySidoCode = regions.stream()
+                .collect(Collectors.groupingBy(
+                        Region::getSidoCode,
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ));
+
+        return bySidoCode.values().stream()
+                .map(FacilityConverter::toRegion)
+                .toList();
+    }
+
+    /** 시군구가 없는 시도(세종특별자치시 등)는 하위 칩 없이 시도 칩만 만든다. */
+    private static FacilityResponseDTO.Region toRegion(List<Region> sidoRegions) {
+        Region first = sidoRegions.get(0);
+
+        List<FacilityResponseDTO.Sigungu> sigungus = sidoRegions.stream()
+                .filter(Region::hasSigungu)
+                .map(region -> new FacilityResponseDTO.Sigungu(
+                        region.getSigunguCode(),
+                        region.getSigungu()
+                ))
+                .toList();
+
+        return new FacilityResponseDTO.Region(first.getSidoCode(), first.getSido(), sigungus);
     }
 
     /**

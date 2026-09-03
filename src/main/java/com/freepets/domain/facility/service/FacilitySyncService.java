@@ -14,7 +14,6 @@ import com.freepets.infra.tourapi.TourApiClient;
 import com.freepets.infra.tourapi.TourApiFacilityConverter;
 import com.freepets.infra.tourapi.TourApiResponseParser;
 import com.freepets.infra.tourapi.dto.AreaBasedItem;
-import com.freepets.infra.tourapi.dto.LdongCodeItem;
 import com.freepets.infra.tourapi.dto.PetTourItem;
 
 import lombok.RequiredArgsConstructor;
@@ -46,13 +45,17 @@ public class FacilitySyncService {
     private final TourApiFacilityConverter tourApiFacilityConverter;
     private final FacilityUpsertService facilityUpsertService;
 
+    // 시설 응답에는 지역이 코드로만 담겨 오므로 이름을 채우려면 매핑표가 먼저 있어야 한다.
+    // 지역 적재를 별도 서비스로 둔 덕에 ./gradlew regionSync 로 지역만 따로 채울 수도 있다.
+    private final RegionSyncService regionSyncService;
+
     /**
      * 전체 시설을 적재한다.
      *
-     * <p>호출량은 {@code 지역코드 2회 + B÷100 + A÷100}이다.
+     * <p>호출량은 {@code 지역코드 1~2회 + B÷100 + A÷100}이다.
      */
     public FacilitySyncResult syncAll() {
-        RegionNameTable regionNameTable = loadRegionNameTable();
+        RegionNameTable regionNameTable = regionSyncService.syncRegions();
         Map<String, PetTourItem> petTourItems = loadPetTourItems();
 
         String firstPage = tourApiClient.areaBasedList(null, 1, PAGE_SIZE);
@@ -107,23 +110,6 @@ public class FacilitySyncService {
                         (first, second) -> first));
     }
 
-    private RegionNameTable loadRegionNameTable() {
-        String body = tourApiClient.ldongCode(null, true, 1, 500);
-        int totalCount = tourApiResponseParser.parseTotalCount(body);
-
-        List<LdongCodeItem> items = new ArrayList<>(
-                tourApiResponseParser.parseItems(body, LdongCodeItem.class));
-
-        for (int page = 2; page <= pageCountOf(totalCount, 500); page++) {
-            items.addAll(tourApiResponseParser.parseItems(
-                    tourApiClient.ldongCode(null, true, page, 500), LdongCodeItem.class));
-        }
-
-        RegionNameTable regionNameTable = new RegionNameTable(items);
-        log.info("지역 코드표를 불러왔습니다. 시군구 {}건", regionNameTable.size());
-        return regionNameTable;
-    }
-
     /**
      * 한 페이지를 판정해 저장한다. 저장이 끝나면 메모리에서 놓아준다.
      */
@@ -153,14 +139,7 @@ public class FacilitySyncService {
     }
 
     private int pageCountOf(int totalCount) {
-        return pageCountOf(totalCount, PAGE_SIZE);
-    }
-
-    private int pageCountOf(
-            int totalCount,
-            int pageSize
-    ) {
-        return (totalCount + pageSize - 1) / pageSize;
+        return (totalCount + PAGE_SIZE - 1) / PAGE_SIZE;
     }
 
 }

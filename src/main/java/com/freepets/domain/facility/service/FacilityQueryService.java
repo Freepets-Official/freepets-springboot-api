@@ -15,6 +15,7 @@ import com.freepets.domain.facility.dto.FacilityResponseDTO;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.facility.repository.FacilityWithDistance;
+import com.freepets.domain.facility.repository.RegionRepository;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.review.entity.ReviewReportStatus;
@@ -37,6 +38,7 @@ public class FacilityQueryService {
     private final FacilityRepository facilityRepository;
     private final ReviewRepository reviewRepository;
     private final PetRepository petRepository;
+    private final RegionRepository regionRepository;
 
     public FacilityResponseDTO.FacilitySearchResult searchFacilities(FacilityRequestDTO.SearchRequest request) {
         double userLatitudeRadian = Math.toRadians(request.getLatitude());
@@ -203,6 +205,22 @@ public class FacilityQueryService {
                 request.getSize(),
                 total
         );
+    }
+
+    /**
+     * 랭킹 화면의 지역 칩에 쓸 시도 → 시군구 목록을 조회한다.
+     *
+     * <p>관광공사 법정동 코드를 적재해둔 지역 테이블을 읽는다. 시설에서 지역을 역으로 모으지 않는
+     * 이유는, 지역명이 시설 행마다 복사돼 있어 동기화가 중간에 끊기면 같은 코드에 옛 이름과 새 이름이
+     * 섞이고 그러면 같은 지역의 칩이 두 개 나오기 때문이다.
+     *
+     * <p>등급 시설이 없는 지역도 함께 내려간다. 프론트는 이름을 칩으로 띄우고 클릭 시 코드를 랭킹
+     * 조회에 실어 보내면 된다.
+     *
+     * <p>응답이 사용자마다 달라지지 않으므로 캐시 대상이다.
+     */
+    public List<FacilityResponseDTO.Region> getRegions() {
+        return FacilityConverter.toRegions(regionRepository.findAllByOrderBySidoCodeAscSigunguCodeAsc());
     }
 
     /**

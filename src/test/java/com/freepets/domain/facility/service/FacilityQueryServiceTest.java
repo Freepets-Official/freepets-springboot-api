@@ -33,9 +33,11 @@ import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
+import com.freepets.domain.facility.entity.Region;
 import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.facility.repository.FacilityWithDistance;
+import com.freepets.domain.facility.repository.RegionRepository;
 import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
@@ -61,6 +63,9 @@ class FacilityQueryServiceTest {
 
     @Mock
     private PetRepository petRepository;
+
+    @Mock
+    private RegionRepository regionRepository;
 
     @InjectMocks
     private FacilityQueryService facilityQueryService;
@@ -741,5 +746,81 @@ class FacilityQueryServiceTest {
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON400);
         verifyNoInteractions(facilityRepository);
+    }
+
+    // ------------------------------------------------------------------
+    // 지역 목록
+    // ------------------------------------------------------------------
+
+    private Region createRegion(
+            String sidoCode,
+            String sido,
+            String sigunguCode,
+            String sigungu
+    ) {
+        return Region.builder()
+                .sidoCode(sidoCode)
+                .sido(sido)
+                .sigunguCode(sigunguCode)
+                .sigungu(sigungu)
+                .build();
+    }
+
+    private void givenRegions(List<Region> regions) {
+        when(regionRepository.findAllByOrderBySidoCodeAscSigunguCodeAsc()).thenReturn(regions);
+    }
+
+    @Test
+    @DisplayName("시도별로 시군구를 묶어 내려준다")
+    void 시도별로_시군구를_묶어_내려준다() {
+        givenRegions(List.of(
+                createRegion("11", "서울특별시", "680", "강남구"),
+                createRegion("32", "강원특별자치도", "010", "강릉시"),
+                createRegion("32", "강원특별자치도", "070", "속초시")
+        ));
+
+        List<FacilityResponseDTO.Region> result = facilityQueryService.getRegions();
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(1).sido()).isEqualTo("강원특별자치도");
+        assertThat(result.get(1).sigungus())
+                .extracting(FacilityResponseDTO.Sigungu::sigungu)
+                .containsExactly("강릉시", "속초시");
+    }
+
+    @Test
+    @DisplayName("지역 테이블이 준 코드 순서를 그대로 유지한다")
+    void 지역_테이블이_준_코드_순서를_그대로_유지한다() {
+        // 시설이 몇 곳인지로 재정렬하지 않는다. 칩 위치가 리뷰에 따라 흔들리면
+        // 사용자가 자기 지역이 어디쯤 있는지 기억할 수 없다.
+        givenRegions(List.of(
+                createRegion("11", "서울특별시", "680", "강남구"),
+                createRegion("26", "부산광역시", "710", "해운대구"),
+                createRegion("32", "강원특별자치도", "010", "강릉시")
+        ));
+
+        assertThat(facilityQueryService.getRegions())
+                .extracting(FacilityResponseDTO.Region::sidoCode)
+                .containsExactly("11", "26", "32");
+    }
+
+    @Test
+    @DisplayName("시군구가 없는 시도는 하위 칩 없이 내려준다")
+    void 시군구가_없는_시도는_하위_칩_없이_내려준다() {
+        givenRegions(List.of(createRegion("36", "세종특별자치시", null, null)));
+
+        List<FacilityResponseDTO.Region> result = facilityQueryService.getRegions();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).sido()).isEqualTo("세종특별자치시");
+        assertThat(result.get(0).sigungus()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("지역 테이블이 비어 있으면 빈 목록을 내려준다")
+    void 지역_테이블이_비어_있으면_빈_목록을_내려준다() {
+        givenRegions(List.of());
+
+        assertThat(facilityQueryService.getRegions()).isEmpty();
     }
 }

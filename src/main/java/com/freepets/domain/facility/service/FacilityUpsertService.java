@@ -5,12 +5,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.facility.entity.CheckList;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.Requirement;
+import com.freepets.domain.facility.event.FacilityBecameIneligibleEvent;
 import com.freepets.domain.facility.repository.FacilityRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 public class FacilityUpsertService {
 
     private final FacilityRepository facilityRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void upsertAll(
@@ -47,10 +50,17 @@ public class FacilityUpsertService {
                 continue;
             }
 
-            // 리뷰 집계·신뢰도 같은 우리 데이터는 그대로 두고 관광공사 값만 갱신한다.
+            // 관광공사 값 갱신으로 추천 후보 자격을 잃을 수 있다(비활성화·동반불가 전환) — 코스
+            // 프리셋 캐시가 이 시설을 스톱으로 쓰고 있었다면 나이틀리 재계산을 기다리지 않고
+            // 바로 무효화되게, 갱신 전후를 비교해 이벤트를 발행한다.
+            boolean wasEligible = found.isEligibleForRecommendation();
             found.updateFromTourApi(facility);
             found.replaceRequirements(requirementsOf(facility));
             result.addUpdated(facility);
+
+            if (wasEligible && !found.isEligibleForRecommendation()) {
+                eventPublisher.publishEvent(new FacilityBecameIneligibleEvent(found.getFacilityId()));
+            }
         }
 
         facilityRepository.saveAll(toInsert);

@@ -3,6 +3,7 @@ package com.freepets.domain.course.service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -46,7 +47,7 @@ public class CourseLikedService {
             CourseDistanceOption maxDistanceM,
             String sido,
             String sigungu,
-            CourseTheme theme
+            Set<CourseTheme> themes
     ) {
         double maxDistanceMeters = (maxDistanceM != null ? maxDistanceM : CourseDistanceOption.FIVE_KM).getMeters();
         List<Pet> pets = findOwnedPets(userId, petIds);
@@ -81,9 +82,10 @@ public class CourseLikedService {
         // 3) avgSatisfaction desc 순서를 보존한 채로 Facility 엔티티 로드.
         List<Facility> candidatesScoreDescSorted = loadInOrder(finalCandidateFacilityIds);
 
-        // 3-1) 지역·테마 필터(둘 다 선택 사항) — 지정 안 하면 기존과 동일하게 전부 대상.
+        // 3-1) 지역·테마 필터(둘 다 선택 사항) — 지정 안 하면 기존과 동일하게 전부 대상. 테마를
+        // 여러 개 고르면 OR 조건(하나라도 속하면 통과)이다.
         candidatesScoreDescSorted = candidatesScoreDescSorted.stream()
-                .filter(facility -> matchesRegionAndTheme(facility, sido, sigungu, theme))
+                .filter(facility -> matchesRegionAndTheme(facility, sido, sigungu, themes))
                 .toList();
         if (candidatesScoreDescSorted.size() < MINIMUM_CANDIDATE_COUNT) {
             throw new GeneralException(ErrorStatus.COURSE4002);
@@ -134,13 +136,14 @@ public class CourseLikedService {
         );
     }
 
-    // CourseSimilarService.matchesRegionAndTheme와 같은 이유 — sido/sigungu/theme 셋 다 선택
-    // 사항이라 넘어오지 않은 조건은 통과시킨다.
+    // CourseSimilarService.matchesRegionAndTheme와 같은 이유 — sido/sigungu/themes 셋 다 선택
+    // 사항이라 넘어오지 않은 조건은 통과시킨다. themes는 여러 개면 OR — 그중 하나라도 카테고리가
+    // 맞으면 통과.
     private boolean matchesRegionAndTheme(
             Facility facility,
             String sido,
             String sigungu,
-            CourseTheme theme
+            Set<CourseTheme> themes
     ) {
         if (sido != null && !sido.equals(facility.getSido())) {
             return false;
@@ -148,7 +151,8 @@ public class CourseLikedService {
         if (sigungu != null && !sigungu.equals(facility.getSigungu())) {
             return false;
         }
-        return theme == null || theme.getCategories().contains(facility.getCategory());
+        return themes == null || themes.isEmpty()
+                || themes.stream().anyMatch(theme -> theme.getCategories().contains(facility.getCategory()));
     }
 
     /** {@code IN} 조회는 순서를 보장하지 않아, 점수 desc로 정렬된 id 순서를 다시 입혀준다. */

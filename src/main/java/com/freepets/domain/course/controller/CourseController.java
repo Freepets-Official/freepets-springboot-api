@@ -1,6 +1,7 @@
 package com.freepets.domain.course.controller;
 
 import java.util.List;
+import java.util.Set;
 
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -168,6 +169,9 @@ public class CourseController {
     // 아니라 String + Schema 힌트). sigungu는 시/도별로 달라 고정 목록을 못 두니, 실제 값은
     // GET /courses/regions로 조회. theme은 CourseTheme 자체가 이넘이라 이 어노테이션 없이도
     // springdoc이 자동으로 드롭다운을 만들어준다.
+    //
+    // themes를 여러 개 고르면(예: ?themes=PET_CAFE,HEALING) 캐시하지 않고 즉시 계산한다 —
+    // CoursePresetService.getPreset 참고. 하나만 고르면 기존과 같은 캐시 경로를 탄다.
     @GetMapping("/preset")
     public ApiResponse<CourseResponseDTO.PresetCourseResult> getPresetCourse(
             @Parameter(
@@ -181,13 +185,13 @@ public class CourseController {
             @RequestParam @NotEmpty(message = "지역을 선택해주세요.") String sido,
             @Parameter(description = "시/군/구. 비우면 시/도 전체 대상 — 실제 값은 GET /courses/regions 응답 참고")
             @RequestParam(required = false) String sigungu,
-            @Parameter(description = "코스 테마 — 라벨은 GET /courses/themes 참고")
-            @RequestParam CourseTheme theme,
+            @Parameter(description = "코스 테마, 여러 개 선택 가능 — 라벨은 GET /courses/themes 참고")
+            @RequestParam @NotEmpty(message = "테마를 1개 이상 선택해주세요.") Set<CourseTheme> themes,
             @Parameter(description = "스톱 간 최대 거리 — 라벨은 GET /courses/distance-options 참고, 생략하면 5km")
             @RequestParam(required = false) CourseDistanceOption maxDistanceM
     ) {
         return ApiResponse.onSuccess(
-                coursePresetService.getPreset(sido, sigungu, theme, maxDistanceM)
+                coursePresetService.getPreset(sido, sigungu, themes, maxDistanceM)
         );
     }
 
@@ -201,11 +205,11 @@ public class CourseController {
             @RequestParam(required = false) String sido,
             @Parameter(description = "시/군/구로 후보를 좁힌다 — sido 없이는 무시된다")
             @RequestParam(required = false) String sigungu,
-            @Parameter(description = "테마로 후보를 좁힌다 — 라벨은 GET /courses/themes 참고")
-            @RequestParam(required = false) CourseTheme theme
+            @Parameter(description = "테마로 후보를 좁힌다(여러 개 선택 가능, OR 조건) — 라벨은 GET /courses/themes 참고")
+            @RequestParam(required = false) Set<CourseTheme> themes
     ) {
         return ApiResponse.onSuccess(
-                courseLikedService.getLikedCourse(userId, petIds, maxDistanceM, sido, sigungu, theme)
+                courseLikedService.getLikedCourse(userId, petIds, maxDistanceM, sido, sigungu, themes)
         );
     }
 
@@ -219,11 +223,11 @@ public class CourseController {
             @RequestParam(required = false) String sido,
             @Parameter(description = "시/군/구로 후보를 좁힌다 — sido 없이는 무시된다")
             @RequestParam(required = false) String sigungu,
-            @Parameter(description = "테마로 후보를 좁힌다 — 라벨은 GET /courses/themes 참고")
-            @RequestParam(required = false) CourseTheme theme
+            @Parameter(description = "테마로 후보를 좁힌다(여러 개 선택 가능, OR 조건) — 라벨은 GET /courses/themes 참고")
+            @RequestParam(required = false) Set<CourseTheme> themes
     ) {
         return ApiResponse.onSuccess(
-                courseSimilarService.getSimilarCourse(userId, petIds, maxDistanceM, sido, sigungu, theme)
+                courseSimilarService.getSimilarCourse(userId, petIds, maxDistanceM, sido, sigungu, themes)
         );
     }
 

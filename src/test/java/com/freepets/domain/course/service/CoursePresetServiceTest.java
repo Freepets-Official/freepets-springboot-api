@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -73,7 +74,7 @@ class CoursePresetServiceTest {
         when(reviewRepository.aggregateByFacilityIdIn(anyCollection(), any()))
                 .thenReturn(List.of(aggregateOf(1L, 88.0)));
 
-        CourseResponseDTO.PresetCourseResult result = coursePresetService.getPreset("강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM);
+        CourseResponseDTO.PresetCourseResult result = coursePresetService.getPreset("강원", "강릉시", Set.of(CourseTheme.PET_CAFE), CourseDistanceOption.FIVE_KM);
 
         assertThat(result.courseId()).isEqualTo(101L);
         assertThat(result.stops()).hasSize(1);
@@ -91,7 +92,7 @@ class CoursePresetServiceTest {
         when(facilityRepository.findPresetCandidates("강원", "강릉시", CourseTheme.PET_CAFE.getCategories()))
                 .thenReturn(List.of(facility(1L, "카페A", FacilityCategory.CAFE)));
 
-        assertThatThrownBy(() -> coursePresetService.getPreset("강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM))
+        assertThatThrownBy(() -> coursePresetService.getPreset("강원", "강릉시", Set.of(CourseTheme.PET_CAFE), CourseDistanceOption.FIVE_KM))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -114,13 +115,36 @@ class CoursePresetServiceTest {
             return saved;
         });
 
-        CourseResponseDTO.PresetCourseResult result = coursePresetService.getPreset("강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM);
+        CourseResponseDTO.PresetCourseResult result = coursePresetService.getPreset("강원", "강릉시", Set.of(CourseTheme.PET_CAFE), CourseDistanceOption.FIVE_KM);
 
         assertThat(result.courseId()).isEqualTo(202L);
         assertThat(result.title()).isEqualTo("강릉시 애견 카페 코스");
         assertThat(result.stops()).hasSize(2);
         assertThat(result.stops().get(0).facilityId()).isEqualTo(1L); // 점수 90이 70보다 먼저
         assertThat(result.stops().get(0).distanceM()).isEqualTo(0.0); // 시작점 자기 자신
+    }
+
+    @Test
+    void 테마를_여러_개_고르면_캐시하지_않고_즉시_계산한다() {
+        Facility cafe = facility(1L, "카페A", FacilityCategory.CAFE);
+        Facility tour = facility(2L, "관광지A", FacilityCategory.TOUR);
+        Set<FacilityCategory> unionCategories = Set.of(FacilityCategory.CAFE, FacilityCategory.TOUR, FacilityCategory.LEISURE);
+
+        when(facilityRepository.findPresetCandidates("강원", "강릉시", unionCategories))
+                .thenReturn(List.of(cafe, tour));
+        when(reviewRepository.aggregateByFacilityIdIn(anyCollection(), any()))
+                .thenReturn(List.of(aggregateOf(1L, 90.0), aggregateOf(2L, 80.0)));
+
+        CourseResponseDTO.PresetCourseResult result = coursePresetService.getPreset(
+                "강원", "강릉시", Set.of(CourseTheme.PET_CAFE, CourseTheme.SEASIDE_WALK), null
+        );
+
+        assertThat(result.courseId()).isNull(); // 다중 테마 결과는 courses 테이블에 저장되지 않는다
+        assertThat(result.title()).isEqualTo("강릉시 바다 산책 · 애견 카페 코스"); // enum 선언 순서로 고정
+        assertThat(result.stops()).hasSize(2);
+        verify(courseRepository, never()).save(any());
+        verify(courseRepository, never())
+                .findBySourceAndSidoAndSigunguAndThemeAndDistanceOption(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -132,6 +156,36 @@ class CoursePresetServiceTest {
                 .contains(CourseTheme.PET_CAFE);
         assertThat(result.themes()).extracting(CourseResponseDTO.ThemeOption::label)
                 .contains("애견 카페");
+    }
+
+    @Test
+    void 시설이_스톱으로_포함된_프리셋_캐시를_전부_무효화한다() {
+        Course cached1 = Course.builder()
+                .name("강릉 애견 카페 코스").source(CourseSource.PRESET)
+                .sido("강원특별자치도").sigungu("강릉시").theme(CourseTheme.PET_CAFE)
+                .distanceOption(CourseDistanceOption.FIVE_KM)
+                .build();
+        Course cached2 = Course.builder()
+                .name("속초 힐링 코스").source(CourseSource.PRESET)
+                .sido("강원특별자치도").sigungu("속초시").theme(CourseTheme.HEALING)
+                .distanceOption(CourseDistanceOption.FIVE_KM)
+                .build();
+        when(courseRepository.findAllBySourceAndStops_Facility_FacilityId(CourseSource.PRESET, 1L))
+                .thenReturn(List.of(cached1, cached2));
+
+        coursePresetService.invalidateCoursesContaining(1L);
+
+        verify(courseRepository).deleteAll(List.of(cached1, cached2));
+    }
+
+    @Test
+    void 걸리는_캐시가_없으면_아무것도_지우지_않는다() {
+        when(courseRepository.findAllBySourceAndStops_Facility_FacilityId(CourseSource.PRESET, 999L))
+                .thenReturn(List.of());
+
+        coursePresetService.invalidateCoursesContaining(999L);
+
+        verify(courseRepository, never()).deleteAll(anyCollection());
     }
 
     @Test

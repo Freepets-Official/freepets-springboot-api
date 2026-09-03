@@ -34,4 +34,11 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     // CoursePresetScheduler 나이틀리 재계산 대상 — 지금까지 한 번이라도 조회돼 캐시된 조합 전부.
     List<Course> findAllBySource(CourseSource source);
 
+    // 캐시 무효화 트리거(CoursePresetCacheInvalidationListener) — 이 시설을 스톱으로 쓰고 있는
+    // PRESET 캐시를 찾는다. stops는 컬렉션이라 derived query가 자동으로 JOIN을 만든다.
+    List<Course> findAllBySourceAndStops_Facility_FacilityId(
+            CourseSource source,
+            Long facilityId
+    );
+
 }

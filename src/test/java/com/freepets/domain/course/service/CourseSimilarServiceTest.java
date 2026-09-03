@@ -195,7 +195,7 @@ class CourseSimilarServiceTest {
                 .thenReturn(new PetCheckJudgeService.GroupVerdict(PetCheckResult.ALLOWED, List.of()));
 
         assertThatThrownBy(() -> courseSimilarService
-                .getSimilarCourse(1L, List.of(5L), null, null, null, CourseTheme.PET_CAFE))
+                .getSimilarCourse(1L, List.of(5L), null, null, null, Set.of(CourseTheme.PET_CAFE)))
                 .isInstanceOf(GeneralException.class);
     }
 

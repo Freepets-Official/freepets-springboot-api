@@ -91,7 +91,7 @@ public class CourseSimilarService {
             CourseDistanceOption maxDistanceM,
             String sido,
             String sigungu,
-            CourseTheme theme
+            Set<CourseTheme> themes
     ) {
         double maxDistanceMeters = (maxDistanceM != null ? maxDistanceM : CourseDistanceOption.FIVE_KM).getMeters();
         List<Pet> pets = findOwnedPets(userId, petIds);
@@ -103,7 +103,7 @@ public class CourseSimilarService {
                 .collect(Collectors.toSet());
 
         if (likedFacilityIds.isEmpty()) {
-            return getPopularFallbackCourse(pets, maxDistanceMeters, sido, sigungu, theme);
+            return getPopularFallbackCourse(pets, maxDistanceMeters, sido, sigungu, themes);
         }
 
         Set<FacilityCategory> likedCategories = satisfactions.stream()
@@ -126,7 +126,7 @@ public class CourseSimilarService {
         }
 
         List<Facility> regionFilteredCandidates = candidatesById.values().stream()
-                .filter(facility -> matchesRegionAndTheme(facility, sido, sigungu, theme))
+                .filter(facility -> matchesRegionAndTheme(facility, sido, sigungu, themes))
                 .toList();
 
         if (regionFilteredCandidates.isEmpty()) {
@@ -184,11 +184,11 @@ public class CourseSimilarService {
             double maxDistanceMeters,
             String sido,
             String sigungu,
-            CourseTheme theme
+            Set<CourseTheme> themes
     ) {
         List<Facility> regionFilteredCandidates = facilityRepository
                 .findAllByIsActiveTrueAndPetAllowedNot(PetAllowed.DENIED).stream()
-                .filter(facility -> matchesRegionAndTheme(facility, sido, sigungu, theme))
+                .filter(facility -> matchesRegionAndTheme(facility, sido, sigungu, themes))
                 .toList();
 
         if (regionFilteredCandidates.isEmpty()) {
@@ -245,13 +245,14 @@ public class CourseSimilarService {
         );
     }
 
-    // CourseLikedService.matchesRegionAndTheme와 같은 이유 — sido/sigungu/theme 셋 다 선택
-    // 사항이라 넘어오지 않은 조건은 통과시킨다.
+    // CourseLikedService.matchesRegionAndTheme와 같은 이유 — sido/sigungu/themes 셋 다 선택
+    // 사항이라 넘어오지 않은 조건은 통과시킨다. themes는 여러 개면 OR — 그중 하나라도 카테고리가
+    // 맞으면 통과.
     private boolean matchesRegionAndTheme(
             Facility facility,
             String sido,
             String sigungu,
-            CourseTheme theme
+            Set<CourseTheme> themes
     ) {
         if (sido != null && !sido.equals(facility.getSido())) {
             return false;
@@ -259,7 +260,8 @@ public class CourseSimilarService {
         if (sigungu != null && !sigungu.equals(facility.getSigungu())) {
             return false;
         }
-        return theme == null || theme.getCategories().contains(facility.getCategory());
+        return themes == null || themes.isEmpty()
+                || themes.stream().anyMatch(theme -> theme.getCategories().contains(facility.getCategory()));
     }
 
     private double similarityScore(

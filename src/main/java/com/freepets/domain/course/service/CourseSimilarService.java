@@ -35,6 +35,7 @@ import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.review.repository.ReviewTagRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.global.util.GeoUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -110,6 +111,17 @@ public class CourseSimilarService {
                 .map(satisfaction -> satisfaction.getFacility().getCategory())
                 .collect(Collectors.toSet());
         Set<Tag> likedTags = reviewTagRepository.findDistinctTagsByFacilityIdIn(likedFacilityIds);
+        // 만족도 점수가 가장 높은 좋아한 시설 하나 — 동점 후보를 추릴 때 이 지점 근처를 우선하는
+        // 기준점으로 쓴다. "가장 가까운 좋아한 시설"(여러 개 중 최소 거리)로 하면 좋아한 시설
+        // 자체가 전국에 흩어져 있을 때 후보도 그만큼 흩어진 채 뽑혀서(각자 가장 가까운 곳 근처로),
+        // 정작 후보끼리는 가까워지지 않는 문제가 있었다 — 기준점을 하나로 고정해야 후보들이
+        // 한 지역으로 모인다.
+        Facility likedAnchor = satisfactions.stream()
+                .filter(satisfaction -> satisfaction.getFacility().getLat() != null
+                        && satisfaction.getFacility().getLng() != null)
+                .max(Comparator.comparingDouble(PetSatisfaction::getScore))
+                .map(PetSatisfaction::getFacility)
+                .orElse(null);
 
         // 2) 후보 풀 — 아직 안 가봤고, 카테고리 또는 태그가 하나라도 겹치는 시설. 지역·테마
         // 필터(선택 사항)를 여기서 먼저 걸러 이후 배치 조회·판별 대상을 줄인다.
@@ -127,6 +139,7 @@ public class CourseSimilarService {
 
         List<Facility> regionFilteredCandidates = candidatesById.values().stream()
                 .filter(facility -> matchesRegionAndTheme(facility, sido, sigungu, themes))
+                .filter(facility -> isWithinAnchorDistance(facility, likedAnchor, maxDistanceMeters))
                 .toList();
 
         if (regionFilteredCandidates.isEmpty()) {
@@ -141,11 +154,17 @@ public class CourseSimilarService {
                         Collectors.mapping(FacilityTag::tag, Collectors.toList())));
         PetProfilesByFacility petProfiles = loadPetProfiles(candidateIds);
 
-        // 4) 유사도 = 카테고리 매치 + 태그 겹침(가속) + 종/크기 매치 보너스, desc 정렬.
+        // 4) 유사도 = 카테고리 매치 + 태그 겹침(가속) + 종/크기 매치 보너스, desc 정렬. 점수가
+        // 같으면(리뷰·태그가 없는 시설은 대부분 카테고리 매치 점수만 갖는다) 기준점(likedAnchor)과
+        // 가까운 후보를 우선한다 — 안 그러면 동점자 사이에서 뭐가 뽑히는지가 지역과 무관해져,
+        // 상위 CANDIDATE_JUDGE_LIMIT개가 전국에 흩어진 채로 뽑혀 거리 조립(6번)에서 다 걸러지는
+        // 문제가 있었다.
         List<Facility> candidatesScoreDescSorted = regionFilteredCandidates.stream()
-                .sorted(Comparator.comparingDouble((Facility facility) -> similarityScore(
-                        facility, likedCategories, likedTags, tagsByFacilityId, petProfiles, pets
-                )).reversed())
+                .sorted(Comparator
+                        .comparingDouble((Facility facility) -> similarityScore(
+                                facility, likedCategories, likedTags, tagsByFacilityId, petProfiles, pets
+                        )).reversed()
+                        .thenComparingDouble(facility -> distanceToAnchor(facility, likedAnchor)))
                 .toList();
 
         // 5) "동반 가능"은 시설 단위 사실(petAllowed)이 아니라 실제 판별 기준 — 이 호출이 무거워
@@ -262,6 +281,47 @@ public class CourseSimilarService {
         }
         return themes == null || themes.isEmpty()
                 || themes.stream().anyMatch(theme -> theme.getCategories().contains(facility.getCategory()));
+    }
+
+    /**
+     * 후보가 기준점(likedAnchor)의 maxDistanceMeters 안에 있는지 — 점수만으로 거르면, 점수가
+     * 조금이라도 더 높은 후보 하나가(태그 하나 겹침 등으로) 기준점에서 수백km 떨어진 곳이어도
+     * 정렬 맨 앞에 서게 된다. 그러면 CourseAssemblyService의 조립이 그 후보를 동선의 시작점으로
+     * 삼는데, 근처에 아무것도 없으니 스톱이 1개로 붕괴한다(실제로 겪은 문제) — 동점 정렬 힌트로는
+     * 못 막고, 애초에 후보 풀에서 걸러내야 한다. 기준점이 없으면(좌표 있는 좋아한 시설이 하나도
+     * 없음) 거르지 않는다.
+     */
+    private boolean isWithinAnchorDistance(
+            Facility candidate,
+            Facility likedAnchor,
+            double maxDistanceMeters
+    ) {
+        if (likedAnchor == null) {
+            return true;
+        }
+        if (candidate.getLat() == null || candidate.getLng() == null) {
+            return false;
+        }
+        return GeoUtils.distanceMeters(
+                likedAnchor.getLat(), likedAnchor.getLng(), candidate.getLat(), candidate.getLng()
+        ) <= maxDistanceMeters;
+    }
+
+    /**
+     * 기준점(likedAnchor)까지의 거리(m) — 이미 anchor 반경 안으로 걸러진 후보들 사이에서, 점수가
+     * 같을 때(리뷰·태그가 없는 시설은 대부분 카테고리 매치 점수만 갖는다) 더 가까운 쪽을
+     * 우선하는 정렬 보정용.
+     */
+    private double distanceToAnchor(
+            Facility candidate,
+            Facility likedAnchor
+    ) {
+        if (likedAnchor == null || candidate.getLat() == null || candidate.getLng() == null) {
+            return Double.MAX_VALUE;
+        }
+        return GeoUtils.distanceMeters(
+                likedAnchor.getLat(), likedAnchor.getLng(), candidate.getLat(), candidate.getLng()
+        );
     }
 
     private double similarityScore(

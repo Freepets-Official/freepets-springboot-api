@@ -304,6 +304,74 @@ class CourseSimilarServiceTest {
         verify(petCheckJudgeService, times(40)).judgeGroup(any(), any());
     }
 
+    @Test
+    void 점수가_같으면_좋아한_시설과_가까운_후보를_우선한다() {
+        // 태그·리뷰가 없는 시설은 대부분 카테고리 매치 점수만 갖는다(동점) — 실서비스에서 이
+        // 동점자들이 전국에 흩어져 뽑히는 바람에, 상위 40개 중 서로 가까운 게 하나도 없어 거리
+        // 조립에서 전부 걸러지는 문제가 있었다. 동점일 땐 좋아한 시설과 가까운 쪽을 우선해야 한다.
+        User user = user(1L);
+        Pet 몽이 = pet(5L, user, "몽이");
+        Facility liked = facility(1L, "좋아한카페", FacilityCategory.CAFE, true, "0", "0");
+        Facility near = facility(2L, "가까운관광지", FacilityCategory.TOUR, true, "0.001", "0"); // ~111m
+        Facility far = facility(3L, "먼관광지", FacilityCategory.TOUR, true, "10.0", "0"); // ~1111km
+        Facility other = facility(4L, "근처식당", FacilityCategory.RESTAURANT, true, "0.002", "0"); // ~222m
+        PetSatisfaction satisfaction = PetSatisfaction.builder().pet(몽이).facility(liked).score(9.0f).build();
+
+        when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
+        when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of(satisfaction));
+        when(reviewTagRepository.findDistinctTagsByFacilityIdIn(Set.of(1L))).thenReturn(Set.of());
+        // TOUR/RESTAURANT 둘 다 likedCategories(CAFE)와 안 겹쳐 셋 다 카테고리 점수 0으로 동점—
+        // 실제 카테고리 필터링 규칙과 무관하게, 이 테스트는 동점자 사이 거리 정렬만 검증한다.
+        when(facilityRepository.findAllByIsActiveTrueAndPetAllowedNotAndFacilityIdNotInAndCategoryIn(
+                PetAllowed.DENIED, Set.of(1L), Set.of(FacilityCategory.CAFE)
+        )).thenReturn(List.of(far, near, other)); // 일부러 거리순이 아니게 넘김
+        when(petCheckJudgeService.judgeGroup(any(), any()))
+                .thenReturn(new PetCheckJudgeService.GroupVerdict(PetCheckResult.ALLOWED, List.of()));
+
+        CourseResponseDTO.SimilarCourseResult result = courseSimilarService.getSimilarCourse(1L, List.of(5L), null, null, null, null);
+
+        // TOUR는 카테고리당 1곳 제한에 걸려 near/far 중 하나만 남는다 — 거리 우선으로 near가 남아야
+        // 한다. far는 near와 같은 카테고리라 조립에서 걸러져 결과에 없어야 한다.
+        assertThat(result.stops()).extracting(CourseResponseDTO.SimilarStop::facilityId)
+                .containsExactlyInAnyOrder(2L, 4L)
+                .doesNotContain(3L);
+    }
+
+    @Test
+    void 점수가_더_높아도_기준점에서_너무_멀면_후보에서_아예_제외된다() {
+        // 실제로 겪은 문제 — 태그 하나 겹쳐 점수가 조금 더 높은 후보(예: 3.1점)가 있으면, 나머지
+        // 다수(3.0점, 동점)가 아무리 서로 가까워도 그 후보가 정렬 맨 앞에 서게 된다. 그러면
+        // CourseAssemblyService의 조립이 그 후보를 동선 시작점으로 삼는데 근처에 아무것도 없어
+        // 스톱이 1개로 붕괴했다 — 동점 정렬 힌트로는 못 막고, 애초에 후보 풀에서 걸러내야 한다.
+        User user = user(1L);
+        Pet 몽이 = pet(5L, user, "몽이");
+        Facility liked = facility(1L, "좋아한카페", FacilityCategory.CAFE, true, "0", "0");
+        Facility farButHigherScore = facility(2L, "먼태그매치식당", FacilityCategory.RESTAURANT, true, "10.0", "0"); // ~1111km
+        Facility nearTour = facility(3L, "가까운관광지", FacilityCategory.TOUR, true, "0.001", "0"); // ~111m
+        Facility nearRestaurant = facility(4L, "가까운식당", FacilityCategory.RESTAURANT, true, "0.002", "0"); // ~222m
+        PetSatisfaction satisfaction = PetSatisfaction.builder().pet(몽이).facility(liked).score(9.0f).build();
+
+        when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
+        when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of(satisfaction));
+        when(reviewTagRepository.findDistinctTagsByFacilityIdIn(Set.of(1L))).thenReturn(Set.of(Tag.SPACIOUS));
+        when(facilityRepository.findAllByIsActiveTrueAndPetAllowedNotAndFacilityIdNotInAndCategoryIn(
+                PetAllowed.DENIED, Set.of(1L), Set.of(FacilityCategory.CAFE)
+        )).thenReturn(List.of(farButHigherScore, nearTour, nearRestaurant));
+        // 먼 후보만 태그가 겹쳐(SPACIOUS) 점수가 0.1 더 높다 — 나머지 둘은 카테고리 불일치로 0점.
+        when(reviewTagRepository.findTagsByFacilityIdIn(any()))
+                .thenReturn(List.of(new FacilityTag(2L, Tag.SPACIOUS)));
+        when(petCheckJudgeService.judgeGroup(any(), any()))
+                .thenReturn(new PetCheckJudgeService.GroupVerdict(PetCheckResult.ALLOWED, List.of()));
+
+        CourseResponseDTO.SimilarCourseResult result = courseSimilarService.getSimilarCourse(1L, List.of(5L), null, null, null, null);
+
+        // 점수가 가장 높았던 farButHigherScore는 기준점에서 5km(기본값) 밖이라 후보 풀에서부터
+        // 빠지고, 가까운 둘만으로 코스가 만들어져야 한다.
+        assertThat(result.stops()).extracting(CourseResponseDTO.SimilarStop::facilityId)
+                .containsExactlyInAnyOrder(3L, 4L)
+                .doesNotContain(2L);
+    }
+
     private User user(Long id) {
         User user = User.builder()
                 .email("test@freepets.com")
@@ -338,13 +406,24 @@ class CourseSimilarServiceTest {
             FacilityCategory category,
             boolean isActive
     ) {
+        return facility(facilityId, name, category, isActive, "37.0", "128.0");
+    }
+
+    private Facility facility(
+            Long facilityId,
+            String name,
+            FacilityCategory category,
+            boolean isActive,
+            String lat,
+            String lng
+    ) {
         Facility facility = Facility.builder()
                 .name(name)
                 .category(category)
                 .petAllowed(PetAllowed.ALLOWED)
                 .isActive(isActive)
-                .lat(new BigDecimal("37.0"))
-                .lng(new BigDecimal("128.0"))
+                .lat(new BigDecimal(lat))
+                .lng(new BigDecimal(lng))
                 .build();
         ReflectionTestUtils.setField(facility, "facilityId", facilityId);
         return facility;

@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.facility.service.FacilityGradeCacheService;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
@@ -47,6 +48,13 @@ public class ReviewCommandService {
     private final PetRepository petRepository;
     private final PetCheckRepository petCheckRepository;
 
+    // 리뷰가 바뀌면 시설의 친화도 점수·리뷰 수·발자국 등급을 다시 계산해둔다. 발자국 랭킹이
+    // 전체 시설을 점수순으로 정렬해야 해서, 조회 시점에 집계하면 매 요청마다 리뷰 전체를 훑게 된다.
+    //
+    // 신고(reportReview)는 PENDING으로 저장되고 집계는 ACCEPTED만 제외하므로 여기서 갱신하지
+    // 않는다. 신고를 승인하는 기능이 생기면 그 지점에 추가해야 한다.
+    private final FacilityGradeCacheService facilityGradeCacheService;
+
     public ReviewResponseDTO.UpsertResult upsertReview(
             Long userId,
             Long facilityId,
@@ -73,6 +81,8 @@ public class ReviewCommandService {
         review.replaceTags(tags);
 
         Review savedReview = saveReview(review);
+
+        facilityGradeCacheService.refresh(facilityId);
 
         return ReviewConverter.toUpsertResult(savedReview);
     }
@@ -163,6 +173,8 @@ public class ReviewCommandService {
     ) {
         Review review = findOwnedReview(userId, reviewId);
         review.delete();
+
+        facilityGradeCacheService.refresh(review.getFacility().getFacilityId());
 
         return ReviewConverter.toDeleteResult(review);
     }

@@ -36,6 +36,8 @@ import com.freepets.domain.facility.service.FacilityQueryService;
 class FacilityControllerTest {
 
     private static final String SEARCH_PATH = "/api/v1/facilities/search";
+    private static final String RANKING_PATH = "/api/v1/facilities/ranking";
+    private static final String REGIONS_PATH = "/api/v1/facilities/regions";
 
     @Autowired
     private MockMvc mockMvc;
@@ -273,5 +275,118 @@ class FacilityControllerTest {
                 .andExpect(jsonPath("$.result.longitude").value("경도는 180 이하여야 합니다."));
 
         verifyNoInteractions(facilityQueryService);
+    }
+
+    // ------------------------------------------------------------------
+    // 발자국 랭킹
+    // ------------------------------------------------------------------
+
+    private FacilityResponseDTO.RankingResult createRankingResult() {
+        FacilityResponseDTO.RankingItem item = new FacilityResponseDTO.RankingItem(
+                1,
+                7L,
+                "헤이도그 애견호텔&카페",
+                FacilityCategory.CAFE,
+                "강원특별자치도",
+                "강릉시",
+                1900L,
+                PetAllowed.ALLOWED,
+                new FacilityResponseDTO.PawGrade(5, "최고 등급"),
+                96.2,
+                160L
+        );
+
+        return new FacilityResponseDTO.RankingResult(List.of(item), 42L);
+    }
+
+    @Test
+    @DisplayName("랭킹 조회에 성공하면 200과 순위 목록을 반환한다")
+    void 랭킹_조회에_성공하면_200과_순위_목록을_반환한다() throws Exception {
+        when(facilityQueryService.getRanking(any())).thenReturn(createRankingResult());
+
+        mockMvc.perform(get(RANKING_PATH)
+                        .param("sidoCode", "32")
+                        .param("category", "CAFE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.total").value(42))
+                .andExpect(jsonPath("$.result.items[0].rank").value(1))
+                .andExpect(jsonPath("$.result.items[0].facilityId").value(7))
+                .andExpect(jsonPath("$.result.items[0].sido").value("강원특별자치도"))
+                .andExpect(jsonPath("$.result.items[0].distanceM").value(1900))
+                .andExpect(jsonPath("$.result.items[0].pawGrade.level").value(5))
+                .andExpect(jsonPath("$.result.items[0].pawGrade.label").value("최고 등급"))
+                .andExpect(jsonPath("$.result.items[0].petScore").value(96.2))
+                .andExpect(jsonPath("$.result.items[0].reviewCnt").value(160));
+    }
+
+    @Test
+    @DisplayName("랭킹은 필터 없이도 조회된다")
+    void 랭킹은_필터_없이도_조회된다() throws Exception {
+        when(facilityQueryService.getRanking(any())).thenReturn(createRankingResult());
+
+        mockMvc.perform(get(RANKING_PATH))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    @DisplayName("랭킹 조회에서 category가 정의된 값이 아니면 400을 반환한다")
+    void 랭킹_조회에서_category가_정의된_값이_아니면_400을_반환한다() throws Exception {
+        mockMvc.perform(get(RANKING_PATH).param("category", "HOTEL"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"))
+                .andExpect(jsonPath("$.result.category").exists());
+
+        verifyNoInteractions(facilityQueryService);
+    }
+
+    @Test
+    @DisplayName("랭킹 조회에서 반경이 범위를 벗어나면 400을 반환한다")
+    void 랭킹_조회에서_반경이_범위를_벗어나면_400을_반환한다() throws Exception {
+        mockMvc.perform(get(RANKING_PATH)
+                        .param("latitude", "37.5665")
+                        .param("longitude", "126.9780")
+                        .param("radiusM", "50"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"))
+                .andExpect(jsonPath("$.result.radiusM").exists());
+
+        verifyNoInteractions(facilityQueryService);
+    }
+
+    // ------------------------------------------------------------------
+    // 지역 목록
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("지역 목록 조회에 성공하면 200과 시도·시군구를 반환한다")
+    void 지역_목록_조회에_성공하면_200과_시도_시군구를_반환한다() throws Exception {
+        when(facilityQueryService.getRegions()).thenReturn(List.of(
+                new FacilityResponseDTO.Region("32", "강원특별자치도", List.of(
+                        new FacilityResponseDTO.Sigungu("1", "강릉시"),
+                        new FacilityResponseDTO.Sigungu("5", "속초시")
+                ))
+        ));
+
+        mockMvc.perform(get(REGIONS_PATH))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result[0].sidoCode").value("32"))
+                .andExpect(jsonPath("$.result[0].sido").value("강원특별자치도"))
+                .andExpect(jsonPath("$.result[0].sigungus[0].sigunguCode").value("1"))
+                .andExpect(jsonPath("$.result[0].sigungus[0].sigungu").value("강릉시"))
+                .andExpect(jsonPath("$.result[0].sigungus[1].sigungu").value("속초시"));
+    }
+
+    @Test
+    @DisplayName("지역 목록이 비어도 200과 빈 배열을 반환한다")
+    void 지역_목록이_비어도_200과_빈_배열을_반환한다() throws Exception {
+        when(facilityQueryService.getRegions()).thenReturn(List.of());
+
+        mockMvc.perform(get(REGIONS_PATH))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").isArray())
+                .andExpect(jsonPath("$.result").isEmpty());
     }
 }

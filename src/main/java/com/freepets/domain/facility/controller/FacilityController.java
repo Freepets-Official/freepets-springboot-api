@@ -1,8 +1,11 @@
 package com.freepets.domain.facility.controller;
 
+import java.util.List;
+
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -43,6 +46,41 @@ public class FacilityController {
     ) {
         return ApiResponse.onSuccess(
                 facilityQueryService.searchFacilities(request)
+        );
+    }
+
+    /**
+     * 발자국 등급 랭킹을 조회한다.
+     *
+     * <p>등급을 받은 시설만 등급 → 친화도 점수 순으로 내려간다. 지역·거리·카테고리·동반 여부
+     * 네 필터는 모두 선택이며 AND로 겹친다.
+     *
+     * <p>목록 검색과 달리 GET이다. 필터 조합이 곧 화면 상태라 링크로 공유될 수 있고, 좌표 없이도
+     * 조회되어야 하기 때문이다. 대신 좌표를 함께 보내면 상세 조회와 마찬가지로 개인위치정보가
+     * 액세스 로그와 APM 트레이스에 남으므로, 웹 서버 쪽에 파라미터 마스킹을 걸어둬야 한다.
+     */
+    @GetMapping("/ranking")
+    public ApiResponse<FacilityResponseDTO.RankingResult> getFacilityRanking(
+            @Valid @ModelAttribute FacilityRequestDTO.RankingRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                facilityQueryService.getRanking(request)
+        );
+    }
+
+    /**
+     * 랭킹 화면의 지역 칩 목록을 조회한다.
+     *
+     * <p>발자국 등급을 받은 시설이 있는 지역만 내려간다. 프론트가 지역 상수를 들고 있지 않는 이유는,
+     * 관광공사 동기화로 시설이 계속 늘어 하드코딩한 목록이 실제 데이터와 어긋나기 때문이다.
+     *
+     * <p>{@code /{facilityId}}보다 먼저 선언할 필요는 없다. 경로 변수가 {@code Long}이라
+     * {@code regions}는 애초에 그쪽으로 매칭되지 않는다.
+     */
+    @GetMapping("/regions")
+    public ApiResponse<List<FacilityResponseDTO.Region>> getFacilityRegions() {
+        return ApiResponse.onSuccess(
+                facilityQueryService.getRegions()
         );
     }
 

@@ -82,7 +82,7 @@ public enum PetFriendlyGrade {
      * @return 어느 등급에도 못 미치거나 점수가 아직 없으면 {@code null}
      */
     public static PetFriendlyGrade of(
-            Integer petScore,
+            Double petScore,
             long reviewCount
     ) {
         return petScore == null ? null : ofScore(petScore, reviewCount);
@@ -94,12 +94,30 @@ public enum PetFriendlyGrade {
      * <p>등급이 없을 때 안내 문구를 보여줘야 하는 화면은 {@link #displayLabelOf}를 쓴다.
      */
     public static String labelOf(
-            Integer petScore,
+            Double petScore,
             long reviewCount
     ) {
         PetFriendlyGrade grade = of(petScore, reviewCount);
 
         return grade == null ? null : grade.label;
+    }
+
+    /**
+     * 저장된 레벨로 등급을 되찾는다. 랭킹 조회가 쓴다.
+     *
+     * <p>랭킹은 시설에 저장해둔 {@code pawGradeLevel}로 정렬하므로, 화면에 보여줄 등급도 같은
+     * 값에서 나와야 한다. 점수로 다시 판정하면 정렬 기준과 배지가 어긋날 수 있다.
+     *
+     * @return {@link #NO_GRADE_LEVEL}이거나 알 수 없는 레벨이면 {@code null}
+     */
+    public static PetFriendlyGrade ofLevel(int level) {
+        for (PetFriendlyGrade grade : values()) {
+            if (grade.level == level) {
+                return grade;
+            }
+        }
+
+        return null;
     }
 
     public static int levelOf(PetFriendlyGrade grade) {

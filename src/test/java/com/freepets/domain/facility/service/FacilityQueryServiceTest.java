@@ -33,9 +33,11 @@ import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
+import com.freepets.domain.facility.entity.Region;
 import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.facility.repository.FacilityWithDistance;
+import com.freepets.domain.facility.repository.RegionRepository;
 import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
@@ -61,6 +63,9 @@ class FacilityQueryServiceTest {
 
     @Mock
     private PetRepository petRepository;
+
+    @Mock
+    private RegionRepository regionRepository;
 
     @InjectMocks
     private FacilityQueryService facilityQueryService;
@@ -576,5 +581,246 @@ class FacilityQueryServiceTest {
         givenNoPets();
 
         assertThat(getDetailFromSeoul().petConditionRaw()).isNull();
+    }
+
+    // ------------------------------------------------------------------
+    // 발자국 랭킹
+    // ------------------------------------------------------------------
+
+    private FacilityRequestDTO.RankingRequest createRankingRequest() {
+        return new FacilityRequestDTO.RankingRequest();
+    }
+
+    private Facility createGradedFacility(
+            Long facilityId,
+            double petScore,
+            long reviewCount
+    ) {
+        Facility facility = createFacility(facilityId);
+        facility.applyReviewAggregate(new FacilityReviewAggregate(
+                facilityId, reviewCount, petScore, 4.5, 4.8, 4.2
+        ));
+
+        return facility;
+    }
+
+    @Test
+    @DisplayName("좌표가 없으면 거리를 계산하지 않고 조회한다")
+    void 좌표가_없으면_거리를_계산하지_않고_조회한다() {
+        when(facilityRepository.searchRanking(isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
+                .thenReturn(List.of(createGradedFacility(1L, 96.2, 160)));
+        when(facilityRepository.countRanking(isNull(), isNull(), isNull(), isNull(), eq(false)))
+                .thenReturn(1L);
+
+        FacilityResponseDTO.RankingResult result = facilityQueryService.getRanking(createRankingRequest());
+
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.items().get(0).distanceM()).isNull();
+        verify(facilityRepository, never())
+                .searchRankingWithDistance(anyDouble(), anyDouble(), any(), any(), any(), any(), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("좌표가 있으면 거리를 함께 계산한다")
+    void 좌표가_있으면_거리를_함께_계산한다() {
+        FacilityRequestDTO.RankingRequest request = createRankingRequest();
+        request.setLatitude(SEOUL_LATITUDE);
+        request.setLongitude(SEOUL_LONGITUDE);
+
+        when(facilityRepository.searchRankingWithDistance(
+                anyDouble(), anyDouble(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
+                .thenReturn(List.of(new FacilityWithDistance(createGradedFacility(1L, 96.2, 160), 1900.4)));
+        when(facilityRepository.countRanking(isNull(), isNull(), isNull(), isNull(), eq(true)))
+                .thenReturn(1L);
+
+        FacilityResponseDTO.RankingResult result = facilityQueryService.getRanking(request);
+
+        assertThat(result.items().get(0).distanceM()).isEqualTo(1900L);
+    }
+
+    @Test
+    @DisplayName("반경이 있으면 경계 사각형과 반경을 함께 넘긴다")
+    void 랭킹은_반경이_있으면_경계_사각형과_반경을_함께_넘긴다() {
+        FacilityRequestDTO.RankingRequest request = createRankingRequest();
+        request.setLatitude(SEOUL_LATITUDE);
+        request.setLongitude(SEOUL_LONGITUDE);
+        request.setRadiusM(3000);
+
+        when(facilityRepository.searchRankingWithinRadius(
+                anyDouble(), anyDouble(), any(), any(), any(), any(),
+                any(), any(), any(), any(), anyDouble(), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(facilityRepository.countRankingWithinRadius(
+                anyDouble(), anyDouble(), any(), any(), any(), any(),
+                any(), any(), any(), any(), anyDouble()))
+                .thenReturn(0L);
+
+        facilityQueryService.getRanking(request);
+
+        verify(facilityRepository).searchRankingWithinRadius(
+                anyDouble(), anyDouble(), any(), any(), any(), any(),
+                any(), any(), any(), any(), eq(3000.0), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("순위는 페이지를 넘겨도 이어진다")
+    void 순위는_페이지를_넘겨도_이어진다() {
+        FacilityRequestDTO.RankingRequest request = createRankingRequest();
+        request.setPage(1);
+        request.setSize(20);
+
+        when(facilityRepository.searchRanking(isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
+                .thenReturn(List.of(
+                        createGradedFacility(1L, 96.2, 160),
+                        createGradedFacility(2L, 88.4, 96)
+                ));
+        when(facilityRepository.countRanking(isNull(), isNull(), isNull(), isNull(), eq(false)))
+                .thenReturn(42L);
+
+        FacilityResponseDTO.RankingResult result = facilityQueryService.getRanking(request);
+
+        assertThat(result.items()).extracting(FacilityResponseDTO.RankingItem::rank)
+                .containsExactly(21, 22);
+        assertThat(result.total()).isEqualTo(42L);
+    }
+
+    @Test
+    @DisplayName("등급과 점수를 저장된 값 그대로 내려준다")
+    void 등급과_점수를_저장된_값_그대로_내려준다() {
+        when(facilityRepository.searchRanking(isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
+                .thenReturn(List.of(createGradedFacility(1L, 96.24, 160)));
+        when(facilityRepository.countRanking(isNull(), isNull(), isNull(), isNull(), eq(false)))
+                .thenReturn(1L);
+
+        FacilityResponseDTO.RankingItem item = facilityQueryService
+                .getRanking(createRankingRequest())
+                .items()
+                .get(0);
+
+        assertThat(item.pawGrade().level()).isEqualTo(5);
+        assertThat(item.pawGrade().label()).isEqualTo("최고 등급");
+        assertThat(item.petScore()).isEqualTo(96.2);
+        assertThat(item.reviewCnt()).isEqualTo(160L);
+    }
+
+    @Test
+    @DisplayName("위도만 보내면 400으로 막는다")
+    void 랭킹에서_위도만_보내면_400으로_막는다() {
+        FacilityRequestDTO.RankingRequest request = createRankingRequest();
+        request.setLatitude(SEOUL_LATITUDE);
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> facilityQueryService.getRanking(request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON400);
+        verifyNoInteractions(facilityRepository);
+    }
+
+    @Test
+    @DisplayName("좌표 없이 거리 필터만 보내면 400으로 막는다")
+    void 좌표_없이_거리_필터만_보내면_400으로_막는다() {
+        FacilityRequestDTO.RankingRequest request = createRankingRequest();
+        request.setRadiusM(3000);
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> facilityQueryService.getRanking(request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON400);
+        verifyNoInteractions(facilityRepository);
+    }
+
+    @Test
+    @DisplayName("시도 코드 없이 시군구 코드만 보내면 400으로 막는다")
+    void 시도_코드_없이_시군구_코드만_보내면_400으로_막는다() {
+        FacilityRequestDTO.RankingRequest request = createRankingRequest();
+        request.setSigunguCode("1");
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> facilityQueryService.getRanking(request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON400);
+        verifyNoInteractions(facilityRepository);
+    }
+
+    // ------------------------------------------------------------------
+    // 지역 목록
+    // ------------------------------------------------------------------
+
+    private Region createRegion(
+            String sidoCode,
+            String sido,
+            String sigunguCode,
+            String sigungu
+    ) {
+        return Region.builder()
+                .sidoCode(sidoCode)
+                .sido(sido)
+                .sigunguCode(sigunguCode)
+                .sigungu(sigungu)
+                .build();
+    }
+
+    private void givenRegions(List<Region> regions) {
+        when(regionRepository.findAllByOrderBySidoCodeAscSigunguCodeAsc()).thenReturn(regions);
+    }
+
+    @Test
+    @DisplayName("시도별로 시군구를 묶어 내려준다")
+    void 시도별로_시군구를_묶어_내려준다() {
+        givenRegions(List.of(
+                createRegion("11", "서울특별시", "680", "강남구"),
+                createRegion("32", "강원특별자치도", "010", "강릉시"),
+                createRegion("32", "강원특별자치도", "070", "속초시")
+        ));
+
+        List<FacilityResponseDTO.Region> result = facilityQueryService.getRegions();
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(1).sido()).isEqualTo("강원특별자치도");
+        assertThat(result.get(1).sigungus())
+                .extracting(FacilityResponseDTO.Sigungu::sigungu)
+                .containsExactly("강릉시", "속초시");
+    }
+
+    @Test
+    @DisplayName("지역 테이블이 준 코드 순서를 그대로 유지한다")
+    void 지역_테이블이_준_코드_순서를_그대로_유지한다() {
+        // 시설이 몇 곳인지로 재정렬하지 않는다. 칩 위치가 리뷰에 따라 흔들리면
+        // 사용자가 자기 지역이 어디쯤 있는지 기억할 수 없다.
+        givenRegions(List.of(
+                createRegion("11", "서울특별시", "680", "강남구"),
+                createRegion("26", "부산광역시", "710", "해운대구"),
+                createRegion("32", "강원특별자치도", "010", "강릉시")
+        ));
+
+        assertThat(facilityQueryService.getRegions())
+                .extracting(FacilityResponseDTO.Region::sidoCode)
+                .containsExactly("11", "26", "32");
+    }
+
+    @Test
+    @DisplayName("시군구가 없는 시도는 하위 칩 없이 내려준다")
+    void 시군구가_없는_시도는_하위_칩_없이_내려준다() {
+        givenRegions(List.of(createRegion("36", "세종특별자치시", null, null)));
+
+        List<FacilityResponseDTO.Region> result = facilityQueryService.getRegions();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).sido()).isEqualTo("세종특별자치시");
+        assertThat(result.get(0).sigungus()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("지역 테이블이 비어 있으면 빈 목록을 내려준다")
+    void 지역_테이블이_비어_있으면_빈_목록을_내려준다() {
+        givenRegions(List.of());
+
+        assertThat(facilityQueryService.getRegions()).isEmpty();
     }
 }

@@ -10,6 +10,7 @@ import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import com.freepets.domain.review.repository.FacilityReviewAggregate;
 import com.freepets.global.entity.BaseEntity;
 import com.freepets.global.util.JsonListUtil;
 
@@ -37,7 +38,14 @@ import lombok.NoArgsConstructor;
                 @Index(name = "idx_facilities_content_id", columnList = "content_id", unique = true),
                 @Index(name = "idx_facilities_coordinate", columnList = "lat, lng"),
                 @Index(name = "idx_facilities_category", columnList = "category"),
-                @Index(name = "idx_facilities_region", columnList = "sido_code, sigungu_code")
+                @Index(name = "idx_facilities_region", columnList = "sido_code, sigungu_code"),
+
+                // 발자국 랭킹의 정렬 순서(등급 → 점수 → ID)를 그대로 담는다. 랭킹 조회는 등급을
+                // 받은 시설만 보므로 앞쪽 일부만 읽고 끝난다.
+                @Index(
+                        name = "idx_facilities_paw_grade_ranking",
+                        columnList = "paw_grade_level desc, pet_score desc, facility_id"
+                )
         }
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -250,8 +258,38 @@ public class Facility extends BaseEntity {
     @Column(name = "pet_condition_raw", columnDefinition = "TEXT")
     private String petConditionRaw;
 
+    /**
+     * 리뷰에서 계산한 친화도 점수(0~100). 리뷰가 바뀔 때 {@code FacilityGradeCacheService}가 갱신한다.
+     *
+     * <p>정수가 아니라 실수다. 등급 판정은 반올림 <b>전</b> 원점수로 해야 하기 때문이다.
+     * 87.96을 88로 저장해두면 88점이 기준인 4등급으로 잘못 올라간다.
+     *
+     * <p>적격 리뷰가 한 건도 없으면 {@code null}이다. 0.0은 "최악의 시설"이라는 뜻이 되어버린다.
+     */
     @Column(name = "pet_score")
-    private Integer petScore;
+    private Double petScore;
+
+    /**
+     * 등급 산정에 쓰인 리뷰 수. 승인된 신고가 달린 리뷰는 빠진 값이다.
+     *
+     * <p>점수만으로는 등급이 정해지지 않아({@link PetFriendlyGrade#ofScore}) 함께 저장한다.
+     * 이 값이 있어야 랭킹 조회가 리뷰 테이블을 보지 않고 시설만으로 끝난다.
+     */
+    @ColumnDefault("0")
+    @Column(name = "review_count", nullable = false)
+    private long reviewCount;
+
+    /**
+     * 발자국 등급 레벨(1~5). 등급을 못 받았으면 {@link PetFriendlyGrade#NO_GRADE_LEVEL}이다.
+     *
+     * <p>점수와 리뷰 수에서 유도되는 값이지만 따로 저장한다. 등급 순 정렬은 점수 순 정렬과 다르기
+     * 때문이다 — 95점·리뷰 20건은 1등급, 85점·리뷰 100건은 3등급이라 뒤쪽이 위에 와야 한다.
+     * 정렬을 SQL에서 하려면 이 값이 컬럼으로 있어야 하고, {@code case when}으로 계산하면
+     * 등급 임계값이 {@link PetFriendlyGrade}와 SQL 양쪽에 적히게 된다.
+     */
+    @ColumnDefault("0")
+    @Column(name = "paw_grade_level", nullable = false)
+    private int pawGradeLevel;
 
     @Column(name = "space_rating")
     private Float spaceRating;
@@ -444,6 +482,36 @@ public class Facility extends BaseEntity {
 
     public List<String> getDangerousBreedRequiredItems() {
         return JsonListUtil.fromJson(dangerousBreedRequiredItems);
+    }
+
+    /**
+     * 리뷰 집계 결과를 시설에 반영한다. 랭킹 조회가 읽는 값이다.
+     *
+     * <p>{@code aggregate}가 {@code null}이면 적격 리뷰가 한 건도 없다는 뜻이다. 이때 점수를 0으로
+     * 두면 "최악의 시설"로 정렬되므로 {@code null}로 되돌리고, 등급도 없음으로 내린다. 리뷰가
+     * 전부 삭제되거나 신고로 빠졌을 때 예전 점수가 남지 않게 하려면 이 되돌림이 필요하다.
+     *
+     * <p>등급 레벨은 표시용으로 반올림하기 전 원점수로 판정한다.
+     */
+    public void applyReviewAggregate(FacilityReviewAggregate aggregate) {
+        if (aggregate == null) {
+            this.petScore = null;
+            this.reviewCount = 0;
+            this.pawGradeLevel = PetFriendlyGrade.NO_GRADE_LEVEL;
+            this.spaceRating = null;
+            this.customerService = null;
+            this.amenities = null;
+            return;
+        }
+
+        this.petScore = aggregate.averageScore();
+        this.reviewCount = aggregate.reviewCount();
+        this.pawGradeLevel = PetFriendlyGrade.levelOf(
+                PetFriendlyGrade.ofScore(aggregate.averageScore(), aggregate.reviewCount())
+        );
+        this.spaceRating = (float) aggregate.averageSpace();
+        this.customerService = (float) aggregate.averageStaff();
+        this.amenities = (float) aggregate.averageAmenity();
     }
 
     /**

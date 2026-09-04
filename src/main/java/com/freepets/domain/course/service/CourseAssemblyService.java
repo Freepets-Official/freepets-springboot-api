@@ -1,5 +1,6 @@
 package com.freepets.domain.course.service;
 
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -28,12 +29,26 @@ import com.freepets.global.util.GeoUtils;
  *       후보가 원래 한 카테고리뿐인 테마는 이 규칙이 자연히 무력화되어(카테고리가 하나면 상한도
  *       스톱 수와 같아짐) 기존 동작 그대로다.</li>
  * </ul>
+ *
+ * <p>{@code mealCandidates}를 받는 오버로드({@link #assemble(List, List, double)},
+ * {@link #assembleWithoutCategoryDiversity(List, List, int, double)}, {@link #appendMealStop})는
+ * 마지막 한 자리를 근처 식사 스톱(대개 RESTAURANT 카테고리)으로 채운다 — 코스가 테마 하나로만
+ * 채워지는 걸(예: 힐링 코스가 온통 사찰·온천뿐) 완화하기 위한 선택 사항이다. 후보가 비어 있으면
+ * (지역 필터가 없어 호출부가 못 구한 경우 등) 식사 스톱 없이 기존 동작과 동일하게 동작한다.
  */
 @Service
 public class CourseAssemblyService {
 
     /** 추천 코스 스톱 상한. liked/similar/preset 공통(07-courses.md "결정된 사항"). */
     public static final int MAX_RECOMMENDED_STOPS = 4;
+
+    /**
+     * 사용자가 직접 담는 코스(CUSTOM 저장, 순서 최적화, 일괄 판별)의 스톱 개수 상한 —
+     * {@link #MAX_RECOMMENDED_STOPS}(AI 추천 4곳)보다 여유를 준다. 상한이 없으면 요청 하나에
+     * 스톱을 아주 많이 담아 매 스톱마다 도는 무거운 판별(판별 API들이 스톱 수만큼 {@code
+     * PetCheckJudgeService.judgeGroup}을 호출)이 그만큼 늘어나는 걸 막는다(제품 결정).
+     */
+    public static final int MAX_CUSTOM_STOPS = 10;
 
     /** 사용자가 {@code maxDistanceM}을 안 보냈을 때 쓰는 기본값(m) — 도보 기준. */
     public static final double DEFAULT_MAX_STOP_DISTANCE_METERS = 5000;
@@ -53,6 +68,23 @@ public class CourseAssemblyService {
     }
 
     /**
+     * {@link #assemble(List, double)}에 "식사 스톱" 한 자리를 더한 버전 — 테마·취향 후보만으로
+     * 채우면 코스가 전부 같은 성격(예: 힐링 코스가 온통 사찰·온천뿐)이 되기 쉬워서, 마지막
+     * 한 자리는 근처 식당(RESTAURANT) 후보로 채운다.
+     *
+     * @param mealCandidates 식사 스톱 후보(대개 지역 한정 RESTAURANT 카테고리). 지역 필터가 없어
+     *                       호출부가 후보를 못 구했으면 빈 리스트를 넘기면 된다 — 그 경우
+     *                       {@link #assemble(List, double)}와 동일하게 동작한다.
+     */
+    public List<Facility> assemble(
+            List<Facility> candidatesScoreDescSorted,
+            List<Facility> mealCandidates,
+            double maxDistanceMeters
+    ) {
+        return selectWithMealStop(candidatesScoreDescSorted, mealCandidates, MAX_RECOMMENDED_STOPS, 1, maxDistanceMeters);
+    }
+
+    /**
      * {@code preset}용 — 카테고리당 정확히 1곳으로 제한하지는 않는다. "강릉 애견 카페 반나절
      * 코스"처럼 후보가 원래 한 카테고리뿐인 테마 코스가 있어서, {@link #assemble}처럼 "카테고리당
      * 1곳"을 걸면 스톱이 1개로 줄어버린다. 대신 "한 카테고리가 전체의 절반을 못 넘음" 정도로만
@@ -64,15 +96,32 @@ public class CourseAssemblyService {
             int limit,
             double maxDistanceMeters
     ) {
+        return select(candidatesScoreDescSorted, limit, maxPerCategory(candidatesScoreDescSorted, limit), maxDistanceMeters);
+    }
+
+    /** {@link #assembleWithoutCategoryDiversity(List, int, double)}의 식사 스톱 포함 버전 — {@link #assemble(List, List, double)}와 같은 이유. */
+    public List<Facility> assembleWithoutCategoryDiversity(
+            List<Facility> candidatesScoreDescSorted,
+            List<Facility> mealCandidates,
+            int limit,
+            double maxDistanceMeters
+    ) {
+        return selectWithMealStop(
+                candidatesScoreDescSorted, mealCandidates, limit, maxPerCategory(candidatesScoreDescSorted, limit), maxDistanceMeters
+        );
+    }
+
+    private int maxPerCategory(
+            List<Facility> candidatesScoreDescSorted,
+            int limit
+    ) {
         long distinctCategoryCount = candidatesScoreDescSorted.stream()
                 .map(Facility::getCategory)
                 .distinct()
                 .count();
-        int maxPerCategory = distinctCategoryCount <= 1
+        return distinctCategoryCount <= 1
                 ? limit
                 : (int) Math.ceil(limit / 2.0);
-
-        return select(candidatesScoreDescSorted, limit, maxPerCategory, maxDistanceMeters);
     }
 
     /**
@@ -105,6 +154,76 @@ public class CourseAssemblyService {
         }
 
         return reorderByNearestNeighbor(selected);
+    }
+
+    /**
+     * {@code limit}개 중 마지막 한 자리를 식사 스톱으로 예약한다 — 나머지 {@code limit - 1}개를
+     * 먼저 {@link #select}로 채운 뒤, 그 스톱들과 가장 가까운 식사 후보 하나를 {@link
+     * #appendMealStop}로 덧붙인다. 식사 후보가 하나도 안 맞으면(전부 {@code maxDistanceMeters}
+     * 밖) 자리를 비워두지 않고 원래대로 {@code limit}개 전부를 테마 후보로 채운다.
+     */
+    private List<Facility> selectWithMealStop(
+            List<Facility> candidatesScoreDescSorted,
+            List<Facility> mealCandidates,
+            int limit,
+            int maxPerCategory,
+            double maxDistanceMeters
+    ) {
+        if (mealCandidates.isEmpty() || limit <= 1) {
+            return select(candidatesScoreDescSorted, limit, maxPerCategory, maxDistanceMeters);
+        }
+
+        List<Facility> reserved = select(candidatesScoreDescSorted, limit - 1, maxPerCategory, maxDistanceMeters);
+        List<Facility> withMealStop = appendMealStop(reserved, mealCandidates, maxDistanceMeters);
+        if (withMealStop.size() > reserved.size()) {
+            return withMealStop;
+        }
+
+        return select(candidatesScoreDescSorted, limit, maxPerCategory, maxDistanceMeters);
+    }
+
+    /**
+     * 이미 조립된 스톱 목록에 근처 식사 후보(대개 RESTAURANT 카테고리) 하나를 덧붙인다. 이미
+     * 채택된 스톱 중 어느 하나와도 {@code maxDistanceMeters} 이내인 후보가 없으면(혹은 애초에
+     * {@code stops}가 비었으면) 원래 목록을 그대로 반환한다 — 억지로 먼 식당을 끼워넣지 않는다.
+     * preset은 캐시된 풀에서 표시분을 뽑은 뒤 이 메소드로 직접 식사 스톱을 덧붙이고, liked·similar는
+     * {@link #assemble(List, List, double)}를 통해 간접적으로 쓴다.
+     */
+    public List<Facility> appendMealStop(
+            List<Facility> stops,
+            List<Facility> mealCandidates,
+            double maxDistanceMeters
+    ) {
+        if (stops.isEmpty() || mealCandidates.isEmpty()) {
+            return stops;
+        }
+
+        Facility mealStop = withCoordinatesOnly(mealCandidates).stream()
+                .filter(candidate -> stops.stream().noneMatch(stop -> stop.getFacilityId().equals(candidate.getFacilityId())))
+                .map(candidate -> new AbstractMap.SimpleEntry<>(candidate, nearestStopDistanceMeters(candidate, stops)))
+                .filter(entry -> entry.getValue() <= maxDistanceMeters)
+                .min(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(null);
+        if (mealStop == null) {
+            return stops;
+        }
+
+        List<Facility> withMealStop = new ArrayList<>(stops);
+        withMealStop.add(mealStop);
+        return reorderByNearestNeighbor(withMealStop);
+    }
+
+    private double nearestStopDistanceMeters(
+            Facility candidate,
+            List<Facility> stops
+    ) {
+        return stops.stream()
+                .mapToDouble(stop -> GeoUtils.distanceMeters(
+                        stop.getLat(), stop.getLng(), candidate.getLat(), candidate.getLng()
+                ))
+                .min()
+                .orElse(Double.MAX_VALUE);
     }
 
     /**

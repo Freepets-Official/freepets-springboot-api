@@ -139,7 +139,10 @@ public class CoursePresetService {
         }
 
         List<Facility> pool = computeStops(sido, sigungu, themes, distanceOption);
-        return new CourseResponseDTO.PresetCourseResult(null, titleOf(sido, sigungu, themes), toStopDtos(sampleForDisplay(pool)));
+        List<Facility> displayStops = sampleForDisplay(pool, sido, sigungu, distanceOption.getMeters());
+        return new CourseResponseDTO.PresetCourseResult(
+                null, titleOf(sido, sigungu, themes), toStopDtos(displayStops, themeFacilityIdsOf(pool))
+        );
     }
 
     /**
@@ -249,34 +252,69 @@ public class CoursePresetService {
                 .map(CourseStop::getFacility)
                 .toList();
 
-        return new CourseResponseDTO.PresetCourseResult(course.getCourseId(), course.getName(), toStopDtos(sampleForDisplay(pool)));
+        List<Facility> displayStops = sampleForDisplay(
+                pool, course.getSido(), course.getSigungu(), course.getDistanceOption().getMeters()
+        );
+        return new CourseResponseDTO.PresetCourseResult(
+                course.getCourseId(), course.getName(), toStopDtos(displayStops, themeFacilityIdsOf(pool))
+        );
     }
 
     /**
      * 캐시(혹은 다중 테마 즉시 계산)가 만들어둔 풀(최대 {@link #PRESET_POOL_SIZE}개)에서 매
      * 조회마다 표시 개수({@link CourseAssemblyService#MAX_RECOMMENDED_STOPS})만큼 무작위로 뽑는다.
-     * 풀이 이미 표시 개수 이하면 그대로 반환한다(뽑을 게 없음 — 매번 똑같이 나오는 게 당연함).
-     *
-     * <p>카테고리 상한(전체의 절반)은 풀을 만들 때 이미 한 번 적용됐지만, 풀 크기(8) 기준으로
-     * 계산된 값이라 무작위로 4개만 뽑으면 그 상한이 더는 안 맞을 수 있다 — 그래서 표시 개수(4)
-     * 기준으로 다시 계산해 뽑는 동안 재적용한다. 상한 때문에 표시 개수를 못 채우면(예: 후보가
-     * 한 카테고리로 쏠려 있어서) 남은 자리는 상한 없이 채운다 — 풀 크기 안에서는 항상 최대한
-     * 채워서 보여준다.
+     * 이때 마지막 한 자리는 근처 식사 스톱(RESTAURANT)으로 예약한다 — 풀 자체는 테마 후보만으로
+     * 채워져 있으므로({@link #computeStops} 참고) 식사 후보는 여기서 지역 한정으로 따로 조회한다.
+     * {@code sido}가 없거나(방어적 — 현재 preset은 항상 값이 있다) 근처에 맞는 식당이 없으면 식사
+     * 스톱 없이 테마 후보만으로 표시 개수를 채운다.
      */
-    private List<Facility> sampleForDisplay(List<Facility> pool) {
+    private List<Facility> sampleForDisplay(
+            List<Facility> pool,
+            String sido,
+            String sigungu,
+            double maxDistanceMeters
+    ) {
         int displaySize = CourseAssemblyService.MAX_RECOMMENDED_STOPS;
-        if (pool.size() <= displaySize) {
+        List<Facility> themeSample = sampleThemeStops(pool, displaySize - 1);
+
+        List<Facility> mealCandidates = sido != null
+                ? facilityRepository.findPresetCandidates(sido, sigungu, Set.of(FacilityCategory.RESTAURANT))
+                : List.of();
+        List<Facility> withMealStop = courseAssemblyService.appendMealStop(themeSample, mealCandidates, maxDistanceMeters);
+        if (withMealStop.size() > themeSample.size()) {
+            return withMealStop;
+        }
+
+        return sampleThemeStops(pool, displaySize);
+    }
+
+    /**
+     * 풀에서 카테고리 상한을 지키며 최대 {@code targetSize}개를 무작위로 뽑는다. 풀이 이미
+     * {@code targetSize} 이하면 그대로 반환한다(뽑을 게 없음 — 매번 똑같이 나오는 게 당연함).
+     * 상한 때문에 다 못 채우면 남은 자리는 상한 없이 채운다 — 풀 크기 안에서는 항상 최대한
+     * 채워서 보여준다.
+     *
+     * <p>카테고리 상한은 항상 최종 표시 개수({@link CourseAssemblyService#MAX_RECOMMENDED_STOPS})의
+     * 절반 기준이다 — {@code targetSize}로 계산하면(식사 스톱 자리를 비워둔 채 호출할 때는
+     * {@code targetSize}가 표시 개수보다 1 작다) 상한이 미묘하게 달라질 수 있어(현재 표시 개수가
+     * 짝수라 우연히 같지만, 홀수로 바뀌면 어긋난다) 항상 같은 기준으로 고정한다.
+     */
+    private List<Facility> sampleThemeStops(
+            List<Facility> pool,
+            int targetSize
+    ) {
+        if (pool.size() <= targetSize) {
             return pool;
         }
 
         List<Facility> shuffled = new ArrayList<>(pool);
         Collections.shuffle(shuffled);
 
-        int maxPerCategory = (int) Math.ceil(displaySize / 2.0);
+        int maxPerCategory = (int) Math.ceil(CourseAssemblyService.MAX_RECOMMENDED_STOPS / 2.0);
         Map<FacilityCategory, Integer> countByCategory = new HashMap<>();
         List<Facility> sampled = new ArrayList<>();
         for (Facility facility : shuffled) {
-            if (sampled.size() >= displaySize) {
+            if (sampled.size() >= targetSize) {
                 break;
             }
             if (countByCategory.getOrDefault(facility.getCategory(), 0) >= maxPerCategory) {
@@ -286,7 +324,7 @@ public class CoursePresetService {
             countByCategory.merge(facility.getCategory(), 1, Integer::sum);
         }
         for (Facility facility : shuffled) {
-            if (sampled.size() >= displaySize) {
+            if (sampled.size() >= targetSize) {
                 break;
             }
             if (!sampled.contains(facility)) {
@@ -297,7 +335,17 @@ public class CoursePresetService {
         return courseAssemblyService.reorderForCustomEdit(sampled);
     }
 
-    private List<CourseResponseDTO.PresetStop> toStopDtos(List<Facility> facilitiesInOrder) {
+    /**
+     * @param themeFacilityIds 테마 후보 풀(computeStops)의 facilityId 집합 — isMealStop 판정에
+     *                         쓴다. 카테고리(RESTAURANT)로 판정하지 않는 이유는
+     *                         CourseLikedService.toLikedStop 주석 참고 — preset은 themes가 항상
+     *                         필수라 지금은 카테고리로 판정해도 실제로 안전하지만, 그 불변조건에
+     *                         기대는 대신 liked/similar와 같은 방식으로 정확히 판정한다.
+     */
+    private List<CourseResponseDTO.PresetStop> toStopDtos(
+            List<Facility> facilitiesInOrder,
+            Set<Long> themeFacilityIds
+    ) {
         Map<Long, Double> scoreById = scoreById(facilitiesInOrder);
         Facility origin = facilitiesInOrder.get(0);
 
@@ -306,12 +354,17 @@ public class CoursePresetService {
                         facility.getFacilityId(),
                         facility.getName(),
                         facility.getCategory(),
+                        !themeFacilityIds.contains(facility.getFacilityId()),
                         Math.round(scoreById.getOrDefault(facility.getFacilityId(), 0.0) * 10) / 10.0,
                         Math.round(GeoUtils.distanceMeters(
                                 origin.getLat(), origin.getLng(), facility.getLat(), facility.getLng()
                         ))
                 ))
                 .toList();
+    }
+
+    private Set<Long> themeFacilityIdsOf(List<Facility> pool) {
+        return pool.stream().map(Facility::getFacilityId).collect(Collectors.toSet());
     }
 
     private Map<Long, Double> scoreById(List<Facility> facilities) {

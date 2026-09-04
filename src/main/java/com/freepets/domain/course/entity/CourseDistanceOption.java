@@ -13,7 +13,16 @@ public enum CourseDistanceOption {
     FIVE_KM(5_000, "5km"),
     TEN_KM(10_000, "10km"),
     TWENTY_KM(20_000, "20km"),
-    THIRTY_KM(30_000, "30km");
+    THIRTY_KM(30_000, "30km"),
+
+    /**
+     * 거리 제약 자체를 걸지 않는다 — {@link com.freepets.domain.course.service.CourseAssemblyService}의
+     * 거리 비교는 항상 "이 값 이하"만 확인하므로, 사실상 무한대인 값을 넣어두면 별도 분기 없이
+     * 자연히 아무 후보도 걸러지지 않는다(대한민국 안에서는 어떤 두 시설 간 거리도 이 값을 넘지
+     * 않는다). 사용자가 명시적으로 골랐을 때만 의미 있는 값 — preset/liked/similar 전부 이
+     * 값을 받으면 점수·취향 순위만으로 스톱을 채운다(동선이 전국에 흩어질 수 있음을 감수).
+     */
+    UNLIMITED(Integer.MAX_VALUE, "거리 제한 없음");
 
     private final int meters;
     private final String label;

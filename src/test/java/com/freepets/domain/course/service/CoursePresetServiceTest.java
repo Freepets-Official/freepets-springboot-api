@@ -82,7 +82,9 @@ class CoursePresetServiceTest {
         assertThat(result.stops()).hasSize(1);
         assertThat(result.stops().get(0).score()).isEqualTo(88.0);
         verify(courseRepository, never()).save(any());
-        verify(facilityRepository, never()).findPresetCandidates(any(), any(), anyCollection());
+        // 캐시 히트라 테마(PET_CAFE) 후보 재계산은 안 해야 한다 — 다만 표시 단계에서 식사 스톱
+        // 후보(RESTAURANT)를 조회하는 건 sampleForDisplay의 정상 동작이라 별개로 허용한다.
+        verify(facilityRepository, never()).findPresetCandidates("강원", "강릉시", CourseTheme.PET_CAFE.getCategories());
     }
 
     @Test
@@ -143,6 +145,37 @@ class CoursePresetServiceTest {
         assertThat(result.stops()).hasSize(2);
         assertThat(result.stops().get(0).facilityId()).isEqualTo(1L); // 점수 90이 70보다 먼저
         assertThat(result.stops().get(0).distanceM()).isEqualTo(0.0); // 시작점 자기 자신
+    }
+
+    @Test
+    void 근처_식당_후보가_있으면_마지막_자리를_식사_스톱으로_채운다() {
+        Facility cafeHigh = facility(1L, "카페A", FacilityCategory.CAFE);
+        Facility cafeLow = facility(2L, "카페B", FacilityCategory.CAFE);
+        Facility meal = facility(3L, "식당A", FacilityCategory.RESTAURANT, null);
+
+        when(courseRepository.findBySourceAndSidoAndSigunguAndThemeAndDistanceOption(
+                CourseSource.PRESET, "강원", "강릉시", CourseTheme.PET_CAFE, CourseDistanceOption.FIVE_KM
+        )).thenReturn(Optional.empty());
+        when(facilityRepository.findPresetCandidates("강원", "강릉시", CourseTheme.PET_CAFE.getCategories()))
+                .thenReturn(List.of(cafeLow, cafeHigh));
+        when(facilityRepository.findPresetCandidates("강원", "강릉시", Set.of(FacilityCategory.RESTAURANT)))
+                .thenReturn(List.of(meal));
+        when(reviewRepository.aggregateByFacilityIdIn(anyCollection(), any()))
+                .thenReturn(List.of(aggregateOf(1L, 90.0), aggregateOf(2L, 70.0)));
+        when(courseRepository.save(any(Course.class))).thenAnswer(invocation -> {
+            Course saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "courseId", 202L);
+            return saved;
+        });
+
+        CourseResponseDTO.PresetCourseResult result = coursePresetService
+                .getPreset("강원", "강릉시", Set.of(CourseTheme.PET_CAFE), CourseDistanceOption.FIVE_KM);
+
+        assertThat(result.stops()).hasSize(3);
+        CourseResponseDTO.PresetStop mealStop = result.stops().stream()
+                .filter(CourseResponseDTO.PresetStop::isMealStop)
+                .findFirst().orElseThrow();
+        assertThat(mealStop.facilityId()).isEqualTo(3L);
     }
 
     @Test

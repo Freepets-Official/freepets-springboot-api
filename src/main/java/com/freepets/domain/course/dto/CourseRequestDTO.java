@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -27,7 +28,10 @@ public class CourseRequestDTO {
 
         private String description;
 
+        // 10 = CourseAssemblyService.MAX_CUSTOM_STOPS와 맞춘다 — 스톱이 늘어날수록 무거워지는
+        // 판별(POST /ai/course-check)·순서 최적화 요청 크기를 제한한다.
         @NotEmpty(message = "코스에 시설을 1곳 이상 담아주세요.")
+        @Size(max = 10, message = "코스는 최대 10곳까지만 담을 수 있습니다.")
         private List<Long> stopIds;
 
         // 다른 사용자의 "둘러보기" 목록(GET /courses/public)에 노출할지. 기본값 false(비공개).
@@ -49,7 +53,9 @@ public class CourseRequestDTO {
     @NoArgsConstructor
     public static class OptimizeOrderRequest {
 
+        // SaveRequest.stopIds와 같은 이유(CourseAssemblyService.MAX_CUSTOM_STOPS).
         @NotEmpty(message = "코스에 시설을 1곳 이상 담아주세요.")
+        @Size(max = 10, message = "코스는 최대 10곳까지만 담을 수 있습니다.")
         private List<Long> stopIds;
     }
 

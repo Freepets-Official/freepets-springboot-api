@@ -118,7 +118,7 @@ class CourseControllerTest {
     void preset_조회에_성공하면_200과_코스를_반환한다() throws Exception {
         CourseResponseDTO.PresetCourseResult result = new CourseResponseDTO.PresetCourseResult(
                 101L, "강릉시 애견 카페 코스",
-                List.of(new CourseResponseDTO.PresetStop(1L, "카페A", FacilityCategory.CAFE, 88.4, 0.0))
+                List.of(new CourseResponseDTO.PresetStop(1L, "카페A", FacilityCategory.CAFE, false, 88.4, 0.0))
         );
         when(coursePresetService.getPreset(eq("강원"), eq("강릉시"), eq(Set.of(CourseTheme.PET_CAFE)), isNull())).thenReturn(result);
 
@@ -206,7 +206,7 @@ class CourseControllerTest {
     void liked_조회에_성공하면_200을_반환한다() throws Exception {
         CourseResponseDTO.LikedCourseResult result = new CourseResponseDTO.LikedCourseResult(
                 "몽이가 좋아한 곳",
-                List.of(new CourseResponseDTO.LikedStop(1L, "카페A", FacilityCategory.CAFE, 9.4, List.of()))
+                List.of(new CourseResponseDTO.LikedStop(1L, "카페A", FacilityCategory.CAFE, false, 9.4, List.of()))
         );
         when(courseLikedService.getLikedCourse(isNull(), eq(List.of(1L, 2L)), isNull(), isNull(), isNull(), isNull())).thenReturn(result);
 
@@ -327,6 +327,18 @@ class CourseControllerTest {
     }
 
     @Test
+    @DisplayName("스톱이 10곳을 넘으면 400을 반환한다")
+    void 스톱이_10곳을_넘으면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/courses")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"몽이 코스\",\"stopIds\":[1,2,3,4,5,6,7,8,9,10,11]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.result.stopIds").exists());
+
+        verifyNoInteractions(courseCommandService);
+    }
+
+    @Test
     @DisplayName("코스 수정에 성공하면 200을 반환한다")
     void 코스_수정에_성공하면_200을_반환한다() throws Exception {
         when(courseCommandService.updateCourse(isNull(), eq(10L), any()))
@@ -417,6 +429,17 @@ class CourseControllerTest {
         mockMvc.perform(post("/api/v1/courses/optimize-order")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"stopIds\":[]}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(courseCommandService);
+    }
+
+    @Test
+    @DisplayName("경로 최적화 시 스톱이 10곳을 넘으면 400을 반환한다")
+    void 경로_최적화_시_스톱이_10곳을_넘으면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/courses/optimize-order")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stopIds\":[1,2,3,4,5,6,7,8,9,10,11]}"))
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(courseCommandService);

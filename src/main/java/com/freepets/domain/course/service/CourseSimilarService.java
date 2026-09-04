@@ -17,6 +17,7 @@ import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.facility.service.BoundingBox;
 import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
@@ -73,6 +74,12 @@ public class CourseSimilarService {
      * 거의 발생하지 않는다.
      */
     private static final int CANDIDATE_JUDGE_LIMIT = 40;
+
+    /** 식사 스톱 후보(지역 한정 RESTAURANT)도 실제 동반 가능 여부를 판별해야 하지만, 이 후보는
+     * "취향 매치" 점수가 없어 CANDIDATE_JUDGE_LIMIT처럼 유사도로 상위를 못 자른다 — 대신 리뷰
+     * 평점으로 상위를 자른 뒤 판별한다({@link #mealCandidates} 참고). 본 후보(40)보다 작게 잡아
+     * 판별 호출 총량을 크게 늘리지 않는다. */
+    private static final int MEAL_CANDIDATE_JUDGE_LIMIT = 15;
 
     private static final String PERSONALIZED_TITLE = "취향과 비슷한 새로운 곳";
     private static final String POPULAR_FALLBACK_TITLE = "지금 인기 있는 곳";
@@ -180,13 +187,22 @@ public class CourseSimilarService {
 
         // 6) 카테고리 다양성 + 거리 제약 + 동선 조립. 거리 제약 때문에 후보는 충분해도 실제
         // 채택된 스톱은 더 줄 수 있어 여기서 한 번 더 확인한다(5번의 사전 확인만으론 부족).
-        List<Facility> stops = courseAssemblyService.assemble(eligibleCandidates, maxDistanceMeters);
+        // 마지막 한 자리는 근처 식사 스톱(RESTAURANT)으로 예약한다. isMealStop 판정을 카테고리로
+        // 하면 안 된다 — themes가 선택 사항이라 필터 없이 호출하면 실제로 취향에 맞는 식당도
+        // eligibleCandidates에 정상적으로 들어올 수 있는데, 그런 경우까지 자동 삽입 식사 스톱으로
+        // 오인해 실제 matchedTags/reason을 지워버리는 버그가 있었다 — "실제 취향 매치 후보였는지"를
+        // ID로 정확히 구분한다.
+        Set<Long> personalizedFacilityIds = eligibleCandidates.stream()
+                .map(Facility::getFacilityId)
+                .collect(Collectors.toSet());
+        List<Facility> mealCandidates = mealCandidates(sido, sigungu, pets, likedAnchor, maxDistanceMeters);
+        List<Facility> stops = courseAssemblyService.assemble(eligibleCandidates, mealCandidates, maxDistanceMeters);
         if (stops.size() < MINIMUM_CANDIDATE_COUNT) {
             throw new GeneralException(ErrorStatus.COURSE4003);
         }
 
         List<CourseResponseDTO.SimilarStop> stopDtos = stops.stream()
-                .map(facility -> toSimilarStop(facility, likedTags, tagsByFacilityId, petProfiles, pets))
+                .map(facility -> toSimilarStop(facility, likedTags, tagsByFacilityId, petProfiles, pets, personalizedFacilityIds))
                 .toList();
 
         return new CourseResponseDTO.SimilarCourseResult(PERSONALIZED_TITLE, true, stopDtos);
@@ -235,13 +251,27 @@ public class CourseSimilarService {
             throw new GeneralException(ErrorStatus.COURSE4003);
         }
 
-        List<Facility> stops = courseAssemblyService.assemble(eligibleCandidates, maxDistanceMeters);
+        // getSimilarCourse의 likedAnchor와 같은 이유 — 식사 후보를 리뷰 평점만으로 상위를 자르면
+        // 이 지역에서 가장 평점 높은 식당들이 조립될 코스와 전혀 다른 동네에 몰려 있을 수 있어,
+        // 판별 호출만 쓰고 결국 거리 조건에 다 걸러지는 낭비가 난다 — 실제로 조립의 시작점이 되는
+        // "점수 1위 좌표 있는 후보"를 기준점 삼아 미리 좁힌다(CourseAssemblyService.select 참고).
+        Facility popularAnchor = eligibleCandidates.stream()
+                .filter(facility -> facility.getLat() != null && facility.getLng() != null)
+                .findFirst()
+                .orElse(null);
+
+        // getSimilarCourse와 같은 이유 — isMealStop을 카테고리로 판정하면 안 된다.
+        Set<Long> personalizedFacilityIds = eligibleCandidates.stream()
+                .map(Facility::getFacilityId)
+                .collect(Collectors.toSet());
+        List<Facility> mealCandidates = mealCandidates(sido, sigungu, pets, popularAnchor, maxDistanceMeters);
+        List<Facility> stops = courseAssemblyService.assemble(eligibleCandidates, mealCandidates, maxDistanceMeters);
         if (stops.size() < MINIMUM_CANDIDATE_COUNT) {
             throw new GeneralException(ErrorStatus.COURSE4003);
         }
 
         List<CourseResponseDTO.SimilarStop> stopDtos = stops.stream()
-                .map(facility -> toPopularFallbackStop(facility, petProfiles, pets))
+                .map(facility -> toPopularFallbackStop(facility, petProfiles, pets, personalizedFacilityIds))
                 .toList();
 
         return new CourseResponseDTO.SimilarCourseResult(POPULAR_FALLBACK_TITLE, false, stopDtos);
@@ -250,8 +280,13 @@ public class CourseSimilarService {
     private CourseResponseDTO.SimilarStop toPopularFallbackStop(
             Facility facility,
             PetProfilesByFacility petProfiles,
-            List<Pet> selectedPets
+            List<Pet> selectedPets,
+            Set<Long> personalizedFacilityIds
     ) {
+        if (!personalizedFacilityIds.contains(facility.getFacilityId())) {
+            return mealStopDto(facility);
+        }
+
         boolean matchedByKind = isMatchedByKind(facility, petProfiles, selectedPets);
 
         return new CourseResponseDTO.SimilarStop(
@@ -260,7 +295,24 @@ public class CourseSimilarService {
                 List.of(),
                 matchedByKind,
                 false,
+                false,
                 "아직 취향 데이터가 부족해서 지금 평점이 좋은 곳을 보여드려요"
+        );
+    }
+
+    /**
+     * 자동 삽입 식사 스톱 DTO — 취향/평점 매치로 뽑힌 게 아니라 matchedTags/matchedByKind/
+     * matchedByBreedSize가 전부 비어 있다. toSimilarStop·toPopularFallbackStop 둘 다에서 쓴다.
+     */
+    private CourseResponseDTO.SimilarStop mealStopDto(Facility facility) {
+        return new CourseResponseDTO.SimilarStop(
+                facility.getFacilityId(),
+                facility.getName(),
+                List.of(),
+                false,
+                false,
+                true,
+                "코스 동선 근처의 식사 장소예요"
         );
     }
 
@@ -276,11 +328,85 @@ public class CourseSimilarService {
         if (sido != null && !sido.equals(facility.getSido())) {
             return false;
         }
-        if (sigungu != null && !sigungu.equals(facility.getSigungu())) {
+        // CourseLikedService.matchesRegionAndTheme와 같은 이유 — "고성군"처럼 서로 다른
+        // 시/도(강원특별자치도·경상남도)에 같은 이름의 시/군/구가 실제로 있어서, sido 없이
+        // sigungu만으로 걸러내면 엉뚱한 지역의 동명 시/군/구까지 섞여 들어오는 버그가 있었다.
+        if (sido != null && sigungu != null && !sigungu.equals(facility.getSigungu())) {
             return false;
         }
         return themes == null || themes.isEmpty()
                 || themes.stream().anyMatch(theme -> theme.matchesFacilityDetail(facility));
+    }
+
+    /**
+     * 식사 스톱(RESTAURANT) 후보 — sido가 있으면 지역명으로, 없어도 anchor 좌표가 있으면 그
+     * 주변으로 찾는다({@link #fetchMealCandidatesByRegionOrAnchor} 참고). 나머지 후보와 달리
+     * 유사도 점수가 없어 리뷰 평점으로 상위 {@link #MEAL_CANDIDATE_JUDGE_LIMIT}개만 추린 뒤
+     * 판별한다 — "동반 가능"은 이 서비스 전체가 petAllowed가 아니라 실제 판별(judgeGroup) 기준으로
+     * 삼고 있어, 식사 스톱만 예외를 두면 일관성이 깨진다.
+     */
+    private List<Facility> mealCandidates(
+            String sido,
+            String sigungu,
+            List<Pet> pets,
+            Facility anchor,
+            double maxDistanceMeters
+    ) {
+        List<Facility> regionCandidates = fetchMealCandidatesByRegionOrAnchor(sido, sigungu, anchor, maxDistanceMeters);
+        if (regionCandidates.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> candidateIds = regionCandidates.stream().map(Facility::getFacilityId).toList();
+        Map<Long, Double> scoreById = reviewRepository.aggregateByFacilityIdIn(candidateIds, ReviewReportStatus.ACCEPTED).stream()
+                .collect(Collectors.toMap(FacilityReviewAggregate::facilityId, FacilityReviewAggregate::averageScore));
+
+        return regionCandidates.stream()
+                .sorted(Comparator.comparingDouble(
+                        (Facility facility) -> scoreById.getOrDefault(facility.getFacilityId(), 0.0)
+                ).reversed())
+                .limit(MEAL_CANDIDATE_JUDGE_LIMIT)
+                .filter(facility -> petCheckJudgeService.judgeGroup(pets, facility).overall() != PetCheckResult.DENIED)
+                .toList();
+    }
+
+    /**
+     * 식사 스톱 후보를 지역명(sido) 또는 좌표(anchor) 기준으로 찾는다 — sido가 있으면 지금까지처럼
+     * 지역명으로 좁히고, sido가 없어도 anchor(취향 기준점)가 있으면 그 주변을 경계 사각형으로
+     * 좁힌다. 둘 다 없으면(지역 필터도 안 주고 좌표 있는 취향 후보도 없는 극단적인 경우) 빈
+     * 리스트 — 식사 스톱 없이 진행한다.
+     *
+     * <p>지역명 경로는 이미 {@link #isWithinAnchorDistance}로 anchor 반경 필터를 한 번 더
+     * 거는데(행정구역이 넓으면 그 안에서도 anchor와 먼 시설이 섞여 있을 수 있어서), 경계 사각형
+     * 경로는 애초에 사각형 자체가 anchor 중심 반경이라 같은 필터가 사실상 중복이지만, 사각형이
+     * 원의 외접이라 모서리 쪽은 실제로 반경 밖일 수 있어 그대로 한 번 더 확인한다.
+     */
+    private List<Facility> fetchMealCandidatesByRegionOrAnchor(
+            String sido,
+            String sigungu,
+            Facility anchor,
+            double maxDistanceMeters
+    ) {
+        if (sido != null) {
+            return facilityRepository.findPresetCandidates(sido, sigungu, Set.of(FacilityCategory.RESTAURANT)).stream()
+                    .filter(facility -> isWithinAnchorDistance(facility, anchor, maxDistanceMeters))
+                    .toList();
+        }
+
+        if (anchor == null) {
+            return List.of();
+        }
+
+        BoundingBox boundingBox = BoundingBox.around(
+                anchor.getLat().doubleValue(), anchor.getLng().doubleValue(), (int) maxDistanceMeters
+        );
+        return facilityRepository.findByCategoryWithinBoundingBox(
+                        FacilityCategory.RESTAURANT,
+                        boundingBox.minimumLatitude(), boundingBox.maximumLatitude(),
+                        boundingBox.minimumLongitude(), boundingBox.maximumLongitude()
+                ).stream()
+                .filter(facility -> isWithinAnchorDistance(facility, anchor, maxDistanceMeters))
+                .toList();
     }
 
     /**
@@ -405,8 +531,13 @@ public class CourseSimilarService {
             Set<Tag> likedTags,
             Map<Long, List<Tag>> tagsByFacilityId,
             PetProfilesByFacility petProfiles,
-            List<Pet> selectedPets
+            List<Pet> selectedPets,
+            Set<Long> personalizedFacilityIds
     ) {
+        if (!personalizedFacilityIds.contains(facility.getFacilityId())) {
+            return mealStopDto(facility);
+        }
+
         List<Tag> matchedTags = tagsByFacilityId
                 .getOrDefault(facility.getFacilityId(), List.of()).stream()
                 .filter(likedTags::contains)
@@ -422,6 +553,7 @@ public class CourseSimilarService {
                 matchedTags,
                 matchedByKind,
                 matchedByBreedSize,
+                false,
                 buildReason(matchedTags, matchedByKind)
         );
     }

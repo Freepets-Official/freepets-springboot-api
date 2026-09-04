@@ -201,6 +201,41 @@ class CourseSimilarServiceTest {
     }
 
     @Test
+    void sido_없이_sigungu만_주면_무시된다() {
+        // CourseLikedServiceTest와 같은 이유 — "고성군"은 강원특별자치도·경상남도 둘 다에 있다.
+        // sido 없이 sigungu만으로 걸러내면 엉뚱한 지역의 동명 시/군/구까지 섞일 수 있었다.
+        User user = user(1L);
+        Pet 몽이 = pet(5L, user, "몽이");
+        Facility liked = facility(1L, "좋아한카페", FacilityCategory.CAFE, true);
+        Facility gangwonGoseong = facility(2L, "강원고성카페", FacilityCategory.CAFE, true);
+        Facility gyeongnamGoseong = facility(3L, "경남고성관광지", FacilityCategory.TOUR, true);
+        ReflectionTestUtils.setField(gangwonGoseong, "sido", "강원특별자치도");
+        ReflectionTestUtils.setField(gangwonGoseong, "sigungu", "고성군");
+        ReflectionTestUtils.setField(gyeongnamGoseong, "sido", "경상남도");
+        ReflectionTestUtils.setField(gyeongnamGoseong, "sigungu", "고성군");
+        PetSatisfaction satisfaction = PetSatisfaction.builder().pet(몽이).facility(liked).score(9.0f).build();
+
+        when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
+        when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of(satisfaction));
+        when(reviewTagRepository.findDistinctTagsByFacilityIdIn(Set.of(1L))).thenReturn(Set.of(Tag.SPACIOUS));
+        when(facilityRepository.findAllByIsActiveTrueAndPetAllowedNotAndFacilityIdNotInAndCategoryIn(
+                PetAllowed.DENIED, Set.of(1L), Set.of(FacilityCategory.CAFE)
+        )).thenReturn(List.of(gangwonGoseong));
+        when(reviewTagRepository.findFacilityIdsByTagInExcluding(Set.of(Tag.SPACIOUS), Set.of(1L)))
+                .thenReturn(List.of(3L));
+        when(facilityRepository.findAllById(List.of(3L))).thenReturn(List.of(gyeongnamGoseong));
+        when(petCheckJudgeService.judgeGroup(any(), any()))
+                .thenReturn(new PetCheckJudgeService.GroupVerdict(PetCheckResult.ALLOWED, List.of()));
+
+        // sido 없이 sigungu="고성군"만 넘긴다 — 어느 도의 고성군인지 알 수 없어 둘 다 남아야 한다.
+        CourseResponseDTO.SimilarCourseResult result = courseSimilarService
+                .getSimilarCourse(1L, List.of(5L), null, null, "고성군", null);
+
+        assertThat(result.stops()).extracting(CourseResponseDTO.SimilarStop::facilityId)
+                .containsExactlyInAnyOrder(2L, 3L);
+    }
+
+    @Test
     void 리뷰_동물_종이_같으면_가점을_받아_순위가_올라가고_다른_종이라고_제외되지는_않는다() {
         // sameKind/differentKind를 카테고리까지 같게 하면 조립(assemble)의 "카테고리당 1곳" 규칙
         // 때문에 후보가 1곳으로 줄어 최소 후보 수(2) 미달로 예외가 난다 — 카테고리를 다르게 해서
@@ -371,6 +406,78 @@ class CourseSimilarServiceTest {
         assertThat(result.stops()).extracting(CourseResponseDTO.SimilarStop::facilityId)
                 .containsExactlyInAnyOrder(3L, 4L)
                 .doesNotContain(2L);
+    }
+
+    @Test
+    void 지역_필터가_있으면_근처_식당_후보를_판별해_식사_스톱으로_추가한다() {
+        User user = user(1L);
+        Pet 몽이 = pet(5L, user, "몽이");
+        Facility liked = facility(1L, "좋아한카페", FacilityCategory.CAFE, true, "0", "0");
+        Facility candidateCafeA = facility(2L, "후보카페A", FacilityCategory.CAFE, true, "0.001", "0");
+        Facility candidateCafeB = facility(4L, "후보카페B", FacilityCategory.CAFE, true, "0.0005", "0");
+        Facility meal = facility(3L, "근처식당", FacilityCategory.RESTAURANT, true, "0.0015", "0");
+        ReflectionTestUtils.setField(candidateCafeA, "sido", "강원특별자치도");
+        ReflectionTestUtils.setField(candidateCafeB, "sido", "강원특별자치도");
+        PetSatisfaction satisfaction = PetSatisfaction.builder().pet(몽이).facility(liked).score(9.0f).build();
+
+        when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
+        when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of(satisfaction));
+        when(reviewTagRepository.findDistinctTagsByFacilityIdIn(Set.of(1L))).thenReturn(Set.of());
+        when(facilityRepository.findAllByIsActiveTrueAndPetAllowedNotAndFacilityIdNotInAndCategoryIn(
+                PetAllowed.DENIED, Set.of(1L), Set.of(FacilityCategory.CAFE)
+        )).thenReturn(List.of(candidateCafeA, candidateCafeB));
+        when(facilityRepository.findPresetCandidates("강원특별자치도", null, Set.of(FacilityCategory.RESTAURANT)))
+                .thenReturn(List.of(meal));
+        when(reviewRepository.aggregateByFacilityIdIn(any(), eq(ReviewReportStatus.ACCEPTED))).thenReturn(List.of());
+        when(petCheckJudgeService.judgeGroup(any(), any()))
+                .thenReturn(new PetCheckJudgeService.GroupVerdict(PetCheckResult.ALLOWED, List.of()));
+
+        CourseResponseDTO.SimilarCourseResult result = courseSimilarService
+                .getSimilarCourse(1L, List.of(5L), null, "강원특별자치도", null, null);
+
+        assertThat(result.stops()).hasSize(2);
+        CourseResponseDTO.SimilarStop mealStop = result.stops().stream()
+                .filter(CourseResponseDTO.SimilarStop::isMealStop)
+                .findFirst().orElseThrow();
+        assertThat(mealStop.facilityId()).isEqualTo(3L);
+        // 식사 스톱은 취향 매치로 뽑힌 게 아니므로 matchedTags 등이 비어야 한다.
+        assertThat(mealStop.matchedTags()).isEmpty();
+        assertThat(mealStop.matchedByKind()).isFalse();
+    }
+
+    @Test
+    void 지역_필터가_없어도_likedAnchor_좌표_기준으로_식사_스톱을_찾는다() {
+        // sido를 안 넘겨도, 좋아한 시설의 좌표(likedAnchor)가 있으면 그 주변을 경계 사각형으로
+        // 좁혀 식사 스톱 후보를 찾아야 한다(findPresetCandidates 대신 findByCategoryWithinBoundingBox).
+        User user = user(1L);
+        Pet 몽이 = pet(5L, user, "몽이");
+        Facility liked = facility(1L, "좋아한카페", FacilityCategory.CAFE, true, "0", "0");
+        Facility candidateCafeA = facility(2L, "후보카페A", FacilityCategory.CAFE, true, "0.001", "0");
+        Facility candidateCafeB = facility(4L, "후보카페B", FacilityCategory.CAFE, true, "0.0005", "0");
+        Facility meal = facility(3L, "근처식당", FacilityCategory.RESTAURANT, true, "0.0015", "0");
+        PetSatisfaction satisfaction = PetSatisfaction.builder().pet(몽이).facility(liked).score(9.0f).build();
+
+        when(petRepository.findAllByPetIdInAndDeletedAtIsNull(List.of(5L))).thenReturn(List.of(몽이));
+        when(petSatisfactionRepository.findAllByPetPetIdIn(List.of(5L))).thenReturn(List.of(satisfaction));
+        when(reviewTagRepository.findDistinctTagsByFacilityIdIn(Set.of(1L))).thenReturn(Set.of());
+        when(facilityRepository.findAllByIsActiveTrueAndPetAllowedNotAndFacilityIdNotInAndCategoryIn(
+                PetAllowed.DENIED, Set.of(1L), Set.of(FacilityCategory.CAFE)
+        )).thenReturn(List.of(candidateCafeA, candidateCafeB));
+        when(facilityRepository.findByCategoryWithinBoundingBox(
+                eq(FacilityCategory.RESTAURANT), any(), any(), any(), any()
+        )).thenReturn(List.of(meal));
+        when(reviewRepository.aggregateByFacilityIdIn(any(), eq(ReviewReportStatus.ACCEPTED))).thenReturn(List.of());
+        when(petCheckJudgeService.judgeGroup(any(), any()))
+                .thenReturn(new PetCheckJudgeService.GroupVerdict(PetCheckResult.ALLOWED, List.of()));
+
+        CourseResponseDTO.SimilarCourseResult result = courseSimilarService
+                .getSimilarCourse(1L, List.of(5L), null, null, null, null);
+
+        assertThat(result.stops()).hasSize(2);
+        CourseResponseDTO.SimilarStop mealStop = result.stops().stream()
+                .filter(CourseResponseDTO.SimilarStop::isMealStop)
+                .findFirst().orElseThrow();
+        assertThat(mealStop.facilityId()).isEqualTo(3L);
     }
 
     private User user(Long id) {

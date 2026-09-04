@@ -26,6 +26,13 @@ public class SecurityConfig {
     private static final String[] PERMIT_ALL_PATTERNS = {
             "/api/v1/users/signup",
             "/api/v1/users/login",
+            // 07-courses.md — 로그인 전에도 쓸 수 있는 코스 모드. regions는 preset의 지역
+            // 선택 드롭다운을 채우는 용도라 같이 열어둔다.
+            "/api/v1/courses/preset",
+            "/api/v1/courses/regions",
+            "/api/v1/courses/themes",
+            // 다른 사용자가 공개한 코스 둘러보기 — 로그인 전에도 담아갈 마음이 들게 열어둔다.
+            "/api/v1/courses/public",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",

@@ -49,7 +49,15 @@ public enum ErrorStatus implements BaseErrorCode {
     REVIEW4041(NOT_FOUND, "REVIEW4041", "존재하지 않는 리뷰입니다."),
 
     // 반려동물 만족도 에러
-    SATISFACTION4001(CONFLICT, "SATISFACTION4001", "만족도 저장 중 충돌이 발생했습니다. 다시 시도해주세요.");
+    SATISFACTION4001(CONFLICT, "SATISFACTION4001", "만족도 저장 중 충돌이 발생했습니다. 다시 시도해주세요."),
+
+    // 코스 에러
+    COURSE4001(BAD_REQUEST, "COURSE4001", "조건에 맞는 시설이 부족합니다."),
+    COURSE4002(BAD_REQUEST, "COURSE4002", "만족도 데이터가 부족해 취향 코스를 만들 수 없습니다."),
+    COURSE4003(BAD_REQUEST, "COURSE4003", "취향 프로필을 만들 데이터가 부족합니다."),
+    COURSE4041(NOT_FOUND, "COURSE4041", "존재하지 않는 코스입니다."),
+    COURSE4042(FORBIDDEN, "COURSE4042", "본인 코스만 수정·삭제할 수 있습니다."),
+    COURSE4043(NOT_FOUND, "COURSE4043", "존재하지 않는 스톱 순서입니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

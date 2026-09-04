@@ -312,9 +312,6 @@ public class Facility extends BaseEntity {
     @OneToMany(mappedBy = "facility", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CheckList> checkLists = new ArrayList<>();
 
-    @OneToMany(mappedBy = "facility", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<AlternativeFacility> alternativeFacilities = new ArrayList<>();
-
     @Builder
     private Facility(
             String contentId,
@@ -433,6 +430,15 @@ public class Facility extends BaseEntity {
 
     public void deactivate() {
         this.isActive = false;
+    }
+
+    /**
+     * 코스 추천(preset/liked/similar)이 후보로 삼을 수 있는 상태인지 — 비활성화됐거나 동반이
+     * 아예 불가면 더는 추천 대상이 아니다. {@code updateFromTourApi}로 이 값이 바뀌는 시점을
+     * 서비스 레이어(FacilityUpsertService)가 감지해 캐시 무효화 이벤트를 발행하는 데 쓴다.
+     */
+    public boolean isEligibleForRecommendation() {
+        return isActive && petAllowed != PetAllowed.DENIED;
     }
 
     public void replaceRequirements(List<Requirement> requirements) {

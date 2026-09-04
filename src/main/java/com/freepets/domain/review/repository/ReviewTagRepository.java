@@ -25,13 +25,19 @@ public interface ReviewTagRepository extends JpaRepository<ReviewTag, Long> {
             """)
     Set<Tag> findDistinctTagsByFacilityIdIn(@Param("facilityIds") Collection<Long> facilityIds);
 
-    /** 후보 시설 하나의 태그 집합(겹침 수 계산용). */
+    /**
+     * 후보 시설 여러 곳의 태그를 한 번에 묶어 조회한다(겹침 수 계산용) — similar가 후보마다
+     * 따로 조회하면 후보 수만큼 쿼리가 늘어나던 걸(N+1) 막는다. 호출부에서 facilityId별로
+     * 다시 그룹핑해 쓴다.
+     */
     @Query("""
-            select reviewTag.tag from ReviewTag reviewTag
-            where reviewTag.review.facility.facilityId = :facilityId
+            select new com.freepets.domain.review.repository.FacilityTag(
+                reviewTag.review.facility.facilityId, reviewTag.tag)
+            from ReviewTag reviewTag
+            where reviewTag.review.facility.facilityId in :facilityIds
             and reviewTag.review.deletedAt is null
             """)
-    List<Tag> findTagsByFacilityId(@Param("facilityId") Long facilityId);
+    List<FacilityTag> findTagsByFacilityIdIn(@Param("facilityIds") Collection<Long> facilityIds);
 
     /** 이 태그들 중 하나라도 달린 리뷰가 있는 시설(단, 이미 방문한 곳은 제외) — 태그 기반 후보 풀. */
     @Query("""

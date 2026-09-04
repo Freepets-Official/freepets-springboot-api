@@ -72,6 +72,12 @@ public class Course extends BaseEntity {
     @Column(length = 20)
     private CourseTheme theme;
 
+    // PRESET 캐시의 거리 축. theme과 같은 이유로 CUSTOM은 항상 null — 연속값이 아니라
+    // CourseDistanceOption 고정 구간만 허용해야 지역×테마×거리 조합이 늘어도 캐시가 유효하다.
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private CourseDistanceOption distanceOption;
+
     // 목록 조회에서 스톱을 같이 내려줄 때 N+1을 막는다 — Facility.checkLists와 같은 이유.
     @BatchSize(size = 100)
     @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -95,6 +101,7 @@ public class Course extends BaseEntity {
             String sido,
             String sigungu,
             CourseTheme theme,
+            CourseDistanceOption distanceOption,
             boolean isPublic
     ) {
         this.user = user;
@@ -104,6 +111,7 @@ public class Course extends BaseEntity {
         this.sido = sido;
         this.sigungu = sigungu;
         this.theme = theme;
+        this.distanceOption = distanceOption;
         this.isPublic = isPublic;
     }
 

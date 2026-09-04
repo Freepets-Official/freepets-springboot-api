@@ -108,6 +108,11 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
     /**
      * {@code GET /api/v1/courses/preset} 배치가 지역×테마 후보를 뽑을 때 쓴다. {@code sigungu}가
      * 없으면 {@code sido} 전체를 대상으로 한다 — 파라미터가 null이면 그 조건은 무시된다.
+     *
+     * <p>preset뿐 아니라 liked/similar가 "식사 스톱"(카테고리 RESTAURANT) 후보를 지역 한정으로
+     * 뽑을 때도 그대로 재사용한다 — 지역×카테고리로 후보를 좁히는 쿼리 모양이 완전히 같다.
+     * {@code sido}가 없는(지역 필터를 안 받은) liked/similar 호출은 이 쿼리 대신 {@link
+     * #findByCategoryWithinBoundingBox}로 좌표 기준으로 후보를 찾는다.
      */
     @Query("""
             select facility from Facility facility
@@ -125,18 +130,73 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
 
     /**
      * {@code POST /api/v1/ai/course-check}가 DENIED 스톱의 대안을 찾을 때 쓴다. "같은 카테고리 ·
-     * 이미 코스에 없음"까지만 DB에서 거르고, "그룹 전체가 갈 수 있는지"(판별)와 "거리순 1곳"은
-     * 후보 수가 줄어든 뒤 서비스 레이어에서 처리한다 — {@code findPresetCandidates}와 같은 이유.
+     * 이미 코스에 없음 · 좌표 있음 · 경계 사각형 안"까지만 DB에서 거르고, "그룹 전체가 갈 수
+     * 있는지"(판별)와 "거리순 1곳"은 후보 수가 줄어든 뒤 서비스 레이어에서 처리한다 —
+     * {@code findPresetCandidates}와 같은 이유.
+     *
+     * <p>지역 조건 없이 카테고리로만 걸렀던 이전 버전은 흔한 카테고리(예: RESTAURANT 전국
+     * 1만여 곳)에서 전부 불러온 뒤에야 거리로 걸러 낭비가 컸다 — 경계 사각형은 {@code
+     * com.freepets.domain.facility.service.BoundingBox}로 계산하고, {@code
+     * idx_facilities_coordinate} 인덱스를 타는 {@code RADIUS_FILTER}와 같은 이유로 좌표 범위
+     * 비교만 건다(정확한 반경 자르기는 사각형이 원의 외접이라 필요 없음 — 호출부가 이미 거리순
+     * 정렬 후 상위 N개만 쓴다).
      */
-    List<Facility> findAllByCategoryAndIsActiveTrueAndPetAllowedNotAndFacilityIdNotIn(
-            FacilityCategory category,
-            PetAllowed excludedPetAllowed,
-            Collection<Long> excludedFacilityIds
+    @Query("""
+            select facility from Facility facility
+            where facility.isActive = true
+            and facility.petAllowed <> :excludedPetAllowed
+            and facility.category = :category
+            and facility.facilityId not in :excludedFacilityIds
+            and facility.lat is not null
+            and facility.lng is not null
+            and facility.lat between :minimumLatitude and :maximumLatitude
+            and facility.lng between :minimumLongitude and :maximumLongitude
+            """)
+    List<Facility> findAlternativeCandidates(
+            @Param("category") FacilityCategory category,
+            @Param("excludedPetAllowed") PetAllowed excludedPetAllowed,
+            @Param("excludedFacilityIds") Collection<Long> excludedFacilityIds,
+            @Param("minimumLatitude") BigDecimal minimumLatitude,
+            @Param("maximumLatitude") BigDecimal maximumLatitude,
+            @Param("minimumLongitude") BigDecimal minimumLongitude,
+            @Param("maximumLongitude") BigDecimal maximumLongitude
+    );
+
+    /**
+     * liked/similar가 지역 필터(sido) 없이 호출됐을 때 "식사 스톱"(카테고리 RESTAURANT) 후보를
+     * {@code findPresetCandidates} 대신 이걸로 찾는다 — 지역명이 없어도 실제 좌표(예: 사용자가
+     * 좋아한 시설 중 만족도가 가장 높은 곳)가 있으면 그 주변을 경계 사각형으로 좁힐 수 있다.
+     * {@code findAlternativeCandidates}와 같은 이유로 정확한 반경 자르기는 필요 없다 — 호출부가
+     * 이미 거리순 정렬 후 상위 N개만 쓴다.
+     */
+    @Query("""
+            select facility from Facility facility
+            where facility.isActive = true
+            and facility.petAllowed <> com.freepets.domain.facility.entity.PetAllowed.DENIED
+            and facility.category = :category
+            and facility.lat is not null
+            and facility.lng is not null
+            and facility.lat between :minimumLatitude and :maximumLatitude
+            and facility.lng between :minimumLongitude and :maximumLongitude
+            """)
+    List<Facility> findByCategoryWithinBoundingBox(
+            @Param("category") FacilityCategory category,
+            @Param("minimumLatitude") BigDecimal minimumLatitude,
+            @Param("maximumLatitude") BigDecimal maximumLatitude,
+            @Param("minimumLongitude") BigDecimal minimumLongitude,
+            @Param("maximumLongitude") BigDecimal maximumLongitude
     );
 
     Optional<Facility> findByContentId(String contentId);
 
     List<Facility> findByContentIdIn(Collection<String> contentIds);
+
+    /**
+     * "취향 비슷한 새곳"(similar)에서 취향 프로필(만족도 기록)이 아예 없는 신규 유저용 대체
+     * 후보 풀 — 좋아한 시설 기반 카테고리·태그 매치가 불가능하므로, 개인화 대신 리뷰 평점
+     * 기준으로 대체 추천한다.
+     */
+    List<Facility> findAllByIsActiveTrueAndPetAllowedNot(PetAllowed excludedPetAllowed);
 
     boolean existsByContentId(String contentId);
 

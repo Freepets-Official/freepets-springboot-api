@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.review.entity.Tag;
@@ -22,6 +23,13 @@ public class CourseResponseDTO {
             Long facilityId,
             String name,
             FacilityCategory category,
+
+            /** 동선 근처에 자동으로 끼워 넣은 식사 스톱(대개 RESTAURANT 카테고리) — 이 아이가
+             * 실제로 좋아한 곳이 아니라 avgSatisfaction/reasonPets가 의미 없다(각각 0, 빈 배열로
+             * 내려간다). MyCourse.isPublic과 같은 이유로 JSON 프로퍼티명을 명시 고정. */
+            @JsonProperty("isMealStop")
+            boolean isMealStop,
+
             double avgSatisfaction,
             List<ReasonPet> reasonPets
     ) {}
@@ -34,9 +42,12 @@ public class CourseResponseDTO {
             float score
     ) {}
 
-    // GET /api/v1/courses/similar 응답.
+    // GET /api/v1/courses/similar 응답. isPersonalized=false는 취향 프로필(만족도 기록)이
+    // 아직 없는 신규 유저에게 리뷰 평점 기준 대체 추천을 보여준 것 — 프론트가 "취향 기반"인
+    // 척 하지 않도록 구분해서 내려준다.
     public record SimilarCourseResult(
             String title,
+            boolean isPersonalized,
             List<SimilarStop> stops
     ) {}
 
@@ -46,6 +57,12 @@ public class CourseResponseDTO {
             List<Tag> matchedTags,
             boolean matchedByKind,
             boolean matchedByBreedSize,
+
+            /** LikedStop.isMealStop과 같다 — 자동 삽입 식사 스톱은 취향 매치 결과가 아니므로
+             * matchedTags/matchedByKind/matchedByBreedSize가 전부 비어 있다. */
+            @JsonProperty("isMealStop")
+            boolean isMealStop,
+
             String reason
     ) {}
 
@@ -63,6 +80,17 @@ public class CourseResponseDTO {
     // GET /api/v1/courses/regions 응답 — preset의 sido/sigungu 드롭다운용.
     public record RegionList(
             List<SidoRegion> sidos
+    ) {}
+
+    // GET /api/v1/courses/distance-options 응답 — 거리 슬라이더 선택지 목록.
+    public record DistanceOptionList(
+            List<DistanceOption> options
+    ) {}
+
+    public record DistanceOption(
+            CourseDistanceOption value,
+            String label,
+            int meters
     ) {}
 
     public record SidoRegion(
@@ -83,6 +111,11 @@ public class CourseResponseDTO {
             Long facilityId,
             String name,
             FacilityCategory category,
+
+            /** LikedStop.isMealStop과 같다. */
+            @JsonProperty("isMealStop")
+            boolean isMealStop,
+
             double score,
 
             /**

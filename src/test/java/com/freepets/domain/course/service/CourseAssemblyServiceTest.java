@@ -148,6 +148,82 @@ class CourseAssemblyServiceTest {
         assertThat(result).extracting(Facility::getFacilityId).containsExactly(1L, 8L, 9L);
     }
 
+    @Test
+    void 식사_후보가_있으면_마지막_자리를_식사_스톱으로_채운다() {
+        Facility cafe = facility(1L, "카페A", FacilityCategory.CAFE, "0", "0");
+        Facility tour = facility(2L, "관광지A", FacilityCategory.TOUR, "0.001", "0");
+        Facility culture = facility(3L, "문화A", FacilityCategory.CULTURE, "0.002", "0");
+        Facility meal = facility(4L, "식당A", FacilityCategory.RESTAURANT, "0.0015", "0");
+
+        List<Facility> result = courseAssemblyService.assemble(
+                List.of(cafe, tour, culture), List.of(meal), DEFAULT_DISTANCE
+        );
+
+        assertThat(result).hasSize(4);
+        assertThat(result).extracting(Facility::getFacilityId).contains(4L);
+    }
+
+    @Test
+    void 식사_후보가_전부_기준_거리_밖이면_테마_후보만으로_채운다() {
+        // 신전해변류 버그와 같은 이유 — 억지로 먼 식당을 끼워넣어 자리를 낭비하지 않는다.
+        Facility cafe = facility(1L, "카페A", FacilityCategory.CAFE, "0", "0");
+        Facility tour = facility(2L, "관광지A", FacilityCategory.TOUR, "0.001", "0");
+        Facility culture = facility(3L, "문화A", FacilityCategory.CULTURE, "0.002", "0");
+        Facility stay = facility(5L, "숙소A", FacilityCategory.STAY, "0.003", "0");
+        Facility farMeal = facility(4L, "식당A", FacilityCategory.RESTAURANT, "1.0", "0"); // 약 111km
+
+        List<Facility> result = courseAssemblyService.assemble(
+                List.of(cafe, tour, culture, stay), List.of(farMeal), DEFAULT_DISTANCE
+        );
+
+        assertThat(result).extracting(Facility::getFacilityId).containsExactlyInAnyOrder(1L, 2L, 3L, 5L);
+    }
+
+    @Test
+    void 식사_후보가_비어있으면_기존_assemble과_동일하게_동작한다() {
+        Facility cafeHigh = facility(1L, "카페A", FacilityCategory.CAFE, "37.0", "128.0");
+        Facility tour = facility(2L, "관광지A", FacilityCategory.TOUR, "37.001", "128.001");
+
+        List<Facility> result = courseAssemblyService.assemble(List.of(cafeHigh, tour), List.of(), DEFAULT_DISTANCE);
+
+        assertThat(result).extracting(Facility::getFacilityId).containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    @Test
+    void 카테고리_다양성_미적용_조립도_식사_스톱을_마지막_자리에_채운다() {
+        // preset의 "애견 카페" 코스처럼 후보가 전부 같은 카테고리인 경우에도 식사 스톱은 그대로 붙는다.
+        Facility cafeA = facility(1L, "카페A", FacilityCategory.CAFE, "37.0", "128.0");
+        Facility cafeB = facility(2L, "카페B", FacilityCategory.CAFE, "37.001", "128.001");
+        Facility cafeC = facility(3L, "카페C", FacilityCategory.CAFE, "37.002", "128.002");
+        Facility meal = facility(4L, "식당A", FacilityCategory.RESTAURANT, "37.0015", "128.0015");
+
+        List<Facility> result = courseAssemblyService.assembleWithoutCategoryDiversity(
+                List.of(cafeA, cafeB, cafeC), List.of(meal), 4, DEFAULT_DISTANCE
+        );
+
+        assertThat(result).hasSize(4);
+        assertThat(result).extracting(Facility::getFacilityId).contains(4L);
+    }
+
+    @Test
+    void appendMealStop은_이미_채택된_스톱과_같은_시설은_후보에서_제외한다() {
+        Facility stop = facility(1L, "카페A", FacilityCategory.CAFE, "0", "0");
+        Facility sameFacility = facility(1L, "카페A", FacilityCategory.CAFE, "0", "0"); // 같은 id, 다른 인스턴스
+
+        List<Facility> result = courseAssemblyService.appendMealStop(List.of(stop), List.of(sameFacility), DEFAULT_DISTANCE);
+
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    void appendMealStop은_스톱이_비어있으면_그대로_반환한다() {
+        Facility meal = facility(1L, "식당A", FacilityCategory.RESTAURANT, "0", "0");
+
+        List<Facility> result = courseAssemblyService.appendMealStop(List.of(), List.of(meal), DEFAULT_DISTANCE);
+
+        assertThat(result).isEmpty();
+    }
+
     private Facility facility(
             Long facilityId,
             String name,

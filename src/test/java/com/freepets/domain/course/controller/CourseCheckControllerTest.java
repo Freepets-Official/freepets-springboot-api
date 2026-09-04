@@ -98,4 +98,16 @@ class CourseCheckControllerTest {
         verifyNoInteractions(courseCheckService);
     }
 
+    @Test
+    @DisplayName("facilityIds가 10곳을 넘으면 400을 반환한다")
+    void facilityIds가_10곳을_넘으면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/ai/course-check")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"petIds\":[1],\"facilityIds\":[1,2,3,4,5,6,7,8,9,10,11]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.result.facilityIds").exists());
+
+        verifyNoInteractions(courseCheckService);
+    }
+
 }

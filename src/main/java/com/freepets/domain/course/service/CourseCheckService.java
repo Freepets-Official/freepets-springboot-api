@@ -13,9 +13,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.course.dto.CourseCheckResponseDTO;
+import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.facility.service.BoundingBox;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.petcheck.converter.PetCheckConverter;
@@ -42,8 +44,9 @@ import lombok.RequiredArgsConstructor;
  * 조건부로 들어갈 수 있는 것이므로. {@code DENIED}인 스톱만 대안을 찾는다.
  *
  * <p>대안은 미리 저장해둔 테이블을 찾는 게 아니라 그 자리에서 계산한다(08-course-check.md
- * "같은 카테고리·그룹 통과·거리순") — 같은 {@code category} · 이 코스에 이미 없음 · 선택한
- * 반려동물 전체가 {@code judgeGroup}을 통과(DENIED 아님)하는 시설 중 가장 가까운 1곳. 조건에
+ * "같은 카테고리·그룹 통과·거리순") — 같은 {@code category} · 이 코스에 이미 없음 · DENIED 스톱
+ * 반경 {@link #ALTERNATIVE_SEARCH_RADIUS_METERS} 이내 · 선택한 반려동물 전체가 {@code
+ * judgeGroup}을 통과(DENIED 아님)하는 시설 중 가장 가까운 1곳. 조건에
  * 맞는 곳이 하나도 없으면 {@code null} — 프론트가 "같은 성격의 대체 시설을 찾지 못했어요. 이
  * 스톱은 빼는 것을 권장해요"로 안내한다.
  */
@@ -59,6 +62,24 @@ public class CourseCheckService {
     private static final int MINUTES_PER_STOP = 90;
 
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+
+    /**
+     * 대안 후보 판별(judgeGroup, 시설 하나당 반려동물 수만큼 규칙을 도는 무거운 호출)은 거리순
+     * 상위 이만큼만 한다. DB 조회 자체는 {@link #ALTERNATIVE_SEARCH_RADIUS} 경계 사각형으로 이미
+     * 좁혀오지만(FacilityRepository.findAlternativeCandidates), 그 경계 안에서도 후보가 많을 수
+     * 있어 판별 호출 수를 한 번 더 상수로 고정한다(CourseSimilarService의 CANDIDATE_JUDGE_LIMIT과
+     * 같은 이유) — 거리는 DB 조회 없이 계산 가능하니 먼저 정렬해서 좁힌 뒤 판별한다.
+     */
+    private static final int ALTERNATIVE_CANDIDATE_LIMIT = 20;
+
+    /**
+     * 대안을 찾을 반경 — DENIED 스톱과 같은 카테고리 시설 전부(지역 조건 없이, 예: RESTAURANT
+     * 전국 1만여 곳)를 불러온 뒤에야 거리로 거르던 예전 방식은 실제로 안 쓰일 먼 후보까지 매번
+     * DB에서 불러와 낭비가 컸다 — 코스 자체가 "같은 날 돌아볼 동선"이라는 전제(liked/similar/preset
+     * 전부 최대 {@link CourseDistanceOption#THIRTY_KM}까지만 스톱 간 거리를 허용) 위에서, 그보다
+     * 먼 대안은 애초에 이 코스에 실용적이지 않다고 보고 같은 값을 반경으로 쓴다.
+     */
+    private static final int ALTERNATIVE_SEARCH_RADIUS_METERS = CourseDistanceOption.THIRTY_KM.getMeters();
 
     private final UserRepository userRepository;
     private final PetRepository petRepository;
@@ -110,17 +131,41 @@ public class CourseCheckService {
             Set<Long> courseFacilityIds,
             List<Pet> pets
     ) {
-        List<Facility> candidates = facilityRepository
-                .findAllByCategoryAndIsActiveTrueAndPetAllowedNotAndFacilityIdNotIn(
-                        blockedFacility.getCategory(), PetAllowed.DENIED, courseFacilityIds
-                );
+        // blockedFacility 자체가 좌표가 없으면(관광공사 원본에 좌표가 없거나 한반도 밖 좌표라 동기화
+        // 시점에 null로 걸러진 시설 — FacilityRepository.SEARCH_FILTER 주석 참고) distanceFrom을
+        // 계산할 기준점이 없다. candidates는 좌표 유무를 걸러내면서 정작 origin은 안 걸러서, 이런
+        // 시설이 코스에 있으면 GeoUtils.distanceMeters(null, ...)에서 NPE가 났다 — 대안을 못 찾은
+        // 것과 같게 취급해 null을 반환한다.
+        if (blockedFacility.getLat() == null || blockedFacility.getLng() == null) {
+            return null;
+        }
 
+        // 경계 사각형으로 먼저 좁혀서 불러온다 — idx_facilities_coordinate를 타는 단순 범위
+        // 비교라, 지역 조건 없이 카테고리 전체를 불러오는 것보다 훨씬 적은 행만 애플리케이션으로
+        // 넘어온다(BoundingBox 클래스 주석 참고). 사각형은 원의 외접이라 모서리 쪽 후보는 실제로
+        // ALTERNATIVE_SEARCH_RADIUS_METERS보다 살짝 멀 수 있지만, 어차피 거리순 정렬 후 상위
+        // ALTERNATIVE_CANDIDATE_LIMIT개만 쓰므로 정확한 반경 자르기는 필요 없다.
+        BoundingBox boundingBox = BoundingBox.around(
+                blockedFacility.getLat().doubleValue(), blockedFacility.getLng().doubleValue(), ALTERNATIVE_SEARCH_RADIUS_METERS
+        );
+        List<Facility> candidates = facilityRepository.findAlternativeCandidates(
+                blockedFacility.getCategory(), PetAllowed.DENIED, courseFacilityIds,
+                boundingBox.minimumLatitude(), boundingBox.maximumLatitude(),
+                boundingBox.minimumLongitude(), boundingBox.maximumLongitude()
+        );
+
+        // 거리부터 정렬해 가까운 ALTERNATIVE_CANDIDATE_LIMIT곳으로 좁힌 뒤에만 판별한다 — 이미
+        // 거리순이라 그중 첫 통과 후보가 곧 "판별을 통과한 가장 가까운 곳"이다. 거리가 정확히
+        // 같은 후보끼리는 facilityId로 순서를 고정한다 — findAlternativeCandidates에 ORDER BY가
+        // 없어(어차피 여기서 다시 정렬하니 DB 정렬은 낭비), 동순위 후보의 원래 반환 순서가 호출마다
+        // 달라질 수 있다(FacilityRepository.ORDER_BY_DISTANCE와 같은 이유).
         return candidates.stream()
-                .filter(candidate -> candidate.getLat() != null && candidate.getLng() != null)
+                .sorted(Comparator.comparingDouble((Facility candidate) -> distanceFrom(blockedFacility, candidate))
+                        .thenComparing(Facility::getFacilityId))
+                .limit(ALTERNATIVE_CANDIDATE_LIMIT)
                 .filter(candidate -> petCheckJudgeService.judgeGroup(pets, candidate).overall() != PetCheckResult.DENIED)
-                .map(candidate -> Map.entry(candidate, distanceFrom(blockedFacility, candidate)))
-                .min(Comparator.comparingDouble(Map.Entry::getValue))
-                .map(nearest -> toAlternative(nearest.getKey(), nearest.getValue()))
+                .findFirst()
+                .map(nearest -> toAlternative(nearest, distanceFrom(blockedFacility, nearest)))
                 .orElse(null);
     }
 

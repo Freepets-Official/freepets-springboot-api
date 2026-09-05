@@ -33,6 +33,8 @@ public class SecurityConfig {
             "/api/v1/courses/themes",
             // 다른 사용자가 공개한 코스 둘러보기 — 로그인 전에도 담아갈 마음이 들게 열어둔다.
             "/api/v1/courses/public",
+            // 동반 출입증 QR이 가리키는 공개 웹페이지 — 스캔하는 시설 직원은 앱 계정이 없다.
+            "/verify/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",

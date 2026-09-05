@@ -1,5 +1,6 @@
 package com.freepets.domain.facility.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -18,6 +19,8 @@ import com.freepets.domain.facility.repository.FacilityWithDistance;
 import com.freepets.domain.facility.repository.RegionRepository;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
+import com.freepets.domain.report.entity.FacilityReport;
+import com.freepets.domain.report.repository.FacilityReportRepository;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.repository.FacilityReviewAggregate;
 import com.freepets.domain.review.repository.FacilityReviewCount;
@@ -39,6 +42,7 @@ public class FacilityQueryService {
     private final ReviewRepository reviewRepository;
     private final PetRepository petRepository;
     private final RegionRepository regionRepository;
+    private final FacilityReportRepository facilityReportRepository;
 
     public FacilityResponseDTO.FacilitySearchResult searchFacilities(FacilityRequestDTO.SearchRequest request) {
         double userLatitudeRadian = Math.toRadians(request.getLatitude());
@@ -301,7 +305,12 @@ public class FacilityQueryService {
         // 인증이 필요한 API라 userId는 항상 있다.
         List<Pet> myPets = petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(userId);
 
-        return FacilityConverter.toFacilityDetail(facility, distanceM, aggregate, myPets);
+        long recentDenialReportCount = facilityReportRepository.countByFacility_FacilityIdAndIsRealtimeTrueAndCreatedAtAfter(
+                facilityId,
+                LocalDateTime.now().minusDays(FacilityReport.RECENT_WINDOW_DAYS)
+        );
+
+        return FacilityConverter.toFacilityDetail(facility, distanceM, aggregate, myPets, recentDenialReportCount);
     }
 
     /**

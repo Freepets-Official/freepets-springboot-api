@@ -8,6 +8,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Optional;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -18,15 +22,29 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
+import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.domain.facility.entity.PetAllowed;
+import com.freepets.domain.pet.entity.BreedSize;
+import com.freepets.domain.pet.entity.Kind;
+import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.petcheck.dto.PetCheckResponseDTO;
+import com.freepets.domain.petcheck.entity.PetCheck;
+import com.freepets.domain.petcheck.entity.PetCheckResult;
+import com.freepets.domain.petcheck.entity.PetCheckVerdict;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
+import com.freepets.domain.petcheck.repository.PetCheckVerdictRepository;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.global.util.JsonListUtil;
 
 @ExtendWith(MockitoExtension.class)
 class PetCheckQueryServiceTest {
 
     @Mock
     private PetCheckRepository petCheckRepository;
+
+    @Mock
+    private PetCheckVerdictRepository petCheckVerdictRepository;
 
     @InjectMocks
     private PetCheckQueryService petCheckQueryService;
@@ -83,5 +101,80 @@ class PetCheckQueryServiceTest {
         petCheckQueryService.getMyChecks(1L, 7L, 20, 0);
 
         verify(petCheckRepository).findAllByUser_IdAndFacility_FacilityIdOrderByCreatedAtDesc(eq(1L), eq(7L), any());
+    }
+
+    @Test
+    void 존재하지_않는_검증_코드로_조회하면_예외() {
+        when(petCheckVerdictRepository.findByVerifyCode("FP-NOPE")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> petCheckQueryService.getVerifyPage("FP-NOPE"))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 정상_코드면_시설_반려동물_조건을_검증_페이지_데이터로_변환한다() {
+        Facility facility = Facility.builder()
+                .name("테라로자 커피공장")
+                .category(FacilityCategory.CAFE)
+                .petAllowed(PetAllowed.ALLOWED)
+                .build();
+        PetCheck petCheck = PetCheck.builder()
+                .facility(facility)
+                .overall(PetCheckResult.CONDITIONAL)
+                .build();
+        Pet pet = Pet.builder()
+                .name("몽이")
+                .kind(Kind.DOG)
+                .species("말티즈")
+                .weight(new BigDecimal("3.20"))
+                .breedSize(BreedSize.SMALL)
+                .isVaccinated(true)
+                .build();
+        PetCheckVerdict verdict = PetCheckVerdict.builder()
+                .pet(pet)
+                .result(PetCheckResult.CONDITIONAL)
+                .reason("몽이는 리드줄만 착용하면 이용 가능합니다")
+                .conditions(JsonListUtil.toJson(List.of("리드줄 필수 착용")))
+                .verifyCode("FP-ABC1234567")
+                .build();
+        petCheck.addVerdict(verdict);
+
+        when(petCheckVerdictRepository.findByVerifyCode("FP-ABC1234567")).thenReturn(Optional.of(verdict));
+
+        PetCheckResponseDTO.VerifyPage page = petCheckQueryService.getVerifyPage("FP-ABC1234567");
+
+        assertThat(page.facilityName()).isEqualTo("테라로자 커피공장");
+        assertThat(page.result()).isEqualTo(PetCheckResult.CONDITIONAL);
+        assertThat(page.pet().name()).isEqualTo("몽이");
+        assertThat(page.pet().breedSizeLabel()).isEqualTo("소형견");
+        assertThat(page.conditions()).containsExactly("리드줄 필수 착용");
+    }
+
+    @Test
+    void 반려동물이_삭제됐으면_pet이_null인_채로_나머지는_반환한다() {
+        Facility facility = Facility.builder()
+                .name("테라로자 커피공장")
+                .category(FacilityCategory.CAFE)
+                .petAllowed(PetAllowed.ALLOWED)
+                .build();
+        PetCheck petCheck = PetCheck.builder()
+                .facility(facility)
+                .overall(PetCheckResult.ALLOWED)
+                .build();
+        // pet(null) — 반려동물 삭제 시 fk_verdict_pet ON DELETE SET NULL로 이렇게 남는다.
+        PetCheckVerdict verdict = PetCheckVerdict.builder()
+                .result(PetCheckResult.ALLOWED)
+                .reason("모든 조건을 충족해 출입 가능합니다")
+                .conditions(JsonListUtil.toJson(List.of()))
+                .verifyCode("FP-DEF1234567")
+                .build();
+        petCheck.addVerdict(verdict);
+
+        when(petCheckVerdictRepository.findByVerifyCode("FP-DEF1234567")).thenReturn(Optional.of(verdict));
+
+        PetCheckResponseDTO.VerifyPage page = petCheckQueryService.getVerifyPage("FP-DEF1234567");
+
+        assertThat(page.pet()).isNull();
+        assertThat(page.facilityName()).isEqualTo("테라로자 커피공장");
     }
 }

@@ -29,6 +29,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.facility.dto.FacilityRequestDTO;
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
+import com.freepets.domain.facility.entity.Confidence;
+import com.freepets.domain.facility.entity.ConfidenceSource;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.FacilitySource;
@@ -42,6 +44,7 @@ import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
+import com.freepets.domain.report.repository.FacilityReportRepository;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.repository.FacilityReviewAggregate;
 import com.freepets.domain.review.repository.FacilityReviewCount;
@@ -66,6 +69,9 @@ class FacilityQueryServiceTest {
 
     @Mock
     private RegionRepository regionRepository;
+
+    @Mock
+    private FacilityReportRepository facilityReportRepository;
 
     @InjectMocks
     private FacilityQueryService facilityQueryService;
@@ -432,6 +438,50 @@ class FacilityQueryServiceTest {
 
         assertThat(result.distanceM()).isNull();
         assertThat(result.name()).isEqualTo("카페 파도살롱");
+    }
+
+    @Test
+    @DisplayName("최근 1주 내 실시간 거부 제보가 있으면 신뢰도가 UNVERIFIED/DENIAL_REPORT로 내려간다")
+    void 최근_거부_제보가_있으면_신뢰도가_내려간다() {
+        givenFacilityAt(100.0);
+        givenNoReviews();
+        givenNoPets();
+        when(facilityReportRepository.countByFacility_FacilityIdAndIsRealtimeTrueAndCreatedAtAfter(eq(FACILITY_ID), any()))
+                .thenReturn(1L);
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.confidence()).isEqualTo(Confidence.UNVERIFIED);
+        assertThat(result.confidenceSource()).isEqualTo(ConfidenceSource.DENIAL_REPORT);
+    }
+
+    @Test
+    @DisplayName("최근 거부 제보가 없어도 관광공사 원문이 있으면 ESTIMATED/PARSED로 내려준다")
+    void 최근_거부_제보가_없으면_원문_유무로_신뢰도를_판단한다() {
+        Facility facility = createFacility(FACILITY_ID);
+        ReflectionTestUtils.setField(facility, "petConditionRaw", "야외 좌석에 한해 반려동물 동반이 가능합니다.");
+        when(facilityRepository.findWithDistanceById(anyDouble(), anyDouble(), eq(FACILITY_ID)))
+                .thenReturn(Optional.of(new FacilityWithDistance(facility, 100.0)));
+        givenNoReviews();
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.confidence()).isEqualTo(Confidence.ESTIMATED);
+        assertThat(result.confidenceSource()).isEqualTo(ConfidenceSource.PARSED);
+    }
+
+    @Test
+    @DisplayName("원문도 최근 거부 제보도 없으면 UNVERIFIED/NONE으로 내려준다")
+    void 아무_신호가_없으면_UNVERIFIED_NONE으로_내려준다() {
+        givenFacilityAt(100.0);
+        givenNoReviews();
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.confidence()).isEqualTo(Confidence.UNVERIFIED);
+        assertThat(result.confidenceSource()).isEqualTo(ConfidenceSource.NONE);
     }
 
     @Test

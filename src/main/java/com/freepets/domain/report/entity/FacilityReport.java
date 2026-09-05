@@ -26,6 +26,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class FacilityReport extends BaseEntity {
 
+    // 실시간 거부 제보가 "최근"으로 취급되는 기간 — 경고 노출(recent, me/denial-alerts)·신뢰도
+    // 하향(FacilityQueryService)·관리자 확인 필요 로그(DenialReportCommandService)가 전부
+    // 이 값을 함께 쓴다. 여기 한 곳에서만 바꾸면 셋이 같이 움직인다(프론트 app-store.tsx의
+    // DENIAL_ALERT_WINDOW_MS와 동일한 1주).
+    public static final int RECENT_WINDOW_DAYS = 7;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "report_id")

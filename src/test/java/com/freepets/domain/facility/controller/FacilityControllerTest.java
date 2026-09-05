@@ -26,6 +26,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
+import com.freepets.domain.facility.entity.Confidence;
+import com.freepets.domain.facility.entity.ConfidenceSource;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
@@ -186,6 +188,8 @@ class FacilityControllerTest {
                 PetAllowed.PENDING,
                 null,
                 LocalDateTime.of(2026, 7, 5, 0, 0),
+                Confidence.UNVERIFIED,
+                ConfidenceSource.NONE,
                 "https://tong.visitkorea.or.kr/image.jpg",
                 "https://tong.visitkorea.or.kr/thumbnail.jpg",
                 new FacilityResponseDTO.PawGrade(4, "동반 우수"),

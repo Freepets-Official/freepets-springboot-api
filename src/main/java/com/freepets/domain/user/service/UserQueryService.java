@@ -28,7 +28,10 @@ public class UserQueryService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        // 소셜 가입자는 passwordHash가 null이다. matches()에 null을 넘기면 구현체에 따라
+        // NPE가 나므로, 비밀번호 로그인 대상이 아님을 먼저 걸러낸다.
+        if (user.getPasswordHash() == null
+                || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new GeneralException(ErrorStatus.MEMBER4006);
         }
 

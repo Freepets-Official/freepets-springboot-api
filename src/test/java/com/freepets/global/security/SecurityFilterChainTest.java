@@ -16,6 +16,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.freepets.domain.auth.controller.AuthController;
+import com.freepets.domain.auth.dto.AuthResponseDTO;
+import com.freepets.domain.auth.service.AuthCommandService;
 import com.freepets.domain.user.controller.UserController;
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.service.UserCommandService;
@@ -24,7 +27,7 @@ import com.freepets.global.config.SecurityConfig;
 import com.freepets.global.config.JwtConfig;
 import com.freepets.global.security.jwt.JwtProvider;
 
-@WebMvcTest(controllers = {UserController.class, SecurityTestPingController.class})
+@WebMvcTest(controllers = {UserController.class, AuthController.class, SecurityTestPingController.class})
 @Import({SecurityConfig.class, JwtConfig.class, JwtProvider.class, JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
 class SecurityFilterChainTest {
 
@@ -39,6 +42,9 @@ class SecurityFilterChainTest {
 
     @MockitoBean
     private UserQueryService userQueryService;
+
+    @MockitoBean
+    private AuthCommandService authCommandService;
 
     @Test
     void 토큰없이_보호된_경로_요청시_401과_COMMON401을_반환한다() throws Exception {
@@ -75,5 +81,19 @@ class SecurityFilterChainTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"test@test.com\",\"password\":\"password1\",\"nickname\":\"tester\"}"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void 소셜_로그인_경로는_토큰없이도_통과한다() throws Exception {
+        // 아직 우리 토큰이 없는 상태로 들어오는 경로라 인증을 요구하면 로그인 자체가 불가능하다.
+        when(authCommandService.socialLogin(any(), any()))
+                .thenReturn(new AuthResponseDTO.SocialLoginResult("access", "refresh", true));
+
+        mockMvc.perform(post("/api/v1/auth/social/kakao")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"providerToken\":\"provider-token\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.isNewUser").value(true));
     }
 }

@@ -32,6 +32,12 @@ public enum ErrorStatus implements BaseErrorCode {
     TOKEN4001(UNAUTHORIZED, "TOKEN4001", "유효하지 않은 토큰입니다."),
     TOKEN4002(UNAUTHORIZED, "TOKEN4002", "만료된 토큰입니다."),
 
+    // 소셜 로그인 에러
+    OAUTH4001(BAD_REQUEST, "OAUTH4001", "지원하지 않는 소셜 로그인 제공자입니다."),
+    OAUTH4002(UNAUTHORIZED, "OAUTH4002", "소셜 로그인 토큰이 유효하지 않습니다."),
+    OAUTH4003(CONFLICT, "OAUTH4003", "이미 다른 방식으로 가입된 이메일입니다."),
+    OAUTH5001(BAD_GATEWAY, "OAUTH5001", "소셜 로그인 제공자와의 통신에 실패했습니다."),
+
     // 이미지 에러
     IMAGE4001(BAD_REQUEST, "IMAGE4001", "이미지 파일이 비어있습니다."),
     IMAGE4002(BAD_REQUEST, "IMAGE4002", "파일 확장자가 없습니다."),

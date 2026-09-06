@@ -42,3 +42,14 @@ ALTER TABLE facilities ALTER COLUMN pet_score TYPE double precision;
 
 -- 위 ALTER 뒤에 기존 리뷰를 시설 캐시에 1회 반영해야 한다.
 --   ./gradlew facilityGradeBackfill
+
+-- ============================================================
+-- 2026-09-03 — 소셜 로그인 도입 (카카오/네이버/구글/애플)
+-- ============================================================
+-- 소셜 가입자는 비밀번호가 없어 users.password_hash가 null이 된다. ddl-auto=update는
+-- NOT NULL을 자동으로 완화하지 않으므로 수동 조치가 필요하다.
+-- users.provider_id 컬럼과 (provider, provider_id) 유니크 제약은 ddl-auto=update가 만들어 준다.
+-- 기존 LOCAL 유저 데이터는 영향이 없다(값이 이미 채워져 있고 제약만 느슨해진다).
+--
+-- 상태: ⬜ 미적용
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;

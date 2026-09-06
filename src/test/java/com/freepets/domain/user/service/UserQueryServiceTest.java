@@ -106,6 +106,29 @@ class UserQueryServiceTest {
     }
 
     @Test
+    void login_소셜_가입자는_비밀번호_로그인으로_들어올_수_없다() {
+        UserRequestDTO.LoginRequest request = createLoginRequest();
+        // 소셜 가입자는 passwordHash가 null이다. matches()에 null을 넘기면 구현체에 따라
+        // NPE가 나 500이 되므로, 그 전에 MEMBER4006으로 걸러야 한다.
+        User socialUser = User.builder()
+                .email(request.getEmail())
+                .nickname("홍길동")
+                .provider(Provider.KAKAO)
+                .providerId("kakao-1")
+                .build();
+
+        when(userRepository.findByEmail(request.getEmail())).thenReturn(Optional.of(socialUser));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> userQueryService.login(request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.MEMBER4006);
+        verifyNoInteractions(passwordEncoder, jwtProvider);
+    }
+
+    @Test
     void getAccount_성공하면_닉네임과_아바타를_반환한다() {
         User user = createUser();
 

@@ -33,6 +33,8 @@ public class SecurityConfig {
             "/api/v1/courses/themes",
             // 다른 사용자가 공개한 코스 둘러보기 — 로그인 전에도 담아갈 마음이 들게 열어둔다.
             "/api/v1/courses/public",
+            // 소셜 로그인. 아직 우리 토큰이 없는 상태로 들어오므로 인증을 요구할 수 없다.
+            "/api/v1/auth/social/*",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",

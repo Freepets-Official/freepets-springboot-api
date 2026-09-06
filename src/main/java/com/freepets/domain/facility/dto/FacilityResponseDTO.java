@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.freepets.domain.facility.entity.Confidence;
+import com.freepets.domain.facility.entity.ConfidenceSource;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
@@ -146,6 +148,11 @@ public class FacilityResponseDTO {
             // 화면에 그대로 보여줄 동반 조건 안내문. 아직 채우지 않은 시설은 null이다.
             String petConditionRaw,
             LocalDateTime confirmedAt,
+
+            // 이 조건 정보를 얼마나 믿을 수 있는지 — 저장값이 아니라 조회 시점에 계산한다
+            // (최근 실시간 거부 제보 여부 등). FacilityQueryService.getFacilityDetail 참고.
+            Confidence confidence,
+            ConfidenceSource confidenceSource,
             String imageUrl,
             String thumbnailUrl,
             PawGrade pawGrade,

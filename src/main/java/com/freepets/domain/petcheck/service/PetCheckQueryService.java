@@ -10,7 +10,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.freepets.domain.petcheck.converter.PetCheckConverter;
 import com.freepets.domain.petcheck.dto.PetCheckResponseDTO;
 import com.freepets.domain.petcheck.entity.PetCheck;
+import com.freepets.domain.petcheck.entity.PetCheckVerdict;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
+import com.freepets.domain.petcheck.repository.PetCheckVerdictRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
 
@@ -26,6 +28,7 @@ public class PetCheckQueryService {
     private static final int MAX_LIMIT = 100;
 
     private final PetCheckRepository petCheckRepository;
+    private final PetCheckVerdictRepository petCheckVerdictRepository;
 
     // GET /api/v1/pet-checks — 내 판별 이력(최신순). facilityId로 필터 가능.
     // offset은 limit의 배수로 들어온다고 가정(프론트 "더보기" 방식) — Pageable의 page 개념으로 환산.
@@ -60,5 +63,13 @@ public class PetCheckQueryService {
                 page.getContent().stream().map(PetCheckConverter::toHistoryItem).toList(),
                 page.getTotalElements()
         );
+    }
+
+    // GET /verify/{code} — 동반 출입증 QR이 가리키는 공개 페이지가 조회한다. 인증 없음.
+    public PetCheckResponseDTO.VerifyPage getVerifyPage(String verifyCode) {
+        PetCheckVerdict verdict = petCheckVerdictRepository.findByVerifyCode(verifyCode)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.PETCHECK4001));
+
+        return PetCheckConverter.toVerifyPage(verdict);
     }
 }

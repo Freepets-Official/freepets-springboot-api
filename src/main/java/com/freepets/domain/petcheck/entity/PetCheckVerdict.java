@@ -55,17 +55,26 @@ public class PetCheckVerdict {
     @Column(columnDefinition = "json")
     private String conditions;
 
+    // 동반 출입증 검증(GET /verify/{code})용 공개 조회 코드. VerifyCodeGenerator로 발급하며,
+    // 판별 결과가 곧 개인정보(반려동물 이름·체중·접종여부)라 예측 불가능해야 한다 — checkId·petId를
+    // 조합해 역산 가능한 값은 쓰지 않는다. 이 컬럼이 생기기 전 판별 기록은 애초에 출입증 QR도
+    // 없었으므로 채울 값이 없다 — nullable로 두고 백필하지 않는다.
+    @Column(name = "verify_code", unique = true, length = 20)
+    private String verifyCode;
+
     @Builder
     private PetCheckVerdict(
             Pet pet,
             PetCheckResult result,
             String reason,
-            String conditions
+            String conditions,
+            String verifyCode
     ) {
         this.pet = pet;
         this.result = result;
         this.reason = reason;
         this.conditions = conditions;
+        this.verifyCode = verifyCode;
     }
 
     void assignPetCheck(PetCheck petCheck) {

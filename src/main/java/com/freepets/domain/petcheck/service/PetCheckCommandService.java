@@ -58,7 +58,9 @@ public class PetCheckCommandService {
                 .build();
 
         for (PetVerdict verdict : groupVerdict.verdicts()) {
-            PetCheckVerdict verdictEntity = PetCheckConverter.toVerdictEntity(verdict);
+            // 동반 출입증 QR이 가리킬 코드는 판별 결과와 무관한 발급 정책이라 여기서 결정하고,
+            // 컨버터에는 완성된 값만 넘긴다 — VerifyCodeGenerator.generate() 참고.
+            PetCheckVerdict verdictEntity = PetCheckConverter.toVerdictEntity(verdict, VerifyCodeGenerator.generate());
             petCheck.addVerdict(verdictEntity);
         }
 

@@ -9,6 +9,7 @@ import java.util.stream.IntStream;
 
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
 import com.freepets.domain.facility.entity.CheckList;
+import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.PetFriendlyGrade;
 import com.freepets.domain.facility.entity.Region;
@@ -185,8 +186,11 @@ public class FacilityConverter {
             Facility facility,
             Long distanceM,
             FacilityReviewAggregate aggregate,
-            List<Pet> myPets
+            List<Pet> myPets,
+            long recentDenialReportCount
     ) {
+        Confidence.View confidence = Confidence.of(facility.getPetConditionRaw(), recentDenialReportCount);
+
         return new FacilityResponseDTO.FacilityDetail(
                 facility.getFacilityId(),
                 facility.getName(),
@@ -199,6 +203,8 @@ public class FacilityConverter {
                 facility.getPetAllowed(),
                 facility.getPetConditionRaw(),
                 facility.getConfirmedAt(),
+                confidence.confidence(),
+                confidence.source(),
                 facility.getImageUrl(),
                 facility.getThumbnailUrl(),
                 toPawGrade(aggregate),

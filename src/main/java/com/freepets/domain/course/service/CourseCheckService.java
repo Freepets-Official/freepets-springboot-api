@@ -27,6 +27,7 @@ import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.petcheck.service.PetCheckJudgeService;
 import com.freepets.domain.petcheck.service.PetCheckJudgeService.GroupVerdict;
 import com.freepets.domain.petcheck.service.PetCheckJudgeService.PetVerdict;
+import com.freepets.domain.petcheck.service.VerifyCodeGenerator;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -199,7 +200,9 @@ public class CourseCheckService {
                 .build();
 
         for (PetVerdict petVerdict : verdict.verdicts()) {
-            petCheck.addVerdict(PetCheckConverter.toVerdictEntity(petVerdict));
+            // 코스 일괄 판별도 같은 pet_check_verdicts 테이블에 이력을 남기므로, POST /ai/check와
+            // 동일하게 검증 코드를 발급해둔다 — VerifyCodeGenerator.generate() 참고.
+            petCheck.addVerdict(PetCheckConverter.toVerdictEntity(petVerdict, VerifyCodeGenerator.generate()));
         }
 
         petCheckRepository.save(petCheck);

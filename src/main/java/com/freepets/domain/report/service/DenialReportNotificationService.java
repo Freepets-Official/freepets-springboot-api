@@ -6,7 +6,6 @@ import java.util.Map;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.report.entity.DenialReason;
@@ -36,8 +35,11 @@ public class DenialReportNotificationService {
     private final UserDeviceTokenRepository userDeviceTokenRepository;
     private final FcmClient fcmClient;
 
+    // @Transactional을 일부러 안 둔다 — fcmClient.sendToTokens(...)는 구글 FCM 서버로 나가는
+    // 외부 HTTP 호출인데, 여기에 트랜잭션을 걸면 그 호출이 끝날 때까지 DB 커넥션을 붙잡고
+    // 있게 된다(운영 DB가 Supabase 세션 모드 풀러라 커넥션 한도가 빠듯하다). 아래 리포지토리
+    // 호출들은 각자 Spring Data JPA가 자체적으로 트랜잭션을 열고 닫아주므로 묶을 필요가 없다.
     @Async("notificationExecutor")
-    @Transactional
     public void notifyDenial(
             Long facilityId,
             Long reporterId,

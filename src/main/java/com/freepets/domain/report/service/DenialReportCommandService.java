@@ -48,6 +48,7 @@ public class DenialReportCommandService {
     private final FacilityReportRepository facilityReportRepository;
     private final FacilityRepository facilityRepository;
     private final UserRepository userRepository;
+    private final DenialReportNotificationService denialReportNotificationService;
 
     public DenialReportResponseDTO.Report report(
             Long userId,
@@ -78,6 +79,9 @@ public class DenialReportCommandService {
         );
 
         warnIfEscalationThresholdReached(facilityId);
+
+        // 이 시설을 판별했던 다른 유저들에게 실시간 푸시 — 비동기라 이 응답을 안 늦춘다.
+        denialReportNotificationService.notifyDenial(facilityId, userId, reason, facility.getName());
 
         return DenialReportConverter.toReport(saved, userId);
     }

@@ -45,6 +45,9 @@ class DenialReportCommandServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private DenialReportNotificationService denialReportNotificationService;
+
     @InjectMocks
     private DenialReportCommandService denialReportCommandService;
 
@@ -74,6 +77,7 @@ class DenialReportCommandServiceTest {
         assertThat(result.isMine()).isTrue();
         assertThat(result.isRealtime()).isTrue();
         assertThat(result.status()).isEqualTo(ReportStatus.APPLIED);
+        verify(denialReportNotificationService).notifyDenial(7L, 1L, DenialReason.WEIGHT, "테스트 시설");
     }
 
     @Test
@@ -105,6 +109,7 @@ class DenialReportCommandServiceTest {
         assertThatThrownBy(() -> denialReportCommandService.report(1L, 7L, DenialReason.WEIGHT))
                 .isInstanceOf(GeneralException.class);
         verify(facilityReportRepository, never()).save(any());
+        verifyNoInteractions(denialReportNotificationService);
     }
 
     @Test

@@ -39,6 +39,9 @@ out/
 ### .yml file
 application.yml
 
+### Firebase 서비스 계정 키(FCM 발송용) — 비공개 키가 그대로 담겨 있음
+firebase-service-account.json
+
 ### 공공데이터포털 '한국관광공사_반려동물_동반여행_서비스' API 명세서
 pet-travel-api-specification.md
 

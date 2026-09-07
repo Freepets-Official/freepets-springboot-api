@@ -96,4 +96,8 @@ public class UserConverter {
     public static UserResponseDTO.AccountResult toAccountResult(User user) {
         return new UserResponseDTO.AccountResult(user.getNickname(), user.getAvatarUri());
     }
+
+    public static UserResponseDTO.PushTokenResult toPushTokenResult() {
+        return new UserResponseDTO.PushTokenResult();
+    }
 }

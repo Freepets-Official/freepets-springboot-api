@@ -6,6 +6,8 @@ public class UserResponseDTO {
 
     public static class SignUpResult {}
 
+    public static class PushTokenResult {}
+
     public record LoginResult(
             String accessToken,
             String refreshToken

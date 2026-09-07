@@ -2,12 +2,14 @@ package com.freepets.domain.user.controller;
 
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.freepets.domain.user.dto.UserRequestDTO;
@@ -61,6 +63,26 @@ public class UserController {
     ) {
         return ApiResponse.onSuccess(
                 userCommandService.updateAccount(userId, request)
+        );
+    }
+
+    @PostMapping("/push-tokens")
+    public ApiResponse<UserResponseDTO.PushTokenResult> registerPushToken(
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody UserRequestDTO.RegisterPushTokenRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                userCommandService.registerPushToken(userId, request)
+        );
+    }
+
+    @DeleteMapping("/push-tokens")
+    public ApiResponse<UserResponseDTO.PushTokenResult> unregisterPushToken(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam String token
+    ) {
+        return ApiResponse.onSuccess(
+                userCommandService.unregisterPushToken(userId, token)
         );
     }
 }

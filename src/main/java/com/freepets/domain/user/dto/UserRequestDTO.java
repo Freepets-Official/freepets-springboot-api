@@ -54,4 +54,16 @@ public class UserRequestDTO {
 
         private MultipartFile avatar;
     }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class RegisterPushTokenRequest {
+
+        @NotBlank(message = "토큰은 필수입니다.")
+        private String token;
+
+        // "IOS"/"ANDROID" 정도의 자유 문자열 — 발송 로직이 플랫폼을 구분해 쓰지 않아 필수 아님.
+        private String platform;
+    }
 }

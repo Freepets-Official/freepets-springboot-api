@@ -18,11 +18,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
+import com.freepets.domain.user.entity.UserDeviceToken;
+import com.freepets.domain.user.repository.UserDeviceTokenRepository;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
@@ -39,6 +42,9 @@ class UserCommandServiceTest {
 
     @Mock
     private S3ImageService s3ImageService;
+
+    @Mock
+    private UserDeviceTokenRepository userDeviceTokenRepository;
 
     @InjectMocks
     private UserCommandService userCommandService;
@@ -164,5 +170,81 @@ class UserCommandServiceTest {
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.MEMBER4005);
         verifyNoInteractions(s3ImageService);
+    }
+
+    @Test
+    void registerPushToken_기존에_같은_토큰이_있어도_지우고_새로_저장한다() {
+        User user = createUser();
+        UserRequestDTO.RegisterPushTokenRequest request = new UserRequestDTO.RegisterPushTokenRequest();
+        request.setToken("expo-token-1");
+        request.setPlatform("ANDROID");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        userCommandService.registerPushToken(1L, request);
+
+        verify(userDeviceTokenRepository).deleteByToken("expo-token-1");
+
+        ArgumentCaptor<UserDeviceToken> tokenCaptor = ArgumentCaptor.forClass(UserDeviceToken.class);
+        verify(userDeviceTokenRepository).save(tokenCaptor.capture());
+        assertThat(tokenCaptor.getValue().getToken()).isEqualTo("expo-token-1");
+        assertThat(tokenCaptor.getValue().getPlatform()).isEqualTo("ANDROID");
+        assertThat(tokenCaptor.getValue().getUser()).isEqualTo(user);
+    }
+
+    @Test
+    void registerPushToken_존재하지_않는_유저면_예외를_던진다() {
+        UserRequestDTO.RegisterPushTokenRequest request = new UserRequestDTO.RegisterPushTokenRequest();
+        request.setToken("expo-token-1");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.empty());
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> userCommandService.registerPushToken(1L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.MEMBER4005);
+        verifyNoInteractions(userDeviceTokenRepository);
+    }
+
+    @Test
+    void unregisterPushToken_본인_토큰이면_삭제한다() {
+        User user = createUser();
+        ReflectionTestUtils.setField(user, "id", 1L);
+        UserDeviceToken deviceToken = UserDeviceToken.builder()
+                .user(user)
+                .token("expo-token-1")
+                .build();
+
+        when(userDeviceTokenRepository.findByToken("expo-token-1")).thenReturn(Optional.of(deviceToken));
+
+        userCommandService.unregisterPushToken(1L, "expo-token-1");
+
+        verify(userDeviceTokenRepository).delete(deviceToken);
+    }
+
+    @Test
+    void unregisterPushToken_다른_유저_토큰이면_삭제하지_않는다() {
+        User owner = createUser();
+        ReflectionTestUtils.setField(owner, "id", 2L);
+        UserDeviceToken deviceToken = UserDeviceToken.builder()
+                .user(owner)
+                .token("expo-token-1")
+                .build();
+
+        when(userDeviceTokenRepository.findByToken("expo-token-1")).thenReturn(Optional.of(deviceToken));
+
+        userCommandService.unregisterPushToken(1L, "expo-token-1");
+
+        verify(userDeviceTokenRepository, never()).delete(any());
+    }
+
+    @Test
+    void unregisterPushToken_존재하지_않는_토큰이면_조용히_넘어간다() {
+        when(userDeviceTokenRepository.findByToken("expo-token-1")).thenReturn(Optional.empty());
+
+        assertThat(userCommandService.unregisterPushToken(1L, "expo-token-1")).isNotNull();
+        verify(userDeviceTokenRepository, never()).delete(any());
     }
 }

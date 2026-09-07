@@ -10,6 +10,8 @@ import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
+import com.freepets.domain.user.entity.UserDeviceToken;
+import com.freepets.domain.user.repository.UserDeviceTokenRepository;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
@@ -25,6 +27,7 @@ public class UserCommandService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final S3ImageService s3ImageService;
+    private final UserDeviceTokenRepository userDeviceTokenRepository;
 
     public UserResponseDTO.SignUpResult signUp(UserRequestDTO.SignUpRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -100,6 +103,41 @@ public class UserCommandService {
         }
 
         return UserConverter.toAccountResult(user);
+    }
+
+    // 등록할 때마다 이 토큰을 가진 기존 행을 지우고 새로 저장한다 — 기기 재설치·기기 변경·다른
+    // 계정으로 로그인 시 같은 토큰이 예전 소유자에게 남아 잘못 발송되는 걸 막는다.
+    public UserResponseDTO.PushTokenResult registerPushToken(
+            Long userId,
+            UserRequestDTO.RegisterPushTokenRequest request
+    ) {
+        User user = findUser(userId);
+
+        userDeviceTokenRepository.deleteByToken(request.getToken());
+        userDeviceTokenRepository.save(
+                UserDeviceToken.builder()
+                        .user(user)
+                        .token(request.getToken())
+                        .platform(request.getPlatform())
+                        .build()
+        );
+
+        return UserConverter.toPushTokenResult();
+    }
+
+    // 로그아웃·앱 삭제 시 프론트가 호출 — 안 부르면 그 토큰으로 계속 발송을 시도하다 FCM 응답을
+    // 보고서야(무효 토큰 정리, DenialReportNotificationService) 뒤늦게 지워진다. 존재하지 않거나
+    // 이미 다른 계정으로 갈아탄 토큰(재등록으로 소유자가 바뀐 경우)이면 조용히 넘어간다 — 로그아웃
+    // 흐름에서 이걸로 에러를 낼 이유가 없다.
+    public UserResponseDTO.PushTokenResult unregisterPushToken(
+            Long userId,
+            String token
+    ) {
+        userDeviceTokenRepository.findByToken(token)
+                .filter(deviceToken -> deviceToken.getUser().getId().equals(userId))
+                .ifPresent(userDeviceTokenRepository::delete);
+
+        return UserConverter.toPushTokenResult();
     }
 
     private User findUser(Long userId) {

@@ -53,3 +53,22 @@ ALTER TABLE facilities ALTER COLUMN pet_score TYPE double precision;
 --
 -- 상태: ⬜ 미적용
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+
+-- ============================================================
+-- 2026-09-07 — 거부 제보(F4) denial_reason CHECK 제약조건 갱신 (#53)
+-- ============================================================
+-- facility_reports.denial_reason에 옛날 값(제보 자체가 반려된 사유였던 시절)만 허용하는
+-- CHECK 제약조건이 남아있어서, F4에서 바뀐 새 DenialReason 값(WEIGHT 등)을 저장하려 하면
+-- 전부 ConstraintViolationException → COMMON500으로 떨어진다. ddl-auto=update는 CHECK
+-- 제약조건을 자동으로 안 바꾸므로 수동 조치가 필요하다.
+-- (프론트 연동 중 발견 — POST /facilities/{id}/denial-reports가 항상 500이었던 원인)
+--
+-- 기존 제약조건 실제 정의(SQL Editor로 확인):
+--   CHECK ((denial_reason)::text = ANY (ARRAY['DUPLICATE','INSUFFICIENT_EVIDENCE',
+--                                              'NOT_VERIFIABLE','IRRELEVANT_CONTENT']))
+--
+-- 상태: ⬜ 미적용 (긴급 — 이거 때문에 거부 제보 저장이 전부 실패 중)
+-- 테이블이 public이 아니라 freepets 스키마에 있다 — 스키마 안 붙이면 "relation does not exist"로 실패한다.
+ALTER TABLE freepets.facility_reports DROP CONSTRAINT facility_reports_denial_reason_check;
+ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_denial_reason_check
+    CHECK (denial_reason IN ('WEIGHT', 'BREED', 'INDOOR', 'POLICY_CHANGED', 'CROWDED', 'OTHER'));

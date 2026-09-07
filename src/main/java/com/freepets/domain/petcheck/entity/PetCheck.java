@@ -21,6 +21,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
@@ -32,9 +33,19 @@ import lombok.NoArgsConstructor;
 
 // 판별 세션(그룹) — 한 번에 여러 마리를 판별한다. overall·checklist·tips는 그룹 공통이고,
 // 아이별 결과는 PetCheckVerdict(1:N)에 담는다. db/schema.sql "4. pet_checks" 참고.
+//
+// user_id·facility_id에 인덱스를 둔다 — PetCheckRepository의 findDistinctFacilityIdsByUser_Id(#53,
+// 유저→시설)와 findDistinctUserIdsByFacility_FacilityId(거부 제보 알림, 시설→유저)가 각각 이
+// 컬럼으로 조회한다. 운영 DB가 PostgreSQL(Supabase)이라 FK 컬럼이라고 자동으로 인덱스가 붙지 않는다.
 @Getter
 @Entity
-@Table(name = "pet_checks")
+@Table(
+        name = "pet_checks",
+        indexes = {
+                @Index(name = "idx_pet_checks_user_id", columnList = "user_id"),
+                @Index(name = "idx_pet_checks_facility_id", columnList = "facility_id")
+        }
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PetCheck extends BaseEntity {
 

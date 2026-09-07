@@ -45,4 +45,19 @@ public interface PetCheckRepository extends JpaRepository<PetCheck, Long> {
             @Param("userId") Long userId,
             Pageable pageable
     );
+
+    // 거부 제보 실시간 알림(DenialReportNotificationService)이 쓴다 — 위 쿼리와 반대 방향으로,
+    // "이 시설을 판별한 다른 유저들"을 찾는다. 제보한 본인은 알림 대상이 아니라 제외하고,
+    // 같은 이유로 상한을 둔다(시설 하나를 아주 많은 유저가 판별했을 경우 대비).
+    @Query("""
+            SELECT pc.user.id FROM PetCheck pc
+            WHERE pc.facility.facilityId = :facilityId AND pc.user.id <> :excludeUserId
+            GROUP BY pc.user.id
+            ORDER BY MAX(pc.createdAt) DESC
+            """)
+    List<Long> findDistinctUserIdsByFacility_FacilityId(
+            @Param("facilityId") Long facilityId,
+            @Param("excludeUserId") Long excludeUserId,
+            Pageable pageable
+    );
 }

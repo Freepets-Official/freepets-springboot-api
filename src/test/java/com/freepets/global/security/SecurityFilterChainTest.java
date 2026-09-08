@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -19,6 +21,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.freepets.domain.auth.controller.AuthController;
 import com.freepets.domain.auth.dto.AuthResponseDTO;
 import com.freepets.domain.auth.service.AuthCommandService;
+import com.freepets.domain.course.controller.CourseController;
+import com.freepets.domain.course.dto.CourseResponseDTO;
+import com.freepets.domain.course.service.CourseCommandService;
+import com.freepets.domain.course.service.CourseLikedService;
+import com.freepets.domain.course.service.CoursePresetService;
+import com.freepets.domain.course.service.CourseQueryService;
+import com.freepets.domain.course.service.CourseSimilarService;
 import com.freepets.domain.user.controller.UserController;
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.service.UserCommandService;
@@ -27,7 +36,7 @@ import com.freepets.global.config.SecurityConfig;
 import com.freepets.global.config.JwtConfig;
 import com.freepets.global.security.jwt.JwtProvider;
 
-@WebMvcTest(controllers = {UserController.class, AuthController.class, SecurityTestPingController.class})
+@WebMvcTest(controllers = {UserController.class, AuthController.class, CourseController.class, SecurityTestPingController.class})
 @Import({SecurityConfig.class, JwtConfig.class, JwtProvider.class, JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
 class SecurityFilterChainTest {
 
@@ -45,6 +54,21 @@ class SecurityFilterChainTest {
 
     @MockitoBean
     private AuthCommandService authCommandService;
+
+    @MockitoBean
+    private CourseLikedService courseLikedService;
+
+    @MockitoBean
+    private CourseSimilarService courseSimilarService;
+
+    @MockitoBean
+    private CoursePresetService coursePresetService;
+
+    @MockitoBean
+    private CourseQueryService courseQueryService;
+
+    @MockitoBean
+    private CourseCommandService courseCommandService;
 
     @Test
     void 토큰없이_보호된_경로_요청시_401과_COMMON401을_반환한다() throws Exception {
@@ -95,5 +119,31 @@ class SecurityFilterChainTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.result.isNewUser").value(true));
+    }
+
+    // 프론트 연동 중 발견 — regions/themes는 permitAll에 있었는데 distance-options만 빠져있어서
+    // 401이 났다(CourseController의 "로그인 불필요" 주석과 실제 SecurityConfig가 어긋나 있었음).
+    @Test
+    void 거리_옵션_조회는_토큰없이도_통과한다() throws Exception {
+        when(coursePresetService.getDistanceOptions())
+                .thenReturn(new CourseResponseDTO.DistanceOptionList(List.of()));
+
+        mockMvc.perform(get("/api/v1/courses/distance-options"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    // optimizeOrder는 courseCommandService.optimizeOrder(stopIds)가 userId를 아예 안 받는 순수
+    // 계산이라 로그인 여부와 무관하게 열려있어야 하는데, 이것도 permitAll에서 빠져 401이 났다.
+    @Test
+    void 경로_최적화는_토큰없이도_통과한다() throws Exception {
+        when(courseCommandService.optimizeOrder(any()))
+                .thenReturn(new CourseResponseDTO.OrderResult(List.of(1L, 2L)));
+
+        mockMvc.perform(post("/api/v1/courses/optimize-order")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stopIds\":[2,1]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
     }
 }

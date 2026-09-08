@@ -67,8 +67,30 @@ ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 --   CHECK ((denial_reason)::text = ANY (ARRAY['DUPLICATE','INSUFFICIENT_EVIDENCE',
 --                                              'NOT_VERIFIABLE','IRRELEVANT_CONTENT']))
 --
--- 상태: ⬜ 미적용 (긴급 — 이거 때문에 거부 제보 저장이 전부 실패 중)
+-- 상태: ✅ 적용 완료 (2026-09-07, 운영 DB) — 단, 아래 report_type/status 건이 뒤이어 발견됨(같은
+-- INSERT가 여러 컬럼에 걸쳐 옛날 CHECK 제약조건에 막혀있었다. 이건 그 중 첫 번째 층이었을 뿐).
 -- 테이블이 public이 아니라 freepets 스키마에 있다 — 스키마 안 붙이면 "relation does not exist"로 실패한다.
 ALTER TABLE freepets.facility_reports DROP CONSTRAINT facility_reports_denial_reason_check;
 ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_denial_reason_check
     CHECK (denial_reason IN ('WEIGHT', 'BREED', 'INDOOR', 'POLICY_CHANGED', 'CROWDED', 'OTHER'));
+
+-- ============================================================
+-- 2026-09-08 — 거부 제보(F4) report_type·status CHECK 제약조건 갱신 (#53)
+-- ============================================================
+-- 위 denial_reason을 고친 뒤 다시 테스트하니 같은 INSERT가 이번엔 report_type_check에서
+-- 막혔다 — Postgres는 위반된 첫 제약조건에서 바로 실패하고 멈추기 때문에, 어제는 denial_reason
+-- 뒤에 report_type·status도 옛날 값만 허용하고 있다는 게 가려져 있었다.
+--
+-- ReportType.DENIED, ReportStatus.APPLIED는 F4 구현 때 기존 값 유지한 채 추가된 새 값인데
+-- (git log 확인: e6416385), report_type_check·status_check 둘 다 여전히 그 이전 값만 허용한다.
+-- 즉 지금까지 거부 제보는 한 번도 실제로 저장에 성공한 적이 없다 — denial_reason만 고쳐서는
+-- 부족하고, 이 두 제약조건도 같이 갱신해야 완전히 해결된다.
+--
+-- 상태: ⬜ 미적용 (긴급 — 이거 때문에 거부 제보 저장이 여전히 전부 실패 중)
+ALTER TABLE freepets.facility_reports DROP CONSTRAINT facility_reports_report_type_check;
+ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_report_type_check
+    CHECK (report_type IN ('INFO_CORRECTION', 'PET_POLICY_CHANGE', 'PERMANENTLY_CLOSED', 'NEW_FACILITY', 'ETC', 'DENIED'));
+
+ALTER TABLE freepets.facility_reports DROP CONSTRAINT facility_reports_status_check;
+ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_status_check
+    CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED', 'APPLIED'));

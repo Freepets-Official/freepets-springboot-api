@@ -56,7 +56,7 @@ public class CalendarEventQueryService {
 
         List<CalendarEventResponseDTO.EventOccurrence> occurrences = candidates.stream()
                 .flatMap(event -> CalendarOccurrenceCalculator
-                        .occurrencesWithin(event.getStartDate(), event.getRepeatType(), rangeStart, rangeEnd)
+                        .occurrencesWithin(event.getStartDate(), event.getEndDate(), event.getRepeatType(), rangeStart, rangeEnd)
                         .stream()
                         .map(occurrenceDate -> CalendarEventConverter.toEventOccurrence(
                                 event,

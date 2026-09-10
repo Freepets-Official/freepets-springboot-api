@@ -22,6 +22,7 @@ public final class CalendarOccurrenceCalculator {
 
     public static List<LocalDate> occurrencesWithin(
             LocalDate startDate,
+            LocalDate endDate,
             RepeatType repeatType,
             LocalDate rangeStart,
             LocalDate rangeEnd
@@ -32,21 +33,26 @@ public final class CalendarOccurrenceCalculator {
         }
 
         return switch (repeatType) {
-            case NONE -> occursOnce(startDate, rangeStart, rangeEnd);
+            // endDate만 기간을 쓴다 — 반복 일정엔 기간 개념이 없어(CalendarEventCommandService가
+            // 생성/수정 시점에 막는다) DAILY/WEEKLY/MONTHLY는 endDate를 아예 안 받는다.
+            case NONE -> occursOnce(startDate, endDate, rangeStart, rangeEnd);
             case DAILY -> dailyOccurrences(startDate, rangeStart, rangeEnd);
             case WEEKLY -> weeklyOccurrences(startDate, rangeStart, rangeEnd);
             case MONTHLY -> monthlyOccurrences(startDate, rangeStart, rangeEnd);
         };
     }
 
-    // 반복 없음 — startDate 자체가 조회 범위 안에 있을 때만 그 하루.
+    // 반복 없음 — [startDate, endDate] 기간이 조회 범위와 겹치기만 하면 발생한 것으로 본다.
+    // 여러 날에 걸친 기간 일정이라도 발생일은 항상 startDate 하나로 대표한다(날짜별로 쪼개
+    // 여러 건을 만들지 않는다) — 응답의 endDate 필드로 프론트가 기간 전체를 그린다.
     private static List<LocalDate> occursOnce(
             LocalDate startDate,
+            LocalDate endDate,
             LocalDate rangeStart,
             LocalDate rangeEnd
     ) {
-        boolean within = !startDate.isBefore(rangeStart) && !startDate.isAfter(rangeEnd);
-        return within ? List.of(startDate) : List.of();
+        boolean overlaps = !startDate.isAfter(rangeEnd) && !endDate.isBefore(rangeStart);
+        return overlaps ? List.of(startDate) : List.of();
     }
 
     private static List<LocalDate> dailyOccurrences(

@@ -15,6 +15,8 @@ public class CalendarEventResponseDTO {
 
     // petId/petName/time/notes는 없을 수 있고(전체 적용, 시간 미지정, 메모 없음), taken은
     // MED가 아닌 일정엔 아예 해당하지 않는 개념이라 — null인 필드는 키 자체를 응답에서 뺀다.
+    // endDate도 기간이 없는(하루짜리) 일정이면 null로 빠진다 — date 하나만 있으면 "기간 없음"을
+    // 뜻하고, endDate가 있으면 [date, endDate] 구간을 프론트가 그리면 된다.
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record EventOccurrence(
             Long eventId,
@@ -23,6 +25,7 @@ public class CalendarEventResponseDTO {
             CalendarEventType eventType,
             String title,
             LocalDate date, // 발생일(occurrence date) — startDate가 아니라 이 조회에서 실제로 해당하는 날짜
+            LocalDate endDate, // date와 같으면(기간 없음) null — 다르면 기간의 끝
             LocalTime time,
             RepeatType repeatType,
             boolean reminderEnabled,
@@ -47,6 +50,7 @@ public class CalendarEventResponseDTO {
             CalendarEventType eventType,
             String title,
             LocalDate date,
+            LocalDate endDate, // EventOccurrence.endDate와 같은 규칙 — 기간 없음이면 null.
             LocalTime time,
             RepeatType repeatType,
             boolean reminderEnabled,

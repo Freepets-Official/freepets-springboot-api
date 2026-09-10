@@ -7,6 +7,7 @@ import com.freepets.domain.calendar.dto.CalendarEventRequestDTO;
 import com.freepets.domain.calendar.dto.CalendarEventResponseDTO;
 import com.freepets.domain.calendar.entity.CalendarEvent;
 import com.freepets.domain.calendar.entity.CalendarEventType;
+import com.freepets.domain.calendar.entity.RepeatType;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.user.entity.User;
 
@@ -26,6 +27,7 @@ public class CalendarEventConverter {
                 .eventType(request.getEventType())
                 .title(request.getTitle())
                 .startDate(request.getDate())
+                .endDate(request.getEndDate())
                 .eventTime(request.getTime())
                 .repeatType(request.getRepeatType())
                 .reminderEnabled(request.isReminderEnabled())
@@ -49,6 +51,7 @@ public class CalendarEventConverter {
                 event.getEventType(),
                 event.getTitle(),
                 occurrenceDate,
+                responseEndDate(event),
                 event.getEventTime(),
                 event.getRepeatType(),
                 event.isReminderEnabled(),
@@ -74,6 +77,7 @@ public class CalendarEventConverter {
                 event.getEventType(),
                 event.getTitle(),
                 event.getStartDate(),
+                responseEndDate(event),
                 event.getEventTime(),
                 event.getRepeatType(),
                 event.isReminderEnabled(),
@@ -82,6 +86,15 @@ public class CalendarEventConverter {
                 event.getCreatedAt(),
                 event.getUpdatedAt()
         );
+    }
+
+    // 반복 일정은 endDate가 항상 startDate와 같다(기간 개념이 없음 — CALENDAR4007로 막힘)라
+    // 이 경우와 "기간 없음" 단일 일정을 구분하지 않고 둘 다 null(키 생략)로 내려준다. 실제로
+    // 며칠짜리 기간인 NONE 일정만 값이 채워진다.
+    private static LocalDate responseEndDate(CalendarEvent event) {
+        boolean hasRealSpan = event.getRepeatType() == RepeatType.NONE
+                && !event.getEndDate().equals(event.getStartDate());
+        return hasRealSpan ? event.getEndDate() : null;
     }
 
     public static CalendarEventResponseDTO.CreateResult toCreateResult(CalendarEvent event) {

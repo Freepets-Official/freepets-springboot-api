@@ -73,7 +73,9 @@ public enum ErrorStatus implements BaseErrorCode {
     CALENDAR4002(FORBIDDEN, "CALENDAR4002", "해당 일정에 대한 권한이 없습니다."),
     CALENDAR4003(BAD_REQUEST, "CALENDAR4003", "date 또는 month 파라미터 중 하나만 지정해야 합니다."),
     CALENDAR4004(BAD_REQUEST, "CALENDAR4004", "약 복용(MED) 유형 일정에만 복용 체크를 할 수 있습니다."),
-    CALENDAR4005(BAD_REQUEST, "CALENDAR4005", "일정 시작일 이전 날짜는 체크할 수 없습니다.");
+    CALENDAR4005(BAD_REQUEST, "CALENDAR4005", "일정 시작일 이전 날짜는 체크할 수 없습니다."),
+    CALENDAR4006(BAD_REQUEST, "CALENDAR4006", "종료일은 시작일보다 빠를 수 없습니다."),
+    CALENDAR4007(BAD_REQUEST, "CALENDAR4007", "반복 일정에는 기간(종료일)을 설정할 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

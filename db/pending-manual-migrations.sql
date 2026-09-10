@@ -94,3 +94,15 @@ ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_report_typ
 ALTER TABLE freepets.facility_reports DROP CONSTRAINT facility_reports_status_check;
 ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_status_check
     CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED', 'APPLIED'));
+
+-- ============================================================
+-- 2026-09-10 — 캘린더 일정 기간(endDate) 지원 (#68)
+-- ============================================================
+-- 여행처럼 며칠에 걸치는 일정을 표현하려고 calendar_events.end_date 컬럼을 추가했다.
+-- ddl-auto=update가 컬럼 자체는 자동으로 만들어주지만(nullable로 선언해서 기존 행이 있어도
+-- 실패하지 않는다), 기존 행의 end_date는 채워주지 않아 전부 null로 남는다 — 애플리케이션
+-- 계층(CalendarEvent.getEndDate())이 null이면 start_date로 대체해서 동작 자체는 문제없지만,
+-- DB에서 직접 조회하는 배치·리포팅이 있다면 null을 다르게 취급할 수 있으니 백필해둔다.
+--
+-- 상태: ⬜ 미적용
+UPDATE calendar_events SET end_date = start_date WHERE end_date IS NULL;

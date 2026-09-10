@@ -33,9 +33,13 @@ public class CalendarEventRequestDTO {
         @Size(max = 100, message = "제목은 100자 이하로 입력해주세요.")
         private String title;
 
-        // 반복 없음이면 유일한 발생일, 반복 있으면 발생 계산의 기준일(anchor)이다.
+        // 반복 없음이면 유일한 발생일(기간 일정이면 시작일), 반복 있으면 발생 계산의 기준일(anchor)이다.
         @NotNull(message = "날짜는 필수입니다.")
         private LocalDate date;
+
+        // 여행처럼 며칠에 걸치는 일정의 종료일 — 생략하면 date와 같은 날(기간 없음)로 저장된다.
+        // 반복 일정(repeatType != NONE)에는 지정할 수 없다(CALENDAR4007).
+        private LocalDate endDate;
 
         private LocalTime time;
 
@@ -65,6 +69,9 @@ public class CalendarEventRequestDTO {
 
         @NotNull(message = "날짜는 필수입니다.")
         private LocalDate date;
+
+        // CreateRequest.endDate와 같다.
+        private LocalDate endDate;
 
         private LocalTime time;
 

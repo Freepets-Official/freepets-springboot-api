@@ -58,10 +58,22 @@ public class CalendarEvent extends BaseEntity {
     @Column(length = 100, nullable = false)
     private String title;
 
-    // 반복 없음(NONE)이면 유일한 발생일. 반복 있으면 발생 계산의 기준일(anchor)이다 —
-    // WEEKLY의 요일, MONTHLY의 "며칠"이 전부 이 날짜에서 파생된다.
+    // 반복 없음(NONE)이면 유일한 발생일(기간 일정이면 그 기간의 시작일). 반복 있으면 발생 계산의
+    // 기준일(anchor)이다 — WEEKLY의 요일, MONTHLY의 "며칠"이 전부 이 날짜에서 파생된다.
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
+
+    // 여행처럼 며칠에 걸치는 일정의 종료일. 기간이 없는 단일 일정(대부분의 MED/VACCINE 등)은
+    // startDate와 같은 값으로 채운다 — 그래서 null 체크 없이 항상 [startDate, endDate] 구간으로
+    // 다룰 수 있다("기간 없음"은 길이 1일짜리 구간). 반복 일정(repeatType != NONE)엔 기간 개념을
+    // 두지 않는다 — CalendarEventCommandService가 생성/수정 시점에 막는다(CALENDAR4007).
+    //
+    // DB 컬럼은 nullable로 둔다 — 기존 라이브 행엔 채울 값이 하나로 정해지지 않아(행마다
+    // start_date를 그대로 복사해야 함) Course.isPublic류의 고정 @ColumnDefault를 못 쓴다.
+    // db/pending-manual-migrations.sql에 백필 스크립트를 남겨뒀고, 백필 전 레거시 행은
+    // getEndDate()가 startDate로 대체해서 애플리케이션 계층에서는 항상 값이 있는 것처럼 다룬다.
+    @Column(name = "end_date")
+    private LocalDate endDate;
 
     @Column(name = "event_time")
     private LocalTime eventTime;
@@ -96,6 +108,7 @@ public class CalendarEvent extends BaseEntity {
             CalendarEventType eventType,
             String title,
             LocalDate startDate,
+            LocalDate endDate,
             LocalTime eventTime,
             RepeatType repeatType,
             boolean reminderEnabled,
@@ -107,6 +120,7 @@ public class CalendarEvent extends BaseEntity {
         this.eventType = eventType;
         this.title = title;
         this.startDate = startDate;
+        this.endDate = endDate != null ? endDate : startDate;
         this.eventTime = eventTime;
         this.repeatType = repeatType;
         this.reminderEnabled = reminderEnabled;
@@ -119,6 +133,7 @@ public class CalendarEvent extends BaseEntity {
             CalendarEventType eventType,
             String title,
             LocalDate startDate,
+            LocalDate endDate,
             LocalTime eventTime,
             RepeatType repeatType,
             boolean reminderEnabled,
@@ -129,6 +144,7 @@ public class CalendarEvent extends BaseEntity {
         this.eventType = eventType;
         this.title = title;
         this.startDate = startDate;
+        this.endDate = endDate != null ? endDate : startDate;
         this.eventTime = eventTime;
         this.repeatType = repeatType;
         this.reminderEnabled = reminderEnabled;
@@ -142,6 +158,12 @@ public class CalendarEvent extends BaseEntity {
 
     public boolean isOwnedBy(Long userId) {
         return user != null && user.getId().equals(userId);
+    }
+
+    /** 백필 전 레거시 행(endDate 컬럼이 아직 null)은 startDate로 대체한다 — 생성자/update()를
+     * 거친 행은 항상 이미 채워져 있어 사실상 이 대체가 필요 없지만, 방어적으로 둔다. */
+    public LocalDate getEndDate() {
+        return endDate != null ? endDate : startDate;
     }
 
 }

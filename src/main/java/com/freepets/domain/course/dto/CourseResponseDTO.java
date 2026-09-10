@@ -144,6 +144,12 @@ public class CourseResponseDTO {
             Long courseId
     ) {}
 
+    // POST /api/v1/courses/{courseId}/share 응답 — 이미 발급된 코스면 기존 코드를 그대로 담는다.
+    public record ShareResult(
+            Long courseId,
+            String shareCode
+    ) {}
+
     // GET /api/v1/courses/public 응답 — 다른 사용자가 공개한 CUSTOM 코스 둘러보기(트리플의
     // "다른 여행자 코스" 참고). 그대로 stopIds를 담아 POST /courses에 넣으면 내 코스로 복사(fork)된다.
     public record PublicCourseResult(

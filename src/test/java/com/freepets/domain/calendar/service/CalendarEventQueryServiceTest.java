@@ -148,6 +148,39 @@ class CalendarEventQueryServiceTest {
     }
 
     @Test
+    void 기간_일정은_한_건만_나오고_응답에_endDate가_채워진다() {
+        CalendarEvent trip = CalendarEvent.builder()
+                .user(owner())
+                .eventType(CalendarEventType.TRAVEL)
+                .title("강릉 여행")
+                .startDate(LocalDate.of(2026, 9, 8))
+                .endDate(LocalDate.of(2026, 9, 12))
+                .repeatType(RepeatType.NONE)
+                .build();
+        ReflectionTestUtils.setField(trip, "eventId", 50L);
+        when(calendarEventRepository.findCandidatesByUser_Id(1L, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
+                .thenReturn(List.of(trip));
+
+        var result = calendarEventQueryService.getEvents(1L, null, YearMonth.of(2026, 9));
+
+        assertThat(result.events()).hasSize(1);
+        CalendarEventResponseDTO.EventOccurrence occurrence = result.events().get(0);
+        assertThat(occurrence.date()).isEqualTo(LocalDate.of(2026, 9, 8));
+        assertThat(occurrence.endDate()).isEqualTo(LocalDate.of(2026, 9, 12));
+    }
+
+    @Test
+    void 기간_없는_일정은_응답에_endDate가_없다() {
+        CalendarEvent vaccine = event(30L, CalendarEventType.VACCINE, LocalDate.of(2026, 9, 10), RepeatType.NONE, null);
+        when(calendarEventRepository.findCandidatesByUser_Id(1L, LocalDate.of(2026, 9, 10), LocalDate.of(2026, 9, 10)))
+                .thenReturn(List.of(vaccine));
+
+        var result = calendarEventQueryService.getEvents(1L, LocalDate.of(2026, 9, 10), null);
+
+        assertThat(result.events().get(0).endDate()).isNull();
+    }
+
+    @Test
     void pet이_있으면_petName이_채워지고_없으면_null이다() {
         Pet pet = Pet.builder()
                 .user(owner())

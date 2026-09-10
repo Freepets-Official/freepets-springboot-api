@@ -1,5 +1,7 @@
 package com.freepets.domain.calendar.service;
 
+import java.time.LocalDate;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -8,6 +10,7 @@ import com.freepets.domain.calendar.converter.CalendarEventConverter;
 import com.freepets.domain.calendar.dto.CalendarEventRequestDTO;
 import com.freepets.domain.calendar.dto.CalendarEventResponseDTO;
 import com.freepets.domain.calendar.entity.CalendarEvent;
+import com.freepets.domain.calendar.entity.RepeatType;
 import com.freepets.domain.calendar.repository.CalendarEventRepository;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
@@ -36,6 +39,7 @@ public class CalendarEventCommandService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
         Pet pet = resolvePet(userId, request.getPetId());
+        validateDateRange(request.getDate(), request.getEndDate(), request.getRepeatType());
         String photoUrl = uploadPhotoIfPresent(request.getPhoto());
 
         CalendarEvent event = CalendarEventConverter.toEvent(request, user, pet, photoUrl);
@@ -51,6 +55,7 @@ public class CalendarEventCommandService {
     ) {
         CalendarEvent event = findOwnedEvent(userId, eventId);
         Pet pet = resolvePet(userId, request.getPetId());
+        validateDateRange(request.getDate(), request.getEndDate(), request.getRepeatType());
 
         String previousPhotoUrl = event.getPhotoUrl();
         String photoUrl = isNewPhotoPresent(request.getPhoto())
@@ -67,6 +72,7 @@ public class CalendarEventCommandService {
                 request.getEventType(),
                 request.getTitle(),
                 request.getDate(),
+                request.getEndDate(),
                 request.getTime(),
                 request.getRepeatType(),
                 request.isReminderEnabled(),
@@ -107,6 +113,25 @@ public class CalendarEventCommandService {
         event.toggleReminder(request.getReminderEnabled());
 
         return CalendarEventConverter.toReminderResult(event);
+    }
+
+    // endDate는 완전히 선택이라 null이면(기간 없음) 검증할 게 없다. 있으면 두 가지를 막는다 —
+    // 시작일보다 빠른 종료일(CALENDAR4006), 반복 일정에 붙은 기간(CALENDAR4007, 반복은 endDate가
+    // 항상 startDate와 같아야 한다 — 여러 날짜에 걸친 반복은 이번 범위 밖).
+    private void validateDateRange(
+            LocalDate startDate,
+            LocalDate endDate,
+            RepeatType repeatType
+    ) {
+        if (endDate == null) {
+            return;
+        }
+        if (endDate.isBefore(startDate)) {
+            throw new GeneralException(ErrorStatus.CALENDAR4006);
+        }
+        if (repeatType != RepeatType.NONE && !endDate.equals(startDate)) {
+            throw new GeneralException(ErrorStatus.CALENDAR4007);
+        }
     }
 
     // null이면 "전체"(petId 미지정) — 그대로 null을 돌려준다. 지정됐으면 존재·본인 소유

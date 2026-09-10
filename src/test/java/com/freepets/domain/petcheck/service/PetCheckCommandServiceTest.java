@@ -23,6 +23,8 @@ import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.service.GamificationService;
 import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
@@ -57,6 +59,9 @@ class PetCheckCommandServiceTest {
     @Mock
     private PetCheckJudgeService petCheckJudgeService;
 
+    @Mock
+    private GamificationService gamificationService;
+
     @InjectMocks
     private PetCheckCommandService petCheckCommandService;
 
@@ -82,6 +87,8 @@ class PetCheckCommandServiceTest {
         assertThat(result.verdicts()).hasSize(1);
         // 중복 제거된 [5]로만 조회했는지 확인 — [5, 5] 그대로 넘겼다면 이 스텁이 안 맞아 실패한다.
         verify(petRepository).findAllByPetIdInAndDeletedAtIsNull(List.of(5L));
+        // 판별 요청 1회당 경험치가 지급되는지(게이미피케이션 훅).
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.PETCHECK), any(), eq(5));
     }
 
     @Test

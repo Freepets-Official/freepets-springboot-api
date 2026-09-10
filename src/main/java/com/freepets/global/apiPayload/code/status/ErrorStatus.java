@@ -66,7 +66,14 @@ public enum ErrorStatus implements BaseErrorCode {
     COURSE4043(NOT_FOUND, "COURSE4043", "존재하지 않는 스톱 순서입니다."),
 
     // 제보 에러
-    REPORT4001(CONFLICT, "REPORT4001", "24시간 내 이미 제보한 시설입니다.");
+    REPORT4001(CONFLICT, "REPORT4001", "24시간 내 이미 제보한 시설입니다."),
+
+    // 캘린더 에러
+    CALENDAR4001(NOT_FOUND, "CALENDAR4001", "해당 일정이 존재하지 않습니다."),
+    CALENDAR4002(FORBIDDEN, "CALENDAR4002", "해당 일정에 대한 권한이 없습니다."),
+    CALENDAR4003(BAD_REQUEST, "CALENDAR4003", "date 또는 month 파라미터 중 하나만 지정해야 합니다."),
+    CALENDAR4004(BAD_REQUEST, "CALENDAR4004", "약 복용(MED) 유형 일정에만 복용 체크를 할 수 있습니다."),
+    CALENDAR4005(BAD_REQUEST, "CALENDAR4005", "일정 시작일 이전 날짜는 체크할 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

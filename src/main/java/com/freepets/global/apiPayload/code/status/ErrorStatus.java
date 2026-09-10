@@ -67,6 +67,7 @@ public enum ErrorStatus implements BaseErrorCode {
 
     // 제보 에러
     REPORT4001(CONFLICT, "REPORT4001", "24시간 내 이미 제보한 시설입니다."),
+    REPORT4002(CONFLICT, "REPORT4002", "24시간 내 이미 조건 확인을 요청한 시설입니다."),
 
     // 캘린더 에러
     CALENDAR4001(NOT_FOUND, "CALENDAR4001", "해당 일정이 존재하지 않습니다."),

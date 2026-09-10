@@ -92,6 +92,13 @@ public class Course extends BaseEntity {
     @Column(name = "is_public", nullable = false)
     private boolean isPublic;
 
+    // 코스 공유 코드(CourseShareCodeGenerator로 발급). 코드를 아는 사람이면 누구나 이 코스를 자기
+    // 코스로 복사해갈 수 있다 — isPublic과 무관하게 동작하는 별도의 1:1 공유 경로다
+    // (PetCheckVerdict.verifyCode와 같은 논리). 발급 전엔 null, 발급은 1회만(재발급 시 기존 값 유지).
+    // 기존 라이브 코스엔 채울 값이 없어 nullable로 두고 백필하지 않는다.
+    @Column(name = "share_code", unique = true, length = 20)
+    private String shareCode;
+
     @Builder
     private Course(
             User user,
@@ -151,6 +158,15 @@ public class Course extends BaseEntity {
      */
     public void updateVisibility(boolean isPublic) {
         this.isPublic = isPublic;
+    }
+
+    /**
+     * 공유 코드를 발급한다. idempotent하게 쓰라고 두는 메서드라 이미 값이 있으면 덮어쓰지 않는다 —
+     * 실제 "이미 있으면 새로 만들지 않는다" 판단은 호출부(CourseCommandService)가 shareCode가
+     * null인지 먼저 확인하고서만 이 메서드를 부르는 방식으로 한다.
+     */
+    public void issueShareCode(String shareCode) {
+        this.shareCode = shareCode;
     }
 
 }

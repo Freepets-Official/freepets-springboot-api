@@ -116,6 +116,56 @@ public class CourseCommandService {
         return CourseConverter.toMyCourse(course);
     }
 
+    /**
+     * POST /api/v1/courses/{courseId}/share — 공유 코드 발급. idempotent하게 이미 발급된
+     * 코스면 새로 만들지 않고 기존 코드를 그대로 돌려준다 — 이미 공유해둔 코드가 재요청만으로
+     * 조용히 무효화되면 안 된다.
+     */
+    public CourseResponseDTO.ShareResult shareCourse(
+            Long userId,
+            Long courseId
+    ) {
+        Course course = findOwnedCourse(userId, courseId);
+        if (course.getShareCode() == null) {
+            course.issueShareCode(CourseShareCodeGenerator.generate());
+        }
+
+        return CourseConverter.toShareResult(course);
+    }
+
+    /**
+     * POST /api/v1/courses/shared/{shareCode}/copy — 공유 코드로 원본 코스를 복사해 내 코스로
+     * 저장한다. 코드 자체가 공유 권한이라 원본의 소유자·isPublic 여부는 따지지 않는다(코드를
+     * 모르면 어차피 못 옴 — VerifyCodeGenerator와 동일 논리). 이름·설명·스톱을 그대로 복제한
+     * 완전히 새로운 CUSTOM 코스라, 이후 원본을 수정·삭제해도 이 사본엔 영향이 없다.
+     */
+    public CourseResponseDTO.MyCourse copySharedCourse(
+            Long userId,
+            String shareCode
+    ) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
+        Course original = courseRepository.findByShareCode(shareCode)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.COURSE4044));
+
+        List<Facility> stops = original.getStops().stream()
+                .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
+                .map(CourseStop::getFacility)
+                .toList();
+
+        Course copy = Course.builder()
+                .user(user)
+                .name(original.getName())
+                .description(original.getDescription())
+                .source(CourseSource.CUSTOM)
+                .isPublic(false)
+                .build();
+        copy.replaceStops(stops);
+
+        Course saved = courseRepository.save(copy);
+        return CourseConverter.toMyCourse(saved);
+    }
+
     public CourseResponseDTO.DeleteResult deleteCourse(
             Long userId,
             Long courseId

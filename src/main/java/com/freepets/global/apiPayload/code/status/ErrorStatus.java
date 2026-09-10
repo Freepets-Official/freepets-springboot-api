@@ -64,6 +64,7 @@ public enum ErrorStatus implements BaseErrorCode {
     COURSE4041(NOT_FOUND, "COURSE4041", "존재하지 않는 코스입니다."),
     COURSE4042(FORBIDDEN, "COURSE4042", "본인 코스만 수정·삭제할 수 있습니다."),
     COURSE4043(NOT_FOUND, "COURSE4043", "존재하지 않는 스톱 순서입니다."),
+    COURSE4044(NOT_FOUND, "COURSE4044", "존재하지 않는 공유 코드입니다."),
 
     // 제보 에러
     REPORT4001(CONFLICT, "REPORT4001", "24시간 내 이미 제보한 시설입니다."),

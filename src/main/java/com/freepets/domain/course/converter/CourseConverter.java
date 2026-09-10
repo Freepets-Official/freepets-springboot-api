@@ -22,6 +22,13 @@ public class CourseConverter {
         );
     }
 
+    public static CourseResponseDTO.ShareResult toShareResult(Course course) {
+        return new CourseResponseDTO.ShareResult(
+                course.getCourseId(),
+                course.getShareCode()
+        );
+    }
+
     public static CourseResponseDTO.PublicCourse toPublicCourse(Course course) {
         return new CourseResponseDTO.PublicCourse(
                 course.getCourseId(),

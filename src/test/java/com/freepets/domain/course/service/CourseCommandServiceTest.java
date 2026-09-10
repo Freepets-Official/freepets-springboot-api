@@ -10,6 +10,7 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -188,6 +189,89 @@ class CourseCommandServiceTest {
         when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
 
         assertThatThrownBy(() -> courseCommandService.replaceStop(2L, 10L, 1, 6L))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 공유_코드가_없으면_새로_발급된다() {
+        Course course = ownedCourseWithStops(1L, 2L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        CourseResponseDTO.ShareResult result = courseCommandService.shareCourse(1L, 10L);
+
+        assertThat(result.courseId()).isEqualTo(10L);
+        assertThat(result.shareCode()).matches("CRS-[A-Z0-9]{10}");
+        assertThat(course.getShareCode()).isEqualTo(result.shareCode());
+    }
+
+    @Test
+    void 이미_발급된_코스는_같은_코드를_그대로_반환한다() {
+        Course course = ownedCourseWithStops(1L, 2L);
+        ReflectionTestUtils.setField(course, "shareCode", "CRS-EXISTING01");
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        CourseResponseDTO.ShareResult result = courseCommandService.shareCourse(1L, 10L);
+
+        assertThat(result.shareCode()).isEqualTo("CRS-EXISTING01");
+    }
+
+    @Test
+    void 본인_코스가_아니면_공유_코드_발급시_COURSE4042() {
+        Course course = ownedCourseWithStops(1L, 2L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        assertThatThrownBy(() -> courseCommandService.shareCourse(2L, 10L))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 공유_코드로_복사하면_스톱까지_그대로_담긴_새_코스가_생성된다() {
+        Course original = ownedCourseWithStops(1L, 2L);
+        ReflectionTestUtils.setField(original, "shareCode", "CRS-SHARE0001");
+        User receiver = user(2L);
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(receiver));
+        when(courseRepository.findByShareCode("CRS-SHARE0001")).thenReturn(Optional.of(original));
+        when(courseRepository.save(org.mockito.ArgumentMatchers.any(Course.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.copySharedCourse(2L, "CRS-SHARE0001");
+
+        assertThat(result.name()).isEqualTo(original.getName());
+        assertThat(result.stopIds()).containsExactly(1L, 2L);
+        assertThat(result.isPublic()).isFalse();
+
+        // MyCourse 응답엔 소유자 필드가 없어 위 검증만으론 저장된 엔티티의 소유자가 실제로
+        // 받는 사람인지 확인이 안 된다 — 저장 직전 엔티티를 잡아 직접 확인한다.
+        ArgumentCaptor<Course> savedCourse = ArgumentCaptor.forClass(Course.class);
+        org.mockito.Mockito.verify(courseRepository).save(savedCourse.capture());
+        assertThat(savedCourse.getValue().isOwnedBy(2L)).isTrue();
+        assertThat(savedCourse.getValue()).isNotSameAs(original);
+    }
+
+    @Test
+    void 원본_소유자가_아니어도_공유_코드만_있으면_복사에_성공한다() {
+        // 원본은 user(1L) 소유, 복사 요청자는 user(2L) — 소유자 확인 없이도 성공해야 한다
+        // (코드 자체가 공유 권한이므로).
+        Course original = ownedCourseWithStops(1L);
+        ReflectionTestUtils.setField(original, "shareCode", "CRS-SHARE0002");
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user(2L)));
+        when(courseRepository.findByShareCode("CRS-SHARE0002")).thenReturn(Optional.of(original));
+        when(courseRepository.save(org.mockito.ArgumentMatchers.any(Course.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.copySharedCourse(2L, "CRS-SHARE0002");
+
+        assertThat(result.stopIds()).containsExactly(1L);
+    }
+
+    @Test
+    void 존재하지_않는_공유_코드로_복사하면_COURSE4044() {
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user(2L)));
+        when(courseRepository.findByShareCode("CRS-NOTFOUND1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> courseCommandService.copySharedCourse(2L, "CRS-NOTFOUND1"))
                 .isInstanceOf(GeneralException.class);
     }
 

@@ -96,6 +96,35 @@ public class CourseController {
         );
     }
 
+    /**
+     * 공유 코드 발급 — 이미 발급된 코스면 새로 만들지 않고 기존 코드를 그대로 돌려준다(idempotent).
+     * 이 코드를 아는 사람은 누구나 POST /courses/shared/{shareCode}/copy로 이 코스를 자기 코스로
+     * 복사해갈 수 있다. 딥링크로 앱을 바로 열어 이 API를 호출하는 부분은 프론트 몫이다.
+     */
+    @PostMapping("/{courseId}/share")
+    public ApiResponse<CourseResponseDTO.ShareResult> shareCourse(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long courseId
+    ) {
+        return ApiResponse.onSuccess(
+                courseCommandService.shareCourse(userId, courseId)
+        );
+    }
+
+    /**
+     * 공유 코드로 원본 코스를 복사해 내 코스에 자동 저장한다. 코드 자체가 공유 권한이라 원본이
+     * 비공개(isPublic=false)여도 복사할 수 있다 — 로그인은 필요하다("내 코스"에 담기는 동작).
+     */
+    @PostMapping("/shared/{shareCode}/copy")
+    public ApiResponse<CourseResponseDTO.MyCourse> copySharedCourse(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable String shareCode
+    ) {
+        return ApiResponse.onSuccess(
+                courseCommandService.copySharedCourse(userId, shareCode)
+        );
+    }
+
     @DeleteMapping("/{courseId}")
     public ApiResponse<CourseResponseDTO.DeleteResult> deleteCourse(
             @AuthenticationPrincipal Long userId,

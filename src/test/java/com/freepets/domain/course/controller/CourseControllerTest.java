@@ -39,6 +39,8 @@ import com.freepets.domain.course.service.CoursePresetService;
 import com.freepets.domain.course.service.CourseQueryService;
 import com.freepets.domain.course.service.CourseSimilarService;
 import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.global.apiPayload.code.status.ErrorStatus;
+import com.freepets.global.apiPayload.exception.GeneralException;
 
 @WebMvcTest(CourseController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -402,6 +404,45 @@ class CourseControllerTest {
         mockMvc.perform(delete("/api/v1/courses/{courseId}", 10L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.courseId").value(10));
+    }
+
+    // ------------------------------------------------------------------
+    // POST /courses/{courseId}/share, POST /courses/shared/{shareCode}/copy
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("공유 코드 발급에 성공하면 200과 코드를 반환한다")
+    void 공유_코드_발급에_성공하면_200과_코드를_반환한다() throws Exception {
+        when(courseCommandService.shareCourse(isNull(), eq(10L)))
+                .thenReturn(new CourseResponseDTO.ShareResult(10L, "CRS-ABCDEFGH12"));
+
+        mockMvc.perform(post("/api/v1/courses/{courseId}/share", 10L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.courseId").value(10))
+                .andExpect(jsonPath("$.result.shareCode").value("CRS-ABCDEFGH12"));
+    }
+
+    @Test
+    @DisplayName("공유 코드로 복사에 성공하면 200과 새 코스를 반환한다")
+    void 공유_코드로_복사에_성공하면_200과_새_코스를_반환한다() throws Exception {
+        when(courseCommandService.copySharedCourse(isNull(), eq("CRS-ABCDEFGH12")))
+                .thenReturn(new CourseResponseDTO.MyCourse(20L, "몽이 코스", "설명", List.of(1L, 2L), LocalDateTime.now(), false));
+
+        mockMvc.perform(post("/api/v1/courses/shared/{shareCode}/copy", "CRS-ABCDEFGH12"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.courseId").value(20))
+                .andExpect(jsonPath("$.result.stopIds[0]").value(1));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 공유 코드로 복사하면 404를 반환한다")
+    void 존재하지_않는_공유_코드로_복사하면_404를_반환한다() throws Exception {
+        when(courseCommandService.copySharedCourse(isNull(), eq("CRS-NOTFOUND01")))
+                .thenThrow(new GeneralException(ErrorStatus.COURSE4044));
+
+        mockMvc.perform(post("/api/v1/courses/shared/{shareCode}/copy", "CRS-NOTFOUND01"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("COURSE4044"));
     }
 
     // ------------------------------------------------------------------

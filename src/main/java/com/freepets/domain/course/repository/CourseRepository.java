@@ -41,4 +41,8 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
             Long facilityId
     );
 
+    // 공유 코드로 원본 코스를 찾는다(POST /courses/shared/{shareCode}/copy) — 코드 자체가 공유
+    // 권한이라 소유자·isPublic 여부와 무관하게 조회한다.
+    Optional<Course> findByShareCode(String shareCode);
+
 }

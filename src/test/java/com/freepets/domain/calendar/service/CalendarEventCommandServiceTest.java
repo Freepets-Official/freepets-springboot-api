@@ -152,6 +152,59 @@ class CalendarEventCommandServiceTest {
     }
 
     @Test
+    void createEvent_기간을_지정하면_그대로_저장된다() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L)));
+        when(calendarEventRepository.save(any(CalendarEvent.class))).thenAnswer(invocation -> {
+            CalendarEvent saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "eventId", 100L);
+            return saved;
+        });
+
+        CalendarEventRequestDTO.CreateRequest request = createRequest(null);
+        request.setDate(LocalDate.of(2026, 9, 10));
+        request.setEndDate(LocalDate.of(2026, 9, 13));
+
+        calendarEventCommandService.createEvent(1L, request);
+
+        org.mockito.ArgumentCaptor<CalendarEvent> captor = org.mockito.ArgumentCaptor.forClass(CalendarEvent.class);
+        verify(calendarEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getEndDate()).isEqualTo(LocalDate.of(2026, 9, 13));
+    }
+
+    @Test
+    void createEvent_종료일이_시작일보다_빠르면_CALENDAR4006_저장은_안_한다() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L)));
+
+        CalendarEventRequestDTO.CreateRequest request = createRequest(null);
+        request.setDate(LocalDate.of(2026, 9, 10));
+        request.setEndDate(LocalDate.of(2026, 9, 9));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> calendarEventCommandService.createEvent(1L, request)
+        );
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.CALENDAR4006);
+        verify(calendarEventRepository, never()).save(any());
+    }
+
+    @Test
+    void createEvent_반복_일정에_기간을_지정하면_CALENDAR4007_저장은_안_한다() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L)));
+
+        CalendarEventRequestDTO.CreateRequest request = createRequest(null);
+        request.setDate(LocalDate.of(2026, 9, 10));
+        request.setEndDate(LocalDate.of(2026, 9, 13));
+        request.setRepeatType(RepeatType.DAILY);
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> calendarEventCommandService.createEvent(1L, request)
+        );
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.CALENDAR4007);
+        verify(calendarEventRepository, never()).save(any());
+    }
+
+    @Test
     void createEvent_존재하지_않는_유저면_MEMBER4005() {
         when(userRepository.findById(1L)).thenReturn(Optional.empty());
 
@@ -180,6 +233,44 @@ class CalendarEventCommandServiceTest {
         var result = calendarEventCommandService.updateEvent(1L, 100L, updateRequest(null));
 
         assertThat(result.petId()).isNull();
+    }
+
+    @Test
+    void updateEvent_기간을_수정하면_응답에_반영된다() {
+        User owner = user(1L);
+        CalendarEvent event = CalendarEvent.builder()
+                .user(owner)
+                .eventType(CalendarEventType.VACCINE)
+                .title("기존 제목")
+                .startDate(LocalDate.of(2026, 9, 1))
+                .repeatType(RepeatType.NONE)
+                .build();
+        when(calendarEventRepository.findById(100L)).thenReturn(Optional.of(event));
+
+        CalendarEventRequestDTO.UpdateRequest request = updateRequest(null);
+        request.setDate(LocalDate.of(2026, 9, 10));
+        request.setEndDate(LocalDate.of(2026, 9, 12));
+
+        var result = calendarEventCommandService.updateEvent(1L, 100L, request);
+
+        assertThat(result.endDate()).isEqualTo(LocalDate.of(2026, 9, 12));
+    }
+
+    @Test
+    void updateEvent_기간을_지정하지_않으면_응답에_endDate가_없다() {
+        User owner = user(1L);
+        CalendarEvent event = CalendarEvent.builder()
+                .user(owner)
+                .eventType(CalendarEventType.VACCINE)
+                .title("기존 제목")
+                .startDate(LocalDate.of(2026, 9, 1))
+                .repeatType(RepeatType.NONE)
+                .build();
+        when(calendarEventRepository.findById(100L)).thenReturn(Optional.of(event));
+
+        var result = calendarEventCommandService.updateEvent(1L, 100L, updateRequest(null));
+
+        assertThat(result.endDate()).isNull();
     }
 
     @Test

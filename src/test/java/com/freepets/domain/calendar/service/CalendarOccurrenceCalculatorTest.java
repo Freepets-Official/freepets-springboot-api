@@ -11,13 +11,16 @@ import com.freepets.domain.calendar.entity.RepeatType;
 
 class CalendarOccurrenceCalculatorTest {
 
+    // 이 파일의 기존 테스트는 전부 "기간 없음"(endDate == startDate) 시나리오라, endDate를
+    // 매번 startDate로 채워 새 5-인자 시그니처에 위임한다. 기간(endDate) 자체를 검증하는
+    // 테스트는 아래 별도 메서드에서 실제 endDate 값을 넘긴다.
     private List<LocalDate> occurrencesWithin(
             LocalDate startDate,
             RepeatType repeatType,
             LocalDate rangeStart,
             LocalDate rangeEnd
     ) {
-        return CalendarOccurrenceCalculator.occurrencesWithin(startDate, repeatType, rangeStart, rangeEnd);
+        return CalendarOccurrenceCalculator.occurrencesWithin(startDate, startDate, repeatType, rangeStart, rangeEnd);
     }
 
     @Test
@@ -150,6 +153,45 @@ class CalendarOccurrenceCalculatorTest {
                 LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31));
 
         assertThat(occurrences).isEmpty();
+    }
+
+    @Test
+    void NONE_기간_일정은_시작일이_범위보다_과거여도_끝나는_날이_범위와_겹치면_나온다() {
+        // 5/28~6/2 여행을 6월(6/1~6/30)로 조회하면, 시작일(5/28)은 범위 밖이지만 끝나는 날(6/2)이
+        // 범위 안이라 발생일(대표값=시작일)이 나와야 한다.
+        LocalDate startDate = LocalDate.of(2026, 5, 28);
+        LocalDate endDate = LocalDate.of(2026, 6, 2);
+
+        List<LocalDate> occurrences = CalendarOccurrenceCalculator.occurrencesWithin(
+                startDate, endDate, RepeatType.NONE, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)
+        );
+
+        assertThat(occurrences).containsExactly(startDate);
+    }
+
+    @Test
+    void NONE_기간_일정이_조회_범위와_전혀_안_겹치면_안_나온다() {
+        LocalDate startDate = LocalDate.of(2026, 5, 1);
+        LocalDate endDate = LocalDate.of(2026, 5, 3);
+
+        List<LocalDate> occurrences = CalendarOccurrenceCalculator.occurrencesWithin(
+                startDate, endDate, RepeatType.NONE, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)
+        );
+
+        assertThat(occurrences).isEmpty();
+    }
+
+    @Test
+    void NONE_기간_일정이_조회_범위를_완전히_감싸도_한_번만_나온다() {
+        // 1/1~12/31처럼 조회 월을 완전히 감싸는 기간이어도, 날짜별로 쪼개지 않고 대표값 1건만 낸다.
+        LocalDate startDate = LocalDate.of(2026, 1, 1);
+        LocalDate endDate = LocalDate.of(2026, 12, 31);
+
+        List<LocalDate> occurrences = CalendarOccurrenceCalculator.occurrencesWithin(
+                startDate, endDate, RepeatType.NONE, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)
+        );
+
+        assertThat(occurrences).containsExactly(startDate);
     }
 
     @Test

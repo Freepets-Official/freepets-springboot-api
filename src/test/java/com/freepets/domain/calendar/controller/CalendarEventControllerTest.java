@@ -55,14 +55,14 @@ class CalendarEventControllerTest {
     private CalendarEventResponseDTO.EventOccurrence medOccurrence(boolean taken) {
         return new CalendarEventResponseDTO.EventOccurrence(
                 1L, 2L, "댕댕이", CalendarEventType.MED, "관절 영양제",
-                LocalDate.of(2026, 9, 10), null, RepeatType.DAILY, true, null, taken, null
+                LocalDate.of(2026, 9, 10), null, null, RepeatType.DAILY, true, null, taken, null
         );
     }
 
     private CalendarEventResponseDTO.EventOccurrence vaccineOccurrence() {
         return new CalendarEventResponseDTO.EventOccurrence(
                 3L, null, null, CalendarEventType.VACCINE, "종합백신 2차",
-                LocalDate.of(2026, 9, 10), null, RepeatType.NONE, true, null, null, null
+                LocalDate.of(2026, 9, 10), null, null, RepeatType.NONE, true, null, null, null
         );
     }
 
@@ -138,6 +138,36 @@ class CalendarEventControllerTest {
     }
 
     @Test
+    @DisplayName("기간(endDate)을 담아 등록하면 성공한다")
+    void 기간을_담아_등록하면_성공한다() throws Exception {
+        when(calendarEventCommandService.createEvent(any(), any()))
+                .thenReturn(new CalendarEventResponseDTO.CreateResult(1L));
+
+        mockMvc.perform(multipart("/api/v1/calendar-events")
+                        .param("eventType", "TRAVEL")
+                        .param("title", "강릉 여행")
+                        .param("date", "2026-09-10")
+                        .param("endDate", "2026-09-13"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.eventId").value(1));
+    }
+
+    @Test
+    @DisplayName("종료일이 시작일보다 빠르면 400")
+    void 종료일이_시작일보다_빠르면_400() throws Exception {
+        when(calendarEventCommandService.createEvent(any(), any()))
+                .thenThrow(new GeneralException(ErrorStatus.CALENDAR4006));
+
+        mockMvc.perform(multipart("/api/v1/calendar-events")
+                        .param("eventType", "TRAVEL")
+                        .param("title", "강릉 여행")
+                        .param("date", "2026-09-10")
+                        .param("endDate", "2026-09-01"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CALENDAR4006"));
+    }
+
+    @Test
     @DisplayName("제목 없이 등록하면 400")
     void 제목_없이_등록하면_400() throws Exception {
         mockMvc.perform(multipart("/api/v1/calendar-events")
@@ -169,7 +199,7 @@ class CalendarEventControllerTest {
         when(calendarEventCommandService.updateEvent(any(), eq(1L), any()))
                 .thenReturn(new CalendarEventResponseDTO.EventDetail(
                         1L, null, null, CalendarEventType.VACCINE, "수정된 제목",
-                        LocalDate.of(2026, 9, 11), null, RepeatType.NONE, true, null, null,
+                        LocalDate.of(2026, 9, 11), null, null, RepeatType.NONE, true, null, null,
                         LocalDateTime.now(), LocalDateTime.now()
                 ));
 

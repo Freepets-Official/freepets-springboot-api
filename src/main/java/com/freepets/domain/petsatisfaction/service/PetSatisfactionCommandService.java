@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.service.GamificationService;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.petsatisfaction.converter.PetSatisfactionConverter;
@@ -32,6 +34,10 @@ public class PetSatisfactionCommandService {
     private final PetSatisfactionRepository petSatisfactionRepository;
     private final FacilityRepository facilityRepository;
     private final PetRepository petRepository;
+    private final GamificationService gamificationService;
+
+    // 만족도 신규 평가 1건당 지급하는 경험치(같은 시설·같은 아이 재평가·수정은 미지급).
+    private static final int SATISFACTION_XP = 10;
 
     public PetSatisfactionResponseDTO.UpsertResult upsertSatisfaction(
             Long userId,
@@ -46,8 +52,9 @@ public class PetSatisfactionCommandService {
         PetSatisfaction petSatisfaction = petSatisfactionRepository
                 .findByPetPetIdAndFacilityFacilityId(petId, facilityId)
                 .orElse(null);
+        boolean isNewSatisfaction = petSatisfaction == null;
 
-        if (petSatisfaction == null) {
+        if (isNewSatisfaction) {
             petSatisfaction = PetSatisfactionConverter.toPetSatisfaction(pet, facility, request.getScore());
         } else {
             petSatisfaction.update(request.getScore());
@@ -76,6 +83,10 @@ public class PetSatisfactionCommandService {
                     PET_FACILITY_UNIQUE_CONSTRAINT, userId, facilityId, petId, exception
             );
             throw new GeneralException(ErrorStatus.SATISFACTION4001);
+        }
+
+        if (isNewSatisfaction) {
+            gamificationService.grantXp(userId, XpSourceType.SATISFACTION, saved.getPetSatisfactionId(), SATISFACTION_XP);
         }
 
         return PetSatisfactionConverter.toUpsertResult(saved);

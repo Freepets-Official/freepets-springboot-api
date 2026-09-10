@@ -19,6 +19,10 @@ import com.freepets.domain.course.entity.CourseStop;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.service.GamificationService;
+import com.freepets.domain.petcheck.repository.PetCheckRepository;
+import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -36,6 +40,19 @@ public class CourseCommandService {
     private final FacilityRepository facilityRepository;
     private final UserRepository userRepository;
     private final CourseAssemblyService courseAssemblyService;
+    private final GamificationService gamificationService;
+    private final PetCheckRepository petCheckRepository;
+    private final ReviewRepository reviewRepository;
+
+    // 코스가 처음 공개(isPublic=true)로 전환된 시점에 지급하는 경험치 — 스톱이 많을수록(그만큼
+    // 판별·리뷰를 더 많이 실제로 남겨야 하므로) 조금씩 더 준다. 코스당 평생 1회만 지급되도록
+    // GamificationService의 sourceId 중복 검사에 courseId를 넘긴다 — 비공개로 돌렸다가 다시
+    // 공개해도 재지급되지 않는다.
+    private static final int COURSE_PUBLISHED_BASE_XP = 20;
+    private static final int COURSE_PUBLISHED_XP_PER_STOP = 5;
+
+    // 내가 공유한 코스를 다른 사람이 코드로 복사해갈 때마다 "원 소유자"에게 지급하는 경험치.
+    private static final int COURSE_SHARED_COPY_XP = 15;
 
     public CourseResponseDTO.MyCourse createCourse(
             Long userId,
@@ -44,6 +61,10 @@ public class CourseCommandService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
         List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
+
+        if (request.isPublic()) {
+            validateStopsEligibleForPublish(userId, stops);
+        }
 
         Course course = Course.builder()
                 .user(user)
@@ -55,6 +76,11 @@ public class CourseCommandService {
         course.replaceStops(stops);
 
         Course saved = courseRepository.save(course);
+
+        if (saved.isPublic()) {
+            gamificationService.grantXp(userId, XpSourceType.COURSE_PUBLISHED, saved.getCourseId(), coursePublishedXp(stops.size()));
+        }
+
         return CourseConverter.toMyCourse(saved);
     }
 
@@ -65,9 +91,18 @@ public class CourseCommandService {
     ) {
         Course course = findOwnedCourse(userId, courseId);
         List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
+        boolean wasPublic = course.isPublic();
+
+        if (request.isPublic()) {
+            validateStopsEligibleForPublish(userId, stops);
+        }
 
         course.update(request.getName(), request.getDescription(), stops);
         course.updateVisibility(request.isPublic());
+
+        if (!wasPublic && course.isPublic()) {
+            gamificationService.grantXp(userId, XpSourceType.COURSE_PUBLISHED, course.getCourseId(), coursePublishedXp(stops.size()));
+        }
 
         return CourseConverter.toMyCourse(course);
     }
@@ -163,6 +198,14 @@ public class CourseCommandService {
         copy.replaceStops(stops);
 
         Course saved = courseRepository.save(copy);
+
+        gamificationService.grantXp(
+                original.getUser().getId(),
+                XpSourceType.COURSE_SHARED_COPY,
+                saved.getCourseId(),
+                COURSE_SHARED_COPY_XP
+        );
+
         return CourseConverter.toMyCourse(saved);
     }
 
@@ -188,6 +231,34 @@ public class CourseCommandService {
         }
 
         return course;
+    }
+
+    /**
+     * 공개하려는 코스의 스톱 전부가 "실제로 다녀본 곳"이어야 한다 — 시설마다 이 유저의 판별
+     * 기록과 리뷰가 둘 다 있어야 통과한다. 리뷰 작성 자체가 이미 판별 이력을 전제로 하지만
+     * ({@link com.freepets.domain.review.service.ReviewCommandService#validateFacilityEligibility}),
+     * 리뷰가 나중에 삭제될 수도 있어 판별 기록은 별도로 다시 확인한다.
+     *
+     * <p>트리비얼한 코스(방문한 적 없는 시설들로만 구성)를 마구 만들어 공개하는 것을 막는
+     * 게이트다 — 공개 코스는 "둘러보기"에 노출되는 콘텐츠라 신뢰도를 담보해야 하고, 부수적으로
+     * 코스 공개 경험치({@link XpSourceType#COURSE_PUBLISHED}) 악용도 막아준다.
+     */
+    private void validateStopsEligibleForPublish(
+            Long userId,
+            List<Facility> stops
+    ) {
+        boolean areAllStopsVerified = stops.stream().allMatch(facility ->
+                petCheckRepository.existsByUserIdAndFacilityFacilityId(userId, facility.getFacilityId())
+                        && reviewRepository.existsByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facility.getFacilityId(), userId)
+        );
+
+        if (!areAllStopsVerified) {
+            throw new GeneralException(ErrorStatus.COURSE4045);
+        }
+    }
+
+    private int coursePublishedXp(int stopCount) {
+        return COURSE_PUBLISHED_BASE_XP + COURSE_PUBLISHED_XP_PER_STOP * stopCount;
     }
 
     private List<Facility> findFacilitiesInOrder(List<Long> stopIds) {

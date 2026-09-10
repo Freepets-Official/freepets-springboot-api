@@ -6,8 +6,8 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -21,7 +21,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -53,14 +55,14 @@ class CalendarEventControllerTest {
     private CalendarEventResponseDTO.EventOccurrence medOccurrence(boolean taken) {
         return new CalendarEventResponseDTO.EventOccurrence(
                 1L, 2L, "댕댕이", CalendarEventType.MED, "관절 영양제",
-                LocalDate.of(2026, 9, 10), null, RepeatType.DAILY, true, null, taken
+                LocalDate.of(2026, 9, 10), null, RepeatType.DAILY, true, null, taken, null
         );
     }
 
     private CalendarEventResponseDTO.EventOccurrence vaccineOccurrence() {
         return new CalendarEventResponseDTO.EventOccurrence(
                 3L, null, null, CalendarEventType.VACCINE, "종합백신 2차",
-                LocalDate.of(2026, 9, 10), null, RepeatType.NONE, true, null, null
+                LocalDate.of(2026, 9, 10), null, RepeatType.NONE, true, null, null, null
         );
     }
 
@@ -127,11 +129,10 @@ class CalendarEventControllerTest {
         when(calendarEventCommandService.createEvent(any(), any()))
                 .thenReturn(new CalendarEventResponseDTO.CreateResult(1L));
 
-        mockMvc.perform(post("/api/v1/calendar-events")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"eventType":"VACCINE","title":"종합백신 2차","date":"2026-09-10"}
-                                """))
+        mockMvc.perform(multipart("/api/v1/calendar-events")
+                        .param("eventType", "VACCINE")
+                        .param("title", "종합백신 2차")
+                        .param("date", "2026-09-10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.eventId").value(1));
     }
@@ -139,12 +140,27 @@ class CalendarEventControllerTest {
     @Test
     @DisplayName("제목 없이 등록하면 400")
     void 제목_없이_등록하면_400() throws Exception {
-        mockMvc.perform(post("/api/v1/calendar-events")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"eventType":"VACCINE","date":"2026-09-10"}
-                                """))
+        mockMvc.perform(multipart("/api/v1/calendar-events")
+                        .param("eventType", "VACCINE")
+                        .param("date", "2026-09-10"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("사진 첨부해서 등록하면 photoUrl이 응답에 포함된다")
+    void 사진_첨부해서_등록하면_photoUrl이_응답에_포함된다() throws Exception {
+        when(calendarEventCommandService.createEvent(any(), any()))
+                .thenReturn(new CalendarEventResponseDTO.CreateResult(1L));
+
+        MockMultipartFile photo = new MockMultipartFile("photo", "trip.jpg", "image/jpeg", "content".getBytes());
+
+        mockMvc.perform(multipart("/api/v1/calendar-events")
+                        .file(photo)
+                        .param("eventType", "TRAVEL")
+                        .param("title", "강릉 여행")
+                        .param("date", "2026-09-10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.eventId").value(1));
     }
 
     @Test
@@ -153,15 +169,14 @@ class CalendarEventControllerTest {
         when(calendarEventCommandService.updateEvent(any(), eq(1L), any()))
                 .thenReturn(new CalendarEventResponseDTO.EventDetail(
                         1L, null, null, CalendarEventType.VACCINE, "수정된 제목",
-                        LocalDate.of(2026, 9, 11), null, RepeatType.NONE, true, null,
+                        LocalDate.of(2026, 9, 11), null, RepeatType.NONE, true, null, null,
                         LocalDateTime.now(), LocalDateTime.now()
                 ));
 
-        mockMvc.perform(patch("/api/v1/calendar-events/{eventId}", 1L)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"eventType":"VACCINE","title":"수정된 제목","date":"2026-09-11"}
-                                """))
+        mockMvc.perform(multipart(HttpMethod.PATCH, "/api/v1/calendar-events/{eventId}", 1L)
+                        .param("eventType", "VACCINE")
+                        .param("title", "수정된 제목")
+                        .param("date", "2026-09-11"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.title").value("수정된 제목"));
     }
@@ -172,11 +187,10 @@ class CalendarEventControllerTest {
         when(calendarEventCommandService.updateEvent(any(), eq(1L), any()))
                 .thenThrow(new GeneralException(ErrorStatus.CALENDAR4002));
 
-        mockMvc.perform(patch("/api/v1/calendar-events/{eventId}", 1L)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"eventType":"VACCINE","title":"제목","date":"2026-09-11"}
-                                """))
+        mockMvc.perform(multipart(HttpMethod.PATCH, "/api/v1/calendar-events/{eventId}", 1L)
+                        .param("eventType", "VACCINE")
+                        .param("title", "제목")
+                        .param("date", "2026-09-11"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("CALENDAR4002"));
     }

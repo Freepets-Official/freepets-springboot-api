@@ -27,7 +27,8 @@ public class CalendarEventResponseDTO {
             RepeatType repeatType,
             boolean reminderEnabled,
             String notes,
-            Boolean taken // MED가 아니면 null(키 생략). MED면 true/false가 항상 채워진다.
+            Boolean taken, // MED가 아니면 null(키 생략). MED면 true/false가 항상 채워진다.
+            String photoUrl
     ) {}
 
     public record EventList(
@@ -50,6 +51,7 @@ public class CalendarEventResponseDTO {
             RepeatType repeatType,
             boolean reminderEnabled,
             String notes,
+            String photoUrl,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {}

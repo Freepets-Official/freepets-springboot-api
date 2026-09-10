@@ -16,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.calendar.dto.CalendarEventRequestDTO;
@@ -32,6 +33,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.s3.S3ImageService;
 
 @ExtendWith(MockitoExtension.class)
 class CalendarEventCommandServiceTest {
@@ -44,6 +46,9 @@ class CalendarEventCommandServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private S3ImageService s3ImageService;
 
     @InjectMocks
     private CalendarEventCommandService calendarEventCommandService;
@@ -247,6 +252,105 @@ class CalendarEventCommandServiceTest {
 
         assertThrows(GeneralException.class, () -> calendarEventCommandService.deleteEvent(1L, 100L));
         verify(calendarEventRepository, never()).delete(any());
+    }
+
+    @Test
+    void deleteEvent_사진이_있으면_S3에서도_지운다() {
+        User owner = user(1L);
+        CalendarEvent event = CalendarEvent.builder()
+                .user(owner)
+                .eventType(CalendarEventType.TRAVEL)
+                .title("강릉 여행")
+                .startDate(LocalDate.of(2026, 9, 1))
+                .repeatType(RepeatType.NONE)
+                .photoUrl("https://s3-url/trip.jpg")
+                .build();
+        when(calendarEventRepository.findById(100L)).thenReturn(Optional.of(event));
+
+        calendarEventCommandService.deleteEvent(1L, 100L);
+
+        verify(s3ImageService).delete("https://s3-url/trip.jpg");
+    }
+
+    @Test
+    void deleteEvent_사진이_없으면_S3_삭제를_호출하지_않는다() {
+        User owner = user(1L);
+        CalendarEvent event = CalendarEvent.builder()
+                .user(owner)
+                .eventType(CalendarEventType.VACCINE)
+                .title("제목")
+                .startDate(LocalDate.of(2026, 9, 1))
+                .repeatType(RepeatType.NONE)
+                .build();
+        when(calendarEventRepository.findById(100L)).thenReturn(Optional.of(event));
+
+        calendarEventCommandService.deleteEvent(1L, 100L);
+
+        verify(s3ImageService, never()).delete(any());
+    }
+
+    @Test
+    void createEvent_사진이_있으면_업로드해서_photoUrl로_저장된다() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L)));
+        when(calendarEventRepository.save(any(CalendarEvent.class))).thenAnswer(invocation -> {
+            CalendarEvent saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "eventId", 100L);
+            return saved;
+        });
+        MockMultipartFile photo = new MockMultipartFile("photo", "trip.jpg", "image/jpeg", "content".getBytes());
+        when(s3ImageService.upload(photo)).thenReturn("https://s3-url/trip.jpg");
+
+        CalendarEventRequestDTO.CreateRequest request = createRequest(null);
+        request.setPhoto(photo);
+
+        calendarEventCommandService.createEvent(1L, request);
+
+        org.mockito.ArgumentCaptor<CalendarEvent> captor = org.mockito.ArgumentCaptor.forClass(CalendarEvent.class);
+        verify(calendarEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getPhotoUrl()).isEqualTo("https://s3-url/trip.jpg");
+    }
+
+    @Test
+    void updateEvent_새_사진이_오면_기존_사진을_지우고_교체한다() {
+        User owner = user(1L);
+        CalendarEvent event = CalendarEvent.builder()
+                .user(owner)
+                .eventType(CalendarEventType.TRAVEL)
+                .title("기존 제목")
+                .startDate(LocalDate.of(2026, 9, 1))
+                .repeatType(RepeatType.NONE)
+                .photoUrl("https://s3-url/old.jpg")
+                .build();
+        when(calendarEventRepository.findById(100L)).thenReturn(Optional.of(event));
+        MockMultipartFile newPhoto = new MockMultipartFile("photo", "new.jpg", "image/jpeg", "content".getBytes());
+        when(s3ImageService.upload(newPhoto)).thenReturn("https://s3-url/new.jpg");
+
+        CalendarEventRequestDTO.UpdateRequest request = updateRequest(null);
+        request.setPhoto(newPhoto);
+
+        var result = calendarEventCommandService.updateEvent(1L, 100L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3-url/new.jpg");
+        verify(s3ImageService).delete("https://s3-url/old.jpg");
+    }
+
+    @Test
+    void updateEvent_사진_없이_수정하면_기존_사진을_유지한다() {
+        User owner = user(1L);
+        CalendarEvent event = CalendarEvent.builder()
+                .user(owner)
+                .eventType(CalendarEventType.TRAVEL)
+                .title("기존 제목")
+                .startDate(LocalDate.of(2026, 9, 1))
+                .repeatType(RepeatType.NONE)
+                .photoUrl("https://s3-url/old.jpg")
+                .build();
+        when(calendarEventRepository.findById(100L)).thenReturn(Optional.of(event));
+
+        var result = calendarEventCommandService.updateEvent(1L, 100L, updateRequest(null));
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3-url/old.jpg");
+        verify(s3ImageService, never()).delete(any());
     }
 
     @Test

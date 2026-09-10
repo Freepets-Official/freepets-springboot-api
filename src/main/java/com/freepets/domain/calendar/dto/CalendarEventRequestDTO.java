@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.web.multipart.MultipartFile;
 
 public class CalendarEventRequestDTO {
 
@@ -44,6 +45,8 @@ public class CalendarEventRequestDTO {
 
         @Size(max = 1000, message = "메모는 1000자 이하로 입력해주세요.")
         private String notes;
+
+        private MultipartFile photo;
     }
 
     @Getter
@@ -71,6 +74,9 @@ public class CalendarEventRequestDTO {
 
         @Size(max = 1000, message = "메모는 1000자 이하로 입력해주세요.")
         private String notes;
+
+        // 새 파일이 오면 교체, 안 오면 기존 사진을 그대로 유지한다(Pet.profile 수정과 같은 방식).
+        private MultipartFile photo;
     }
 
     @Getter

@@ -78,6 +78,11 @@ public class CalendarEvent extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    // 여행 기록(자동/수동 등록 모두)에 사진 한 장을 붙일 수 있다. Pet.profile과 같은 방식으로
+    // S3에 올린 뒤 URL만 저장한다 — 여러 장 첨부는 지금 범위 밖이라 단일 필드로 둔다.
+    @Column(name = "photo_url", columnDefinition = "TEXT")
+    private String photoUrl;
+
     // 이벤트 삭제 시 그날그날 복용 체크 기록도 함께 지우는 용도로만 둔다 — 실제 조회/저장은
     // 항상 CalendarMedLogRepository를 직접 통해서 하고 이 컬렉션을 읽지는 않는다. 같은
     // 트랜잭션에서 리포지토리 직접 저장과 이 컬렉션이 따로 노는 걸 피하기 위함이다.
@@ -94,7 +99,8 @@ public class CalendarEvent extends BaseEntity {
             LocalTime eventTime,
             RepeatType repeatType,
             boolean reminderEnabled,
-            String notes
+            String notes,
+            String photoUrl
     ) {
         this.user = user;
         this.pet = pet;
@@ -105,6 +111,7 @@ public class CalendarEvent extends BaseEntity {
         this.repeatType = repeatType;
         this.reminderEnabled = reminderEnabled;
         this.notes = notes;
+        this.photoUrl = photoUrl;
     }
 
     public void update(
@@ -115,7 +122,8 @@ public class CalendarEvent extends BaseEntity {
             LocalTime eventTime,
             RepeatType repeatType,
             boolean reminderEnabled,
-            String notes
+            String notes,
+            String photoUrl
     ) {
         this.pet = pet;
         this.eventType = eventType;
@@ -125,6 +133,7 @@ public class CalendarEvent extends BaseEntity {
         this.repeatType = repeatType;
         this.reminderEnabled = reminderEnabled;
         this.notes = notes;
+        this.photoUrl = photoUrl;
     }
 
     public void toggleReminder(boolean reminderEnabled) {

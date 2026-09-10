@@ -17,7 +17,8 @@ public class CalendarEventConverter {
     public static CalendarEvent toEvent(
             CalendarEventRequestDTO.CreateRequest request,
             User user,
-            Pet pet
+            Pet pet,
+            String photoUrl
     ) {
         return CalendarEvent.builder()
                 .user(user)
@@ -29,6 +30,7 @@ public class CalendarEventConverter {
                 .repeatType(request.getRepeatType())
                 .reminderEnabled(request.isReminderEnabled())
                 .notes(request.getNotes())
+                .photoUrl(photoUrl)
                 .build();
     }
 
@@ -51,7 +53,8 @@ public class CalendarEventConverter {
                 event.getRepeatType(),
                 event.isReminderEnabled(),
                 event.getNotes(),
-                event.getEventType() == CalendarEventType.MED ? taken : null
+                event.getEventType() == CalendarEventType.MED ? taken : null,
+                event.getPhotoUrl()
         );
     }
 
@@ -75,6 +78,7 @@ public class CalendarEventConverter {
                 event.getRepeatType(),
                 event.isReminderEnabled(),
                 event.getNotes(),
+                event.getPhotoUrl(),
                 event.getCreatedAt(),
                 event.getUpdatedAt()
         );

@@ -2,6 +2,7 @@ package com.freepets.domain.calendar.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.freepets.domain.calendar.converter.CalendarEventConverter;
 import com.freepets.domain.calendar.dto.CalendarEventRequestDTO;
@@ -14,6 +15,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.s3.S3ImageService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -25,6 +27,7 @@ public class CalendarEventCommandService {
     private final CalendarEventRepository calendarEventRepository;
     private final PetRepository petRepository;
     private final UserRepository userRepository;
+    private final S3ImageService s3ImageService;
 
     public CalendarEventResponseDTO.CreateResult createEvent(
             Long userId,
@@ -33,8 +36,9 @@ public class CalendarEventCommandService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
         Pet pet = resolvePet(userId, request.getPetId());
+        String photoUrl = uploadPhotoIfPresent(request.getPhoto());
 
-        CalendarEvent event = CalendarEventConverter.toEvent(request, user, pet);
+        CalendarEvent event = CalendarEventConverter.toEvent(request, user, pet, photoUrl);
         CalendarEvent savedEvent = calendarEventRepository.save(event);
 
         return CalendarEventConverter.toCreateResult(savedEvent);
@@ -47,6 +51,11 @@ public class CalendarEventCommandService {
     ) {
         CalendarEvent event = findOwnedEvent(userId, eventId);
         Pet pet = resolvePet(userId, request.getPetId());
+
+        String previousPhotoUrl = event.getPhotoUrl();
+        String photoUrl = isNewPhotoPresent(request.getPhoto())
+                ? uploadPhotoIfPresent(request.getPhoto())
+                : previousPhotoUrl;
 
         // 알려진 한계: eventType을 MED에서 다른 타입으로 바꾸거나 반복 규칙/시작일을 바꾸면,
         // 예전 스케줄 기준으로 쌓인 CalendarMedLog 행은 지우지 않고 그대로 둔다. 이후 조회에서
@@ -61,8 +70,13 @@ public class CalendarEventCommandService {
                 request.getTime(),
                 request.getRepeatType(),
                 request.isReminderEnabled(),
-                request.getNotes()
+                request.getNotes(),
+                photoUrl
         );
+
+        if (isNewPhotoPresent(request.getPhoto()) && previousPhotoUrl != null) {
+            s3ImageService.delete(previousPhotoUrl);
+        }
 
         return CalendarEventConverter.toEventDetail(event);
     }
@@ -73,6 +87,13 @@ public class CalendarEventCommandService {
     ) {
         CalendarEvent event = findOwnedEvent(userId, eventId);
         calendarEventRepository.delete(event);
+
+        // Pet/Review는 소프트 삭제라 사진을 지우지 않고 남겨두지만(나중에 정리할 여지가 있음),
+        // 캘린더 일정은 하드 삭제라 이 행을 지우고 나면 photoUrl을 되찾을 방법이 없다 — 지금
+        // 지우지 않으면 영원히 못 지우는 고아 파일이 되므로, 여기서만 예외적으로 삭제한다.
+        if (event.getPhotoUrl() != null) {
+            s3ImageService.delete(event.getPhotoUrl());
+        }
 
         return CalendarEventConverter.toDeleteResult(event);
     }
@@ -106,6 +127,18 @@ public class CalendarEventCommandService {
         }
 
         return pet;
+    }
+
+    private boolean isNewPhotoPresent(MultipartFile photo) {
+        return photo != null && !photo.isEmpty();
+    }
+
+    private String uploadPhotoIfPresent(MultipartFile photo) {
+        if (!isNewPhotoPresent(photo)) {
+            return null;
+        }
+
+        return s3ImageService.upload(photo);
     }
 
     private CalendarEvent findOwnedEvent(

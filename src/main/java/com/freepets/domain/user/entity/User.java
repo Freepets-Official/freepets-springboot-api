@@ -6,6 +6,8 @@ import java.util.List;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.global.entity.BaseEntity;
 
+import org.hibernate.annotations.ColumnDefault;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -73,6 +75,23 @@ public class User extends BaseEntity {
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Pet> pets = new ArrayList<>();
 
+    // 게이미피케이션 누적치. gamification 도메인이 소유한 개념이지만, 여러 도메인(판별·리뷰·제보 등)이
+    // 경험치를 주는 근거가 User 한 명이라 계정과 함께 다니는 값으로 여기 둔다 — 레벨 산정 공식 자체는
+    // gamification.service.LevelCurve에 있고, User는 계산된 값을 들고만 있을 뿐 그 공식을 모른다
+    // (엔티티가 상위 도메인 서비스를 참조하면 계층 규칙을 어기게 되므로, 새 레벨은 항상 호출부가
+    // 계산해서 넘겨준다). 라이브 유저가 이미 있어 Course.isPublic과 같은 이유로 @ColumnDefault 필요.
+    @ColumnDefault("0")
+    @Column(name = "total_xp", nullable = false)
+    private long totalXp;
+
+    @ColumnDefault("1")
+    @Column(nullable = false)
+    private int level;
+
+    @ColumnDefault("true")
+    @Column(name = "level_up_notification_enabled", nullable = false)
+    private boolean levelUpNotificationEnabled;
+
     @Builder
     private User(
             String email,
@@ -88,6 +107,9 @@ public class User extends BaseEntity {
         this.provider = provider;
         this.providerId = providerId;
         this.avatarUri = avatarUri;
+        this.totalXp = 0;
+        this.level = 1;
+        this.levelUpNotificationEnabled = true;
     }
 
     public void update(
@@ -96,6 +118,27 @@ public class User extends BaseEntity {
     ) {
         this.nickname = nickname;
         this.avatarUri = avatarUri;
+    }
+
+    /**
+     * 경험치를 더하고 새 레벨을 반영한다. 레벨은 이 메서드가 스스로 계산하지 않고 호출부
+     * (GamificationService)가 {@code LevelCurve}로 미리 계산해서 넘긴다 — User는 계정 도메인
+     * 소속이라 gamification 도메인의 계산 공식을 몰라야 한다.
+     *
+     * @return 이번 지급으로 레벨이 올랐는지
+     */
+    public boolean gainXp(
+            long amount,
+            int newLevel
+    ) {
+        this.totalXp += amount;
+        boolean isLeveledUp = newLevel > this.level;
+        this.level = newLevel;
+        return isLeveledUp;
+    }
+
+    public void toggleLevelUpNotification(boolean enabled) {
+        this.levelUpNotificationEnabled = enabled;
     }
 
 }

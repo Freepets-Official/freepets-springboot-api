@@ -91,7 +91,7 @@ public class CourseCommandService {
     ) {
         Course course = findOwnedCourse(userId, courseId);
         List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
-        boolean wasPublic = course.isPublic();
+        boolean isPublicBeforeUpdate = course.isPublic();
 
         if (request.isPublic()) {
             validateStopsEligibleForPublish(userId, stops);
@@ -100,7 +100,7 @@ public class CourseCommandService {
         course.update(request.getName(), request.getDescription(), stops);
         course.updateVisibility(request.isPublic());
 
-        if (!wasPublic && course.isPublic()) {
+        if (!isPublicBeforeUpdate && course.isPublic()) {
             gamificationService.grantXp(userId, XpSourceType.COURSE_PUBLISHED, course.getCourseId(), coursePublishedXp(stops.size()));
         }
 
@@ -146,6 +146,14 @@ public class CourseCommandService {
                 .orElseThrow(() -> new GeneralException(ErrorStatus.FACILITY4001));
 
         facilitiesInOrder.set(stopOrder, newFacility);
+
+        // 이 코스가 이미 공개 상태라면, updateCourse(전체 교체)와 똑같이 스왑 후 스톱 전체가
+        // 다시 발행 요건(판별+리뷰)을 만족하는지 확인한다 — 안 그러면 검증된 코스를 공개해둔
+        // 뒤 이 엔드포인트로 한 스톱만 검증되지 않은 시설로 몰래 바꿔치기할 수 있다.
+        if (course.isPublic()) {
+            validateStopsEligibleForPublish(userId, facilitiesInOrder);
+        }
+
         course.replaceStops(facilitiesInOrder);
 
         return CourseConverter.toMyCourse(course);
@@ -199,12 +207,17 @@ public class CourseCommandService {
 
         Course saved = courseRepository.save(copy);
 
-        gamificationService.grantXp(
-                original.getUser().getId(),
-                XpSourceType.COURSE_SHARED_COPY,
-                saved.getCourseId(),
-                COURSE_SHARED_COPY_XP
-        );
+        // 자기 코스를 자기 공유 코드로 복사하면 원 소유자 == 복사한 사람이라 실제 참여 없이도
+        // 매번 새 courseId로 XP를 받아갈 수 있다(하루 상한만으로는 완전히 막지 못한다) —
+        // 원 소유자 본인이 복사한 경우는 지급하지 않는다.
+        if (!original.getUser().getId().equals(userId)) {
+            gamificationService.grantXp(
+                    original.getUser().getId(),
+                    XpSourceType.COURSE_SHARED_COPY,
+                    saved.getCourseId(),
+                    COURSE_SHARED_COPY_XP
+            );
+        }
 
         return CourseConverter.toMyCourse(saved);
     }
@@ -247,12 +260,12 @@ public class CourseCommandService {
             Long userId,
             List<Facility> stops
     ) {
-        boolean areAllStopsVerified = stops.stream().allMatch(facility ->
+        boolean isAllStopsVerified = stops.stream().allMatch(facility ->
                 petCheckRepository.existsByUserIdAndFacilityFacilityId(userId, facility.getFacilityId())
                         && reviewRepository.existsByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facility.getFacilityId(), userId)
         );
 
-        if (!areAllStopsVerified) {
+        if (!isAllStopsVerified) {
             throw new GeneralException(ErrorStatus.COURSE4045);
         }
     }

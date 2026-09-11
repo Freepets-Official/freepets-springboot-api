@@ -274,6 +274,47 @@ class CourseCommandServiceTest {
     }
 
     @Test
+    void 공개_코스의_스톱_교체는_새_시설도_검증돼있어야_한다() {
+        Course course = ownedPublicCourseWithStops(1L, 2L, 3L);
+        Facility six = facility(6L, "F");
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(6L)).thenReturn(Optional.of(six));
+        // 시설 6에 대한 판별·리뷰 기록이 없다.
+
+        assertThatThrownBy(() -> courseCommandService.replaceStop(1L, 10L, 1, 6L))
+                .isInstanceOf(GeneralException.class);
+        // 검증에 실패했으면 실제 교체가 반영되면 안 된다.
+        assertThat(course.getStops()).hasSize(3);
+    }
+
+    @Test
+    void 공개_코스라도_새_시설이_검증돼있으면_스톱_교체가_성공한다() {
+        Course course = ownedPublicCourseWithStops(1L, 2L, 3L);
+        Facility six = facility(6L, "F");
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(6L)).thenReturn(Optional.of(six));
+        stubVerified(1L, 1L, 6L, 3L);
+
+        CourseResponseDTO.MyCourse result = courseCommandService.replaceStop(1L, 10L, 1, 6L);
+
+        assertThat(result.stopIds()).containsExactly(1L, 6L, 3L);
+    }
+
+    @Test
+    void 비공개_코스의_스톱_교체는_검증_없이_바로_성공한다() {
+        // 아직 공개하지 않은 코스는 스왑한 시설이 검증돼있지 않아도 된다 — 공개할 때 다시 걸린다.
+        Course course = ownedCourseWithStops(1L, 2L, 3L);
+        Facility six = facility(6L, "F");
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(6L)).thenReturn(Optional.of(six));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.replaceStop(1L, 10L, 1, 6L);
+
+        assertThat(result.stopIds()).containsExactly(1L, 6L, 3L);
+        org.mockito.Mockito.verifyNoInteractions(petCheckRepository);
+    }
+
+    @Test
     void 공유_코드가_없으면_새로_발급된다() {
         Course course = ownedCourseWithStops(1L, 2L);
         when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
@@ -350,6 +391,23 @@ class CourseCommandServiceTest {
     }
 
     @Test
+    void 자기_코스를_자기_공유_코드로_복사하면_경험치가_지급되지_않는다() {
+        // 원 소유자(1L)와 복사한 사람(1L)이 같으면 courseId가 매번 새로 생겨 평생 1회 검사를
+        // 통과해버리므로, 실제 참여 없이 반복 복사로 XP를 파밍할 수 있었다 — 자기 복사는 막는다.
+        Course original = ownedCourseWithStops(1L, 2L);
+        ReflectionTestUtils.setField(original, "shareCode", "CRS-SELFCOPY1");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L)));
+        when(courseRepository.findByShareCode("CRS-SELFCOPY1")).thenReturn(Optional.of(original));
+        when(courseRepository.save(org.mockito.ArgumentMatchers.any(Course.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        courseCommandService.copySharedCourse(1L, "CRS-SELFCOPY1");
+
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+    }
+
+    @Test
     void 존재하지_않는_공유_코드로_복사하면_COURSE4044() {
         when(userRepository.findById(2L)).thenReturn(Optional.of(user(2L)));
         when(courseRepository.findByShareCode("CRS-NOTFOUND1")).thenReturn(Optional.empty());
@@ -375,6 +433,21 @@ class CourseCommandServiceTest {
                 .user(user(1L))
                 .name("몽이 코스")
                 .source(CourseSource.CUSTOM)
+                .build();
+        List<Facility> stops = List.of(facilityIds).stream()
+                .map(id -> facility(id, "시설" + id))
+                .toList();
+        course.replaceStops(stops);
+        ReflectionTestUtils.setField(course, "courseId", 10L);
+        return course;
+    }
+
+    private Course ownedPublicCourseWithStops(Long... facilityIds) {
+        Course course = Course.builder()
+                .user(user(1L))
+                .name("몽이 코스")
+                .source(CourseSource.CUSTOM)
+                .isPublic(true)
                 .build();
         List<Facility> stops = List.of(facilityIds).stream()
                 .map(id -> facility(id, "시설" + id))

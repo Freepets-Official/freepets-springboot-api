@@ -8,8 +8,11 @@ import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
@@ -227,6 +230,17 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
     Optional<Facility> findByContentId(String contentId);
 
     List<Facility> findByContentIdIn(Collection<String> contentIds);
+
+    /**
+     * {@code FacilityConditionInquiryCommandService.inquire} 전용 — 같은 시설에 대한 동시
+     * 조건 확인 요청을 행 단위로 직렬화한다. 잠금 없이 "최근 24시간 내 요청했는지" existsBy
+     * 조회 후 저장하면, 거의 동시에 들어온 두 요청이 둘 다 그 확인을 통과해 중복으로 쌓일 수
+     * 있다 — 이 기능은 쌓인 개수 자체가 사업자에게 보여줄 신호의 전부라 다른 도메인보다
+     * 정확한 카운트가 중요하다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select f from Facility f where f.facilityId = :facilityId")
+    Optional<Facility> findByIdForUpdate(@Param("facilityId") Long facilityId);
 
     /**
      * "취향 비슷한 새곳"(similar)에서 취향 프로필(만족도 기록)이 아예 없는 신규 유저용 대체

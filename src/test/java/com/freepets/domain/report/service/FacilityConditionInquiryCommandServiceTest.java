@@ -46,11 +46,11 @@ class FacilityConditionInquiryCommandServiceTest {
 
     @Test
     void 정상_요청되면_저장된다() {
-        User user = user(1L);
         Facility facility = facility(7L);
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.existsById(1L)).thenReturn(true);
+        when(userRepository.getReferenceById(1L)).thenReturn(user(1L));
+        when(facilityRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(facility));
         when(facilityConditionInquiryRepository
                 .existsByUser_IdAndFacility_FacilityIdAndCreatedAtAfter(eq(1L), eq(7L), any()))
                 .thenReturn(false);
@@ -69,11 +69,11 @@ class FacilityConditionInquiryCommandServiceTest {
 
     @Test
     void 메모_없이도_요청할_수_있다() {
-        User user = user(1L);
         Facility facility = facility(7L);
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.existsById(1L)).thenReturn(true);
+        when(userRepository.getReferenceById(1L)).thenReturn(user(1L));
+        when(facilityRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(facility));
         when(facilityConditionInquiryRepository
                 .existsByUser_IdAndFacility_FacilityIdAndCreatedAtAfter(eq(1L), eq(7L), any()))
                 .thenReturn(false);
@@ -88,17 +88,18 @@ class FacilityConditionInquiryCommandServiceTest {
 
     @Test
     void 존재하지_않는_유저면_MEMBER4005_시설_조회는_안_한다() {
-        when(userRepository.findById(1L)).thenReturn(Optional.empty());
+        when(userRepository.existsById(1L)).thenReturn(false);
 
         assertThatThrownBy(() -> facilityConditionInquiryCommandService.inquire(1L, 7L, null))
                 .isInstanceOf(GeneralException.class);
-        verify(facilityRepository, never()).findById(any());
+        verify(facilityRepository, never()).findByIdForUpdate(any());
     }
 
     @Test
     void 존재하지_않는_시설이면_FACILITY4001() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L)));
-        when(facilityRepository.findById(7L)).thenReturn(Optional.empty());
+        when(userRepository.existsById(1L)).thenReturn(true);
+        when(userRepository.getReferenceById(1L)).thenReturn(user(1L));
+        when(facilityRepository.findByIdForUpdate(7L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> facilityConditionInquiryCommandService.inquire(1L, 7L, null))
                 .isInstanceOf(GeneralException.class);
@@ -106,8 +107,9 @@ class FacilityConditionInquiryCommandServiceTest {
 
     @Test
     void 이십사시간_내_이미_요청했으면_REPORT4002_저장은_안_한다() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L)));
-        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility(7L)));
+        when(userRepository.existsById(1L)).thenReturn(true);
+        when(userRepository.getReferenceById(1L)).thenReturn(user(1L));
+        when(facilityRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(facility(7L)));
         when(facilityConditionInquiryRepository
                 .existsByUser_IdAndFacility_FacilityIdAndCreatedAtAfter(eq(1L), eq(7L), any()))
                 .thenReturn(true);

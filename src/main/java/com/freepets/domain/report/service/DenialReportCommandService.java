@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.service.GamificationService;
 import com.freepets.domain.report.converter.DenialReportConverter;
 import com.freepets.domain.report.dto.DenialReportResponseDTO;
 import com.freepets.domain.report.entity.DenialReason;
@@ -49,6 +51,12 @@ public class DenialReportCommandService {
     private final FacilityRepository facilityRepository;
     private final UserRepository userRepository;
     private final DenialReportNotificationService denialReportNotificationService;
+    private final GamificationService gamificationService;
+
+    // 제보 제출 1건당 지급하는 경험치. 원래 기획은 "승인됐을 때만"이었지만, 이 리포에 제보 승인
+    // 기능 자체가 없어(관리자 도메인 없음) 제출 즉시 지급으로 확인받았다 — 그만큼 리뷰(20XP)보다
+    // 조금 더 높게 잡았다.
+    private static final int REPORT_XP = 15;
 
     public DenialReportResponseDTO.Report report(
             Long userId,
@@ -79,6 +87,8 @@ public class DenialReportCommandService {
         );
 
         warnIfEscalationThresholdReached(facilityId);
+
+        gamificationService.grantXp(userId, XpSourceType.REPORT, saved.getReportId(), REPORT_XP);
 
         // 이 시설을 판별했던 다른 유저들에게 실시간 푸시 — 비동기라 이 응답을 안 늦춘다.
         denialReportNotificationService.notifyDenial(facilityId, userId, reason, facility.getName());

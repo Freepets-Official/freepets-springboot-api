@@ -2,6 +2,11 @@ package com.freepets.domain.course.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -24,6 +29,10 @@ import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.service.GamificationService;
+import com.freepets.domain.petcheck.repository.PetCheckRepository;
+import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
@@ -44,6 +53,15 @@ class CourseCommandServiceTest {
     @Mock
     private CourseAssemblyService courseAssemblyService;
 
+    @Mock
+    private GamificationService gamificationService;
+
+    @Mock
+    private PetCheckRepository petCheckRepository;
+
+    @Mock
+    private ReviewRepository reviewRepository;
+
     @InjectMocks
     private CourseCommandService courseCommandService;
 
@@ -62,6 +80,8 @@ class CourseCommandServiceTest {
         CourseResponseDTO.MyCourse result = courseCommandService.createCourse(1L, request("강릉 코스", List.of(1L, 2L)));
 
         assertThat(result.stopIds()).containsExactly(1L, 2L);
+        // 비공개로 만들면 경험치가 지급되지 않는다(게이미피케이션 결정: 공개해야 지급).
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
     }
 
     @Test
@@ -73,6 +93,7 @@ class CourseCommandServiceTest {
         when(facilityRepository.findAllById(List.of(1L))).thenReturn(List.of(a));
         when(courseRepository.save(org.mockito.ArgumentMatchers.any(Course.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        stubVerified(1L, 1L);
 
         CourseRequestDTO.SaveRequest request = request("강릉 코스", List.of(1L));
         request.setIsPublic(true);
@@ -80,6 +101,28 @@ class CourseCommandServiceTest {
         CourseResponseDTO.MyCourse result = courseCommandService.createCourse(1L, request);
 
         assertThat(result.isPublic()).isTrue();
+        // 공개로 만들면 경험치가 지급되는지(게이미피케이션 훅) — 스톱 1개면 20(기본) + 5×1 = 25.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(result.courseId()), eq(25));
+    }
+
+    @Test
+    void 공개하려는_코스에_판별_또는_리뷰가_없는_스톱이_있으면_COURSE4045() {
+        User user = user(1L);
+        Facility a = facility(1L, "A");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(facilityRepository.findAllById(List.of(1L))).thenReturn(List.of(a));
+        // 판별 기록은 있지만 리뷰가 없는 경우 — 둘 다 있어야 통과한다.
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 1L)).thenReturn(true);
+        when(reviewRepository.existsByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(1L, 1L)).thenReturn(false);
+
+        CourseRequestDTO.SaveRequest request = request("강릉 코스", List.of(1L));
+        request.setIsPublic(true);
+
+        assertThatThrownBy(() -> courseCommandService.createCourse(1L, request))
+                .isInstanceOf(GeneralException.class);
+        verify(courseRepository, never()).save(any());
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
     }
 
     @Test
@@ -105,6 +148,44 @@ class CourseCommandServiceTest {
 
         assertThatThrownBy(() -> courseCommandService.updateCourse(2L, 10L, request("변경", List.of(1L))))
                 .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 비공개_코스를_공개로_전환하면_경험치가_지급된다() {
+        Course course = ownedCourseWithStops(1L, 2L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findAllById(List.of(1L, 2L)))
+                .thenReturn(List.of(facility(1L, "A"), facility(2L, "B")));
+        stubVerified(1L, 1L, 2L);
+
+        CourseRequestDTO.SaveRequest request = request("변경", List.of(1L, 2L));
+        request.setIsPublic(true);
+
+        courseCommandService.updateCourse(1L, 10L, request);
+
+        // 스톱 2개면 20(기본) + 5×2 = 30.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30));
+    }
+
+    @Test
+    void 이미_공개인_코스를_다시_저장해도_재지급되지_않는다() {
+        Course course = Course.builder()
+                .user(user(1L))
+                .name("몽이 코스")
+                .source(CourseSource.CUSTOM)
+                .isPublic(true)
+                .build();
+        ReflectionTestUtils.setField(course, "courseId", 10L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findAllById(List.of(1L))).thenReturn(List.of(facility(1L, "A")));
+        stubVerified(1L, 1L);
+
+        CourseRequestDTO.SaveRequest request = request("변경", List.of(1L));
+        request.setIsPublic(true);
+
+        courseCommandService.updateCourse(1L, 10L, request);
+
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
     }
 
     @Test
@@ -193,6 +274,47 @@ class CourseCommandServiceTest {
     }
 
     @Test
+    void 공개_코스의_스톱_교체는_새_시설도_검증돼있어야_한다() {
+        Course course = ownedPublicCourseWithStops(1L, 2L, 3L);
+        Facility six = facility(6L, "F");
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(6L)).thenReturn(Optional.of(six));
+        // 시설 6에 대한 판별·리뷰 기록이 없다.
+
+        assertThatThrownBy(() -> courseCommandService.replaceStop(1L, 10L, 1, 6L))
+                .isInstanceOf(GeneralException.class);
+        // 검증에 실패했으면 실제 교체가 반영되면 안 된다.
+        assertThat(course.getStops()).hasSize(3);
+    }
+
+    @Test
+    void 공개_코스라도_새_시설이_검증돼있으면_스톱_교체가_성공한다() {
+        Course course = ownedPublicCourseWithStops(1L, 2L, 3L);
+        Facility six = facility(6L, "F");
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(6L)).thenReturn(Optional.of(six));
+        stubVerified(1L, 1L, 6L, 3L);
+
+        CourseResponseDTO.MyCourse result = courseCommandService.replaceStop(1L, 10L, 1, 6L);
+
+        assertThat(result.stopIds()).containsExactly(1L, 6L, 3L);
+    }
+
+    @Test
+    void 비공개_코스의_스톱_교체는_검증_없이_바로_성공한다() {
+        // 아직 공개하지 않은 코스는 스왑한 시설이 검증돼있지 않아도 된다 — 공개할 때 다시 걸린다.
+        Course course = ownedCourseWithStops(1L, 2L, 3L);
+        Facility six = facility(6L, "F");
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(6L)).thenReturn(Optional.of(six));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.replaceStop(1L, 10L, 1, 6L);
+
+        assertThat(result.stopIds()).containsExactly(1L, 6L, 3L);
+        org.mockito.Mockito.verifyNoInteractions(petCheckRepository);
+    }
+
+    @Test
     void 공유_코드가_없으면_새로_발급된다() {
         Course course = ownedCourseWithStops(1L, 2L);
         when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
@@ -247,6 +369,8 @@ class CourseCommandServiceTest {
         org.mockito.Mockito.verify(courseRepository).save(savedCourse.capture());
         assertThat(savedCourse.getValue().isOwnedBy(2L)).isTrue();
         assertThat(savedCourse.getValue()).isNotSameAs(original);
+        // 복사되면 원본 소유자(1L)에게 경험치가 지급된다 — 복사한 사람(2L)이 아니다.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_SHARED_COPY), any(), eq(15));
     }
 
     @Test
@@ -267,6 +391,23 @@ class CourseCommandServiceTest {
     }
 
     @Test
+    void 자기_코스를_자기_공유_코드로_복사하면_경험치가_지급되지_않는다() {
+        // 원 소유자(1L)와 복사한 사람(1L)이 같으면 courseId가 매번 새로 생겨 평생 1회 검사를
+        // 통과해버리므로, 실제 참여 없이 반복 복사로 XP를 파밍할 수 있었다 — 자기 복사는 막는다.
+        Course original = ownedCourseWithStops(1L, 2L);
+        ReflectionTestUtils.setField(original, "shareCode", "CRS-SELFCOPY1");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L)));
+        when(courseRepository.findByShareCode("CRS-SELFCOPY1")).thenReturn(Optional.of(original));
+        when(courseRepository.save(org.mockito.ArgumentMatchers.any(Course.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        courseCommandService.copySharedCourse(1L, "CRS-SELFCOPY1");
+
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+    }
+
+    @Test
     void 존재하지_않는_공유_코드로_복사하면_COURSE4044() {
         when(userRepository.findById(2L)).thenReturn(Optional.of(user(2L)));
         when(courseRepository.findByShareCode("CRS-NOTFOUND1")).thenReturn(Optional.empty());
@@ -275,11 +416,38 @@ class CourseCommandServiceTest {
                 .isInstanceOf(GeneralException.class);
     }
 
+    // 공개 자격 검사(판별 기록 + 리뷰)를 통과시키는 스텁 — 넘긴 모든 facilityId에 대해 둘 다
+    // 있다고 응답한다.
+    private void stubVerified(
+            Long userId,
+            Long... facilityIds
+    ) {
+        for (Long facilityId : facilityIds) {
+            when(petCheckRepository.existsByUserIdAndFacilityFacilityId(userId, facilityId)).thenReturn(true);
+            when(reviewRepository.existsByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facilityId, userId)).thenReturn(true);
+        }
+    }
+
     private Course ownedCourseWithStops(Long... facilityIds) {
         Course course = Course.builder()
                 .user(user(1L))
                 .name("몽이 코스")
                 .source(CourseSource.CUSTOM)
+                .build();
+        List<Facility> stops = List.of(facilityIds).stream()
+                .map(id -> facility(id, "시설" + id))
+                .toList();
+        course.replaceStops(stops);
+        ReflectionTestUtils.setField(course, "courseId", 10L);
+        return course;
+    }
+
+    private Course ownedPublicCourseWithStops(Long... facilityIds) {
+        Course course = Course.builder()
+                .user(user(1L))
+                .name("몽이 코스")
+                .source(CourseSource.CUSTOM)
+                .isPublic(true)
                 .build();
         List<Facility> stops = List.of(facilityIds).stream()
                 .map(id -> facility(id, "시설" + id))

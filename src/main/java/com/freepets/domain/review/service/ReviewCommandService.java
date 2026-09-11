@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.facility.service.FacilityGradeCacheService;
+import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.service.GamificationService;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
@@ -47,6 +49,11 @@ public class ReviewCommandService {
     private final UserRepository userRepository;
     private final PetRepository petRepository;
     private final PetCheckRepository petCheckRepository;
+    private final GamificationService gamificationService;
+
+    // 리뷰 신규 작성 1건당 지급하는 경험치(수정은 미지급). 사진 첨부 가산점은 리뷰에 사진 필드
+    // 자체가 아직 없어 보류했다.
+    private static final int REVIEW_XP = 20;
 
     // 리뷰가 바뀌면 시설의 친화도 점수·리뷰 수·발자국 등급을 다시 계산해둔다. 발자국 랭킹이
     // 전체 시설을 점수순으로 정렬해야 해서, 조회 시점에 집계하면 매 요청마다 리뷰 전체를 훑게 된다.
@@ -73,7 +80,8 @@ public class ReviewCommandService {
         Review existingReview = reviewRepository
                 .findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facilityId, userId)
                 .orElse(null);
-        Review review = existingReview == null
+        boolean isNewReview = existingReview == null;
+        Review review = isNewReview
                 ? createReview(request, facility, user)
                 : updateReview(existingReview, request);
 
@@ -83,6 +91,10 @@ public class ReviewCommandService {
         Review savedReview = saveReview(review);
 
         facilityGradeCacheService.refresh(facilityId);
+
+        if (isNewReview) {
+            gamificationService.grantXp(userId, XpSourceType.REVIEW, savedReview.getReviewId(), REVIEW_XP);
+        }
 
         return ReviewConverter.toUpsertResult(savedReview);
     }

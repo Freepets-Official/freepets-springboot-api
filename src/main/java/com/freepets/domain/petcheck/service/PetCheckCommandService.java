@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.service.GamificationService;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.petcheck.converter.PetCheckConverter;
@@ -34,6 +36,11 @@ public class PetCheckCommandService {
     private final FacilityRepository facilityRepository;
     private final UserRepository userRepository;
     private final PetCheckJudgeService petCheckJudgeService;
+    private final GamificationService gamificationService;
+
+    // 판별 요청 1회당 지급하는 경험치. 구체 수치는 게이미피케이션 도메인의 다른 상수(LevelCurve
+    // 등)처럼 엔지니어링 제안값이다.
+    private static final int PETCHECK_XP = 5;
 
     // POST /api/v1/ai/check — 개·고양이 여러 마리 그룹 판별. 규칙 엔진(Claude 호출 없음).
     // 개·고양이 외 종은 프론트가 이 API를 아예 호출하지 않는다(docs/03-ai-prompts.md §1).
@@ -65,6 +72,8 @@ public class PetCheckCommandService {
         }
 
         PetCheck savedPetCheck = petCheckRepository.save(petCheck);
+
+        gamificationService.grantXp(userId, XpSourceType.PETCHECK, savedPetCheck.getCheckId(), PETCHECK_XP);
 
         return PetCheckConverter.toCheckResult(savedPetCheck);
     }

@@ -3,6 +3,8 @@ package com.freepets.domain.petsatisfaction.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -25,6 +27,8 @@ import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.service.GamificationService;
 import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
@@ -49,6 +53,9 @@ class PetSatisfactionCommandServiceTest {
 
     @Mock
     private PetRepository petRepository;
+
+    @Mock
+    private GamificationService gamificationService;
 
     @InjectMocks
     private PetSatisfactionCommandService petSatisfactionCommandService;
@@ -119,6 +126,8 @@ class PetSatisfactionCommandServiceTest {
         assertThat(result.petId()).isEqualTo(1L);
         assertThat(result.facilityId()).isEqualTo(7L);
         assertThat(result.score()).isEqualTo(9.8f);
+        // 신규 평가에만 경험치가 지급되는지(게이미피케이션 훅).
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.SATISFACTION), any(), eq(10));
     }
 
     @Test
@@ -142,6 +151,8 @@ class PetSatisfactionCommandServiceTest {
 
         assertThat(result.score()).isEqualTo(7.1f);
         assertThat(existing.getScore()).isEqualTo(7.1f);
+        // 재평가(수정)는 경험치를 지급하지 않는다(게이미피케이션 결정).
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
     }
 
     @Test

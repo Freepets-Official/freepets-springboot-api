@@ -35,6 +35,13 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             Long userId
     );
 
+    // 코스 공개 자격 검사(CourseCommandService)가 쓴다 — 리뷰 엔티티 전체를 안 불러오고 존재
+    // 여부만 필요하다.
+    boolean existsByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(
+            Long facilityId,
+            Long userId
+    );
+
     Optional<Review> findByReviewIdAndDeletedAtIsNull(Long reviewId);
 
     /**

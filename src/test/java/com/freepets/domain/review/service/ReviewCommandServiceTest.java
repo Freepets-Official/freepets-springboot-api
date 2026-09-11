@@ -3,7 +3,9 @@ package com.freepets.domain.review.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -31,6 +33,8 @@ import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.facility.service.FacilityGradeCacheService;
+import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.service.GamificationService;
 import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.pet.entity.Pet;
@@ -74,6 +78,9 @@ class ReviewCommandServiceTest {
 
     @Mock
     private FacilityGradeCacheService facilityGradeCacheService;
+
+    @Mock
+    private GamificationService gamificationService;
 
     @InjectMocks
     private ReviewCommandService reviewCommandService;
@@ -154,6 +161,8 @@ class ReviewCommandServiceTest {
         assertThat(result.petIds()).containsExactlyInAnyOrder(1L, 2L);
         assertThat(result.ratingSpace()).isEqualTo(5);
         assertThat(result.tags()).containsExactlyInAnyOrder(Tag.SPACIOUS, Tag.WATER_BOWL);
+        // 신규 작성에만 경험치가 지급되는지(게이미피케이션 훅).
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20));
     }
 
     @Test
@@ -313,6 +322,8 @@ class ReviewCommandServiceTest {
         assertThat(existingReview.getTags()).hasSize(2);
         // 요청에 visitedAt을 안 보내면 기존 방문일을 그대로 유지해야 한다.
         assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
+        // 수정은 경험치를 지급하지 않는다(게이미피케이션 결정).
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
     }
 
     @Test

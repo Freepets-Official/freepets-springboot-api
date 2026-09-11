@@ -111,7 +111,7 @@ class UserCommandServiceTest {
         UserRequestDTO.UpdateAccountRequest request = new UserRequestDTO.UpdateAccountRequest();
         request.setNickname("newNickname");
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
 
         UserResponseDTO.AccountResult result = userCommandService.updateAccount(1L, request);
 
@@ -130,7 +130,7 @@ class UserCommandServiceTest {
         request.setNickname("newNickname");
         request.setAvatar(avatar);
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
         when(s3ImageService.upload(avatar)).thenReturn("https://s3-url/new.jpg");
 
         UserResponseDTO.AccountResult result = userCommandService.updateAccount(1L, request);
@@ -148,7 +148,7 @@ class UserCommandServiceTest {
         request.setNickname("newNickname");
         request.setAvatar(avatar);
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
         when(s3ImageService.upload(avatar)).thenReturn("https://s3-url/new.jpg");
 
         userCommandService.updateAccount(1L, request);
@@ -161,7 +161,7 @@ class UserCommandServiceTest {
         UserRequestDTO.UpdateAccountRequest request = new UserRequestDTO.UpdateAccountRequest();
         request.setNickname("newNickname");
 
-        when(userRepository.findById(1L)).thenReturn(Optional.empty());
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
 
         GeneralException exception = assertThrows(
                 GeneralException.class,
@@ -179,7 +179,7 @@ class UserCommandServiceTest {
         request.setToken("expo-token-1");
         request.setPlatform("ANDROID");
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
 
         userCommandService.registerPushToken(1L, request);
 
@@ -197,7 +197,7 @@ class UserCommandServiceTest {
         UserRequestDTO.RegisterPushTokenRequest request = new UserRequestDTO.RegisterPushTokenRequest();
         request.setToken("expo-token-1");
 
-        when(userRepository.findById(1L)).thenReturn(Optional.empty());
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
 
         GeneralException exception = assertThrows(
                 GeneralException.class,
@@ -246,5 +246,99 @@ class UserCommandServiceTest {
 
         assertThat(userCommandService.unregisterPushToken(1L, "expo-token-1")).isNotNull();
         verify(userDeviceTokenRepository, never()).delete(any());
+    }
+
+    @Test
+    void withdraw_LOCAL_계정은_비밀번호가_맞으면_탈퇴된다() {
+        User user = createUser();
+        user.update(user.getNickname(), "https://s3-url/avatar.jpg");
+        UserRequestDTO.WithdrawRequest request = new UserRequestDTO.WithdrawRequest();
+        request.setPassword("rawPassword");
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("rawPassword", "encodedPassword")).thenReturn(true);
+
+        UserResponseDTO.WithdrawResult result = userCommandService.withdraw(1L, request);
+
+        assertThat(result).isNotNull();
+        assertThat(user.isDeleted()).isTrue();
+        // 재가입을 막지 않으려면 인증에 쓰이는 값이 비워져야 한다.
+        assertThat(user.getEmail()).isNull();
+        assertThat(user.getPasswordHash()).isNull();
+        assertThat(user.getAvatarUri()).isNull();
+        // 이미 남에게 보이는 콘텐츠(리뷰 등)의 작성자 표시가 깨지지 않아야 하므로 닉네임은 남긴다.
+        assertThat(user.getNickname()).isEqualTo("tester");
+        verify(userDeviceTokenRepository).deleteAllByUser_Id(1L);
+        verify(s3ImageService).delete("https://s3-url/avatar.jpg");
+    }
+
+    @Test
+    void withdraw_LOCAL_계정은_비밀번호가_틀리면_MEMBER4006() {
+        User user = createUser();
+        UserRequestDTO.WithdrawRequest request = new UserRequestDTO.WithdrawRequest();
+        request.setPassword("wrongPassword");
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("wrongPassword", "encodedPassword")).thenReturn(false);
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> userCommandService.withdraw(1L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.MEMBER4006);
+        assertThat(user.isDeleted()).isFalse();
+        verifyNoInteractions(userDeviceTokenRepository, s3ImageService);
+    }
+
+    @Test
+    void withdraw_LOCAL_계정은_비밀번호를_안_보내면_MEMBER4006() {
+        User user = createUser();
+        UserRequestDTO.WithdrawRequest request = new UserRequestDTO.WithdrawRequest();
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> userCommandService.withdraw(1L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.MEMBER4006);
+        assertThat(user.isDeleted()).isFalse();
+    }
+
+    @Test
+    void withdraw_소셜_계정은_비밀번호_없이_탈퇴된다() {
+        User user = User.builder()
+                .email("social@test.com")
+                .passwordHash(null)
+                .nickname("socialTester")
+                .provider(Provider.KAKAO)
+                .providerId("kakao-1")
+                .build();
+        UserRequestDTO.WithdrawRequest request = new UserRequestDTO.WithdrawRequest();
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+
+        UserResponseDTO.WithdrawResult result = userCommandService.withdraw(1L, request);
+
+        assertThat(result).isNotNull();
+        assertThat(user.isDeleted()).isTrue();
+        assertThat(user.getProviderId()).isNull();
+        verifyNoInteractions(passwordEncoder);
+        verifyNoInteractions(s3ImageService);
+    }
+
+    @Test
+    void withdraw_존재하지_않거나_이미_탈퇴한_유저면_MEMBER4005() {
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> userCommandService.withdraw(1L, new UserRequestDTO.WithdrawRequest())
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.MEMBER4005);
+        verifyNoInteractions(userDeviceTokenRepository, s3ImageService);
     }
 }

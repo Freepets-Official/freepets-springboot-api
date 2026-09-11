@@ -117,3 +117,24 @@ ALTER TABLE freepets.users ALTER COLUMN email DROP NOT NULL;
 --
 -- 상태: ⬜ 미적용
 UPDATE calendar_events SET end_date = start_date WHERE end_date IS NULL;
+
+-- ============================================================
+-- 2026-09-12 — 코스 "거리 제한 없음" 선택 시 500 오류 (courses.distance_option CHECK 제약조건 갱신, #48)
+-- ============================================================
+-- CourseDistanceOption에 UNLIMITED가 나중에 추가됐는데(#48 초기 커밋 d53f663엔 없었고,
+-- f4d0042에서 추가됨), courses.distance_option 컬럼은 테이블이 처음 만들어질 때 Hibernate가
+-- 그 시점의 enum 값(ONE_KM/FIVE_KM/TEN_KM/TWENTY_KM/THIRTY_KM)만으로 CHECK 제약조건을 자동
+-- 생성해뒀을 가능성이 높다 — denial_reason·report_type·status(바로 위 두 항목)와 완전히 같은
+-- 패턴이다. ddl-auto=update는 CHECK 제약조건을 자동으로 갱신하지 않는다.
+--
+-- "거리 제한 없음"을 선택하면 GET /courses/preset(단일 테마 조합)이 그 값을 courses 테이블에
+-- 캐시로 저장하려다 이 CHECK 제약조건을 위반해 500이 난다(리포트: "거리 제한 없음을 선택했을때
+-- 서버 내 오류 발생"). liked/similar는 이 값을 DB에 저장하지 않고 메모리에서만 써서 영향이 없다.
+--
+-- 실행 전 SQL Editor로 기존 제약조건이 실제로 있는지, 있다면 정확한 이름·값 목록을 먼저
+-- 확인할 것 — 위 사례들처럼 이름이 다를 수 있다. 아래는 Postgres 기본 명명 규칙 기준 추정이다.
+--
+-- 상태: ⬜ 미적용
+ALTER TABLE freepets.courses DROP CONSTRAINT IF EXISTS courses_distance_option_check;
+ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
+    CHECK (distance_option IN ('ONE_KM', 'FIVE_KM', 'TEN_KM', 'TWENTY_KM', 'THIRTY_KM', 'UNLIMITED'));

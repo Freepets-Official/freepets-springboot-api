@@ -66,7 +66,7 @@ class GamificationServiceTest {
         setUpService();
         User user = newUser(); // totalXp=0, level=1
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.REVIEW, 100L))
                 .thenReturn(false);
 
@@ -85,7 +85,7 @@ class GamificationServiceTest {
         setUpService();
         User user = newUser();
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.REVIEW, 100L))
                 .thenReturn(false);
 
@@ -102,7 +102,7 @@ class GamificationServiceTest {
         User user = newUser();
         user.toggleLevelUpNotification(false);
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.REVIEW, 100L))
                 .thenReturn(false);
 
@@ -110,6 +110,27 @@ class GamificationServiceTest {
 
         assertThat(user.getLevel()).isEqualTo(2);
         verify(gamificationNotificationService, never()).notifyLevelUp(any(), anyInt());
+    }
+
+    @Test
+    void 검사와_저장_사이_레이스로_유니크_제약_위반이_나면_조용히_스킵한다() {
+        setUpService();
+        User user = newUser();
+
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.REVIEW, 100L))
+                .thenReturn(false);
+        when(xpEventRepository.save(any(XpEvent.class)))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("uk_xp_events_user_source"));
+
+        gamificationService.grantXp(1L, XpSourceType.REVIEW, 100L, 150);
+
+        // uk_xp_events_user_source 위반은 동시에 들어온 같은 지급이 이미 반영됐다는 뜻이라,
+        // 이번 호출에서는 유저 상태를 건드리지 않고 조용히 끝나야 한다.
+        assertThat(user.getTotalXp()).isZero();
+        assertThat(user.getLevel()).isEqualTo(1);
+        verifyNoInteractions(gamificationNotificationService);
+        verifyNoInteractions(badgeEvaluationService);
     }
 
     @Test

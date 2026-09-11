@@ -121,17 +121,18 @@ public class User extends BaseEntity {
     }
 
     /**
-     * 경험치를 더하고 새 레벨을 반영한다. 레벨은 이 메서드가 스스로 계산하지 않고 호출부
-     * (GamificationService)가 {@code LevelCurve}로 미리 계산해서 넘긴다 — User는 계정 도메인
-     * 소속이라 gamification 도메인의 계산 공식을 몰라야 한다.
+     * 누적 경험치와 레벨을 반영한다. 둘 다 호출부(GamificationService)가 {@code LevelCurve}로
+     * 미리 계산해서 넘긴다 — User는 계정 도메인 소속이라 gamification 도메인의 계산 공식을
+     * 몰라야 하고, 이 메서드는 그 결과를 그대로 대입만 한다(같은 덧셈을 여기서 다시 하면
+     * 호출부의 계산과 이 메서드의 계산이 갈라질 여지가 생긴다).
      *
      * @return 이번 지급으로 레벨이 올랐는지
      */
     public boolean gainXp(
-            long amount,
+            long newTotalXp,
             int newLevel
     ) {
-        this.totalXp += amount;
+        this.totalXp = newTotalXp;
         boolean isLeveledUp = newLevel > this.level;
         this.level = newLevel;
         return isLeveledUp;

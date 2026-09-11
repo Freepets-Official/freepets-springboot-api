@@ -15,6 +15,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -32,6 +33,14 @@ import lombok.NoArgsConstructor;
         indexes = {
                 // 하루 상한 조회(user_id + source_type + createdAt 범위)가 이 인덱스를 탄다.
                 @Index(name = "idx_xp_events_user_source_created", columnList = "user_id, source_type, created_at")
+        },
+        uniqueConstraints = {
+                // GamificationService가 저장 전에 existsBy...로 중복 지급을 걸러내지만, 그 확인과
+                // 저장 사이에는 여전히 레이스가 남는다(동시에 두 요청이 같은 확인을 통과해버릴 수
+                // 있음). sourceId가 있는 지급은 항상 그 값이 유일하게 발급되는 값(리뷰 id, 코스
+                // id 등)이라 정상 흐름에서는 절대 겹치지 않으므로, DB 제약으로 마지막 방어선을
+                // 둔다 — UserBadge의 uk_user_badges_user_badge와 같은 목적.
+                @UniqueConstraint(name = "uk_xp_events_user_source", columnNames = {"user_id", "source_type", "source_id"})
         }
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -50,9 +59,10 @@ public class XpEvent extends BaseEntity {
     @Column(name = "source_type", nullable = false, length = 30)
     private XpSourceType sourceType;
 
-    // 이 지급을 유발한 행의 id(리뷰 id, 코스 id 등). 평생 1회 지급 판단에만 쓰고, 하루 상한처럼
-    // 여러 번 지급 가능한 유형(판별 등)은 null로 둔다.
-    @Column(name = "source_id")
+    // 이 지급을 유발한 행의 id(판별 id, 리뷰 id, 코스 id 등) — 모든 호출부가 항상 값을 넘긴다.
+    // 매번 새로 생성되는 행의 id라 같은 유형이 하루에 여러 번 지급돼도(판별 등) 자연히
+    // sourceId가 매번 달라 평생 1회 검사·유니크 제약과 부딪히지 않는다.
+    @Column(name = "source_id", nullable = false)
     private Long sourceId;
 
     @Column(nullable = false)

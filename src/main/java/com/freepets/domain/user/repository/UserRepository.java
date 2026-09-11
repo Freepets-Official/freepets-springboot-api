@@ -42,4 +42,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * 안 되므로 이 메서드로 존재하지 않는 것처럼 취급한다.
      */
     Optional<User> findByIdAndDeletedAtIsNull(Long id);
+
+    /**
+     * {@code JwtAuthenticationFilter} 전용 — 인증 단계에서 탈퇴한 유저의 토큰을 걸러낸다.
+     * 이 확인이 없으면, 이미 탈퇴한 계정도 (아직 만료되지 않은) 예전 액세스 토큰으로 다른
+     * 모든 도메인(리뷰 작성, 코스 공개 등)의 API를 계속 호출할 수 있다 — 각 서비스가 저마다
+     * userId를 findById로 조회하기 전에, 인증 경계에서 한 번에 막는다.
+     */
+    boolean existsByIdAndDeletedAtIsNull(Long id);
 }

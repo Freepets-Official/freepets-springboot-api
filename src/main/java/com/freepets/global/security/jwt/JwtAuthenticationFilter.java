@@ -9,6 +9,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.freepets.domain.user.repository.UserRepository;
+import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
 
 import jakarta.servlet.FilterChain;
@@ -26,6 +28,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtProvider jwtProvider;
+    private final UserRepository userRepository;
 
     @Override
     protected void doFilterInternal(
@@ -38,6 +41,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (token != null) {
             try {
                 Long userId = jwtProvider.getUserId(token);
+                // 서명·만료는 유효해도, 그 사이 탈퇴한 계정이면 인증 단계에서 걸러낸다 — 이
+                // 리포는 로그아웃 때도 서버 쪽 토큰 무효화가 없어서(순수 서명 검증), 여기서
+                // 막지 않으면 탈퇴 후에도 토큰이 자연 만료될 때까지 다른 모든 도메인 API를
+                // 계속 호출할 수 있다.
+                if (!userRepository.existsByIdAndDeletedAtIsNull(userId)) {
+                    throw new GeneralException(ErrorStatus.MEMBER4007);
+                }
                 SecurityContextHolder.getContext().setAuthentication(createAuthentication(userId));
             } catch (GeneralException exception) {
                 SecurityContextHolder.clearContext();

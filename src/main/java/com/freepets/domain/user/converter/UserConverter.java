@@ -100,4 +100,8 @@ public class UserConverter {
     public static UserResponseDTO.PushTokenResult toPushTokenResult() {
         return new UserResponseDTO.PushTokenResult();
     }
+
+    public static UserResponseDTO.WithdrawResult toWithdrawResult() {
+        return new UserResponseDTO.WithdrawResult();
+    }
 }

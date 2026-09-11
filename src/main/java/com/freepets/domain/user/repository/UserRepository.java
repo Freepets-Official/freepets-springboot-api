@@ -35,4 +35,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.id = :id")
     Optional<User> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * 계정 조회·수정·탈퇴 등 "본인 계정" 엔드포인트 전용 — 이미 탈퇴한 유저는 findById로는
+     * 여전히 찾아지지만(행 자체는 남아있음), 탈퇴한 계정을 조회·수정·재탈퇴할 수 있게 두면
+     * 안 되므로 이 메서드로 존재하지 않는 것처럼 취급한다.
+     */
+    Optional<User> findByIdAndDeletedAtIsNull(Long id);
 }

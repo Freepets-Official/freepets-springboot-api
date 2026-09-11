@@ -1,5 +1,6 @@
 package com.freepets.domain.user.entity;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,7 +41,14 @@ public class User extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 255)
+    /**
+     * 탈퇴한 유저는 이 값을 null로 비운다({@link #withdraw}). 같은 이메일로 즉시 재가입할 수
+     * 있어야 해서(재가입 시 유니크 제약과 부딪히면 안 됨) NOT NULL을 걸 수 없다.
+     *
+     * <p>ddl-auto=update가 NOT NULL을 자동으로 풀어주지 않으므로
+     * 기존 DB에는 {@code db/pending-manual-migrations.sql}의 ALTER를 직접 실행해야 한다.
+     */
+    @Column(unique = true, length = 255)
     private String email;
 
     /**
@@ -92,6 +100,12 @@ public class User extends BaseEntity {
     @Column(name = "level_up_notification_enabled", nullable = false)
     private boolean levelUpNotificationEnabled;
 
+    // 탈퇴 시점. null이면 활성 계정이다. Pet·Review처럼 소프트 삭제 — 탈퇴해도 이 유저가 쓴
+    // 리뷰·공개 코스·거부 제보 등 남에게도 보이는 콘텐츠는 그대로 남아야 해서 행 자체를
+    // 지우지 않는다.
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     @Builder
     private User(
             String email,
@@ -140,6 +154,30 @@ public class User extends BaseEntity {
 
     public void toggleLevelUpNotification(boolean enabled) {
         this.levelUpNotificationEnabled = enabled;
+    }
+
+    /**
+     * 회원 탈퇴. 인증에 쓰이는 값(이메일·소셜 식별자·비밀번호)과 개인 식별 이미지(아바타)를
+     * 비워 같은 이메일·소셜 계정으로 즉시 재가입할 수 있게 하고, 더는 로그인할 수 없게 한다.
+     *
+     * <p>닉네임은 남긴다 — 이미 남에게 보이는 리뷰·공개 코스 등에서 작성자 이름으로 쓰이고
+     * 있어(예: {@code ReviewConverter}), 지금 지우면 기존 콘텐츠 표시가 깨진다.
+     *
+     * <p>소유한 반려동물도 함께 소프트 삭제한다 — 탈퇴한 계정의 반려동물 프로필은 더 쓸 일이
+     * 없다. 아바타 이미지 파일(S3) 자체를 지우는 것은 호출부(UserCommandService)의 책임이다 —
+     * 엔티티는 외부 I/O를 하지 않는다.
+     */
+    public void withdraw() {
+        this.deletedAt = LocalDateTime.now();
+        this.email = null;
+        this.providerId = null;
+        this.passwordHash = null;
+        this.avatarUri = null;
+        this.pets.forEach(Pet::delete);
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 
 }

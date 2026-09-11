@@ -21,4 +21,8 @@ public interface UserDeviceTokenRepository extends JpaRepository<UserDeviceToken
 
     // FCM 발송 결과 더 이상 유효하지 않다고 확인된 토큰을 정리할 때 쓴다.
     void deleteAllByTokenIn(List<String> tokens);
+
+    // 회원 탈퇴 시 그 유저의 모든 기기 토큰을 정리한다 — 안 지우면 탈퇴 후에도 이 유저에게
+    // 계속 푸시를 시도하다 FCM 응답을 보고서야(무효 토큰 정리 경로) 뒤늦게 지워진다.
+    void deleteAllByUser_Id(Long userId);
 }

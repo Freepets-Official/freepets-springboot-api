@@ -96,6 +96,17 @@ ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_status_che
     CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED', 'APPLIED'));
 
 -- ============================================================
+-- 2026-09-11 — 회원 탈퇴 API 추가 (feat/withdraw-account)
+-- ============================================================
+-- 탈퇴 시 users.email을 null로 비워야 같은 이메일로 즉시 재가입할 수 있다(유니크 제약과
+-- 안 부딪히게). 지금까지 email은 NOT NULL이었는데, ddl-auto=update는 NOT NULL을 자동으로
+-- 풀어주지 않으므로 수동 조치가 필요하다. 기존 활성 유저 데이터는 영향이 없다(값이 이미
+-- 채워져 있고 제약만 느슨해진다).
+--
+-- 상태: ⬜ 미적용
+ALTER TABLE freepets.users ALTER COLUMN email DROP NOT NULL;
+
+-- ============================================================
 -- 2026-09-10 — 캘린더 일정 기간(endDate) 지원 (#68)
 -- ============================================================
 -- 여행처럼 며칠에 걸치는 일정을 표현하려고 calendar_events.end_date 컬럼을 추가했다.

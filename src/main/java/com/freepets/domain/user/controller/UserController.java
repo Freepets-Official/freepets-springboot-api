@@ -66,6 +66,16 @@ public class UserController {
         );
     }
 
+    @DeleteMapping("/account")
+    public ApiResponse<UserResponseDTO.WithdrawResult> withdraw(
+            @AuthenticationPrincipal Long userId,
+            @RequestBody UserRequestDTO.WithdrawRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                userCommandService.withdraw(userId, request)
+        );
+    }
+
     @PostMapping("/push-tokens")
     public ApiResponse<UserResponseDTO.PushTokenResult> registerPushToken(
             @AuthenticationPrincipal Long userId,

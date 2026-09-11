@@ -140,8 +140,44 @@ public class UserCommandService {
         return UserConverter.toPushTokenResult();
     }
 
+    /**
+     * DELETE /api/v1/users/account — 회원 탈퇴. LOCAL 계정은 현재 비밀번호를 재확인한다
+     * (세션이 탈취된 상태에서의 실수·악의적 탈퇴를 막는 최소 안전장치) — 소셜 계정은
+     * 비밀번호가 없어 유효한 토큰 인증만으로 처리한다.
+     *
+     * <p>이미 탈퇴한 계정이면 존재하지 않는 것처럼 MEMBER4005를 던진다(재탈퇴 방지).
+     *
+     * <p><b>알려진 한계</b>: 이 리포엔 로그아웃 때도 서버 쪽 토큰 무효화가 없다(JWT는 순수
+     * 서명 검증, 블랙리스트 없음) — 탈퇴 직후에도 이미 발급된 액세스 토큰은 자연 만료 전까지
+     * 계속 인증에 쓰일 수 있다. 이 계정 엔드포인트(조회·수정·탈퇴)는 {@code
+     * findByIdAndDeletedAtIsNull}로 탈퇴 후 접근을 막지만, 다른 도메인(리뷰 작성 등)은
+     * 여전히 {@code findById}로 이 유저를 찾을 수 있다 — 기존 로그아웃 처리와 같은 한계다.
+     */
+    public UserResponseDTO.WithdrawResult withdraw(
+            Long userId,
+            UserRequestDTO.WithdrawRequest request
+    ) {
+        User user = findUser(userId);
+
+        if (user.getPasswordHash() != null
+                && (request.getPassword() == null
+                        || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash()))) {
+            throw new GeneralException(ErrorStatus.MEMBER4006);
+        }
+
+        String avatarUri = user.getAvatarUri();
+        user.withdraw();
+        userDeviceTokenRepository.deleteAllByUser_Id(userId);
+
+        if (avatarUri != null) {
+            s3ImageService.delete(avatarUri);
+        }
+
+        return UserConverter.toWithdrawResult();
+    }
+
     private User findUser(Long userId) {
-        return userRepository.findById(userId)
+        return userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
     }
 

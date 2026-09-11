@@ -101,8 +101,8 @@ public class User extends BaseEntity {
     private boolean levelUpNotificationEnabled;
 
     // 탈퇴 시점. null이면 활성 계정이다. Pet·Review처럼 소프트 삭제 — 탈퇴해도 이 유저가 쓴
-    // 리뷰·공개 코스·거부 제보 등 남에게도 보이는 콘텐츠는 그대로 남아야 해서 행 자체를
-    // 지우지 않는다.
+    // 리뷰·공개 코스·거부 제보 등 남에게도 보이는 콘텐츠 행 자체는 지우지 않는다(작성자 표시는
+    // withdraw()가 닉네임을 "탈퇴한 계정"으로 바꿔서 처리한다).
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
@@ -156,12 +156,18 @@ public class User extends BaseEntity {
         this.levelUpNotificationEnabled = enabled;
     }
 
+    // 탈퇴한 유저의 닉네임은 이 값으로 덮어쓴다 — 실명·별명 등 개인을 특정할 수 있는 표시명이라
+    // 남에게 보이는 콘텐츠(리뷰 등)에 그대로 남기지 않는다.
+    private static final String WITHDRAWN_NICKNAME = "탈퇴한 계정";
+
     /**
-     * 회원 탈퇴. 인증에 쓰이는 값(이메일·소셜 식별자·비밀번호)과 개인 식별 이미지(아바타)를
-     * 비워 같은 이메일·소셜 계정으로 즉시 재가입할 수 있게 하고, 더는 로그인할 수 없게 한다.
+     * 회원 탈퇴. 인증에 쓰이는 값(이메일·소셜 식별자·비밀번호)과 개인을 식별할 수 있는 값
+     * (닉네임·아바타)을 비워, 같은 이메일·소셜 계정으로 즉시 재가입할 수 있게 하면서도 더는
+     * 로그인할 수 없게 한다.
      *
-     * <p>닉네임은 남긴다 — 이미 남에게 보이는 리뷰·공개 코스 등에서 작성자 이름으로 쓰이고
-     * 있어(예: {@code ReviewConverter}), 지금 지우면 기존 콘텐츠 표시가 깨진다.
+     * <p>닉네임은 {@link #WITHDRAWN_NICKNAME}으로 바뀐다 — 이미 남에게 보이는 리뷰·공개 코스
+     * 등에서 작성자 이름으로 쓰이고 있어(예: {@code ReviewConverter}), 탈퇴 후에는 그 표시도
+     * "탈퇴한 계정"으로 나가야 한다.
      *
      * <p>소유한 반려동물도 함께 소프트 삭제한다 — 탈퇴한 계정의 반려동물 프로필은 더 쓸 일이
      * 없다. 아바타 이미지 파일(S3) 자체를 지우는 것은 호출부(UserCommandService)의 책임이다 —
@@ -173,6 +179,7 @@ public class User extends BaseEntity {
         this.providerId = null;
         this.passwordHash = null;
         this.avatarUri = null;
+        this.nickname = WITHDRAWN_NICKNAME;
         this.pets.forEach(Pet::delete);
     }
 

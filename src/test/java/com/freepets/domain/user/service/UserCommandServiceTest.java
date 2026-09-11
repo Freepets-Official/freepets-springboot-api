@@ -266,8 +266,9 @@ class UserCommandServiceTest {
         assertThat(user.getEmail()).isNull();
         assertThat(user.getPasswordHash()).isNull();
         assertThat(user.getAvatarUri()).isNull();
-        // 이미 남에게 보이는 콘텐츠(리뷰 등)의 작성자 표시가 깨지지 않아야 하므로 닉네임은 남긴다.
-        assertThat(user.getNickname()).isEqualTo("tester");
+        // 닉네임은 개인을 특정할 수 있는 표시명이라, 이미 남에게 보이는 콘텐츠(리뷰 등)에도
+        // "탈퇴한 계정"으로 나가야 한다.
+        assertThat(user.getNickname()).isEqualTo("탈퇴한 계정");
         verify(userDeviceTokenRepository).deleteAllByUser_Id(1L);
         verify(s3ImageService).delete("https://s3-url/avatar.jpg");
     }
@@ -325,6 +326,7 @@ class UserCommandServiceTest {
         assertThat(result).isNotNull();
         assertThat(user.isDeleted()).isTrue();
         assertThat(user.getProviderId()).isNull();
+        assertThat(user.getNickname()).isEqualTo("탈퇴한 계정");
         verifyNoInteractions(passwordEncoder);
         verifyNoInteractions(s3ImageService);
     }

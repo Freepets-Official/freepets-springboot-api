@@ -66,13 +66,19 @@ public class UserController {
         );
     }
 
+    /**
+     * DELETE에 바디를 싣는 요청이라 {@code required = false}로 둔다 — 소셜 계정은 비밀번호가
+     * 없어 바디 자체를 안 보낼 수 있는데, 일부 HTTP 클라이언트·프록시는 DELETE 요청에 바디를
+     * 안 붙이거나 지워버린다. 기본값으로 요구하면 그런 요청이 서비스 로직(비밀번호 없어도
+     * 되는 소셜 계정 처리)에 닿기 전에 "필수 바디 없음" 400으로 먼저 막혀버린다.
+     */
     @DeleteMapping("/account")
     public ApiResponse<UserResponseDTO.WithdrawResult> withdraw(
             @AuthenticationPrincipal Long userId,
-            @RequestBody UserRequestDTO.WithdrawRequest request
+            @RequestBody(required = false) UserRequestDTO.WithdrawRequest request
     ) {
         return ApiResponse.onSuccess(
-                userCommandService.withdraw(userId, request)
+                userCommandService.withdraw(userId, request != null ? request : new UserRequestDTO.WithdrawRequest())
         );
     }
 

@@ -180,7 +180,11 @@ public class User extends BaseEntity {
         this.passwordHash = null;
         this.avatarUri = null;
         this.nickname = WITHDRAWN_NICKNAME;
-        this.pets.forEach(Pet::delete);
+        // 이미 소프트 삭제된 펫까지 다시 delete()를 부르면 원래 삭제 시각이 지금 시각으로
+        // 덮어써진다 — 아직 활성인 펫만 대상으로 한다.
+        this.pets.stream()
+                .filter(pet -> !pet.isDeleted())
+                .forEach(Pet::delete);
     }
 
     public boolean isDeleted() {

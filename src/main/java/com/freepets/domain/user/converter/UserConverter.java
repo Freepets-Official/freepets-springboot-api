@@ -30,8 +30,8 @@ public class UserConverter {
      * <p>파라미터를 {@code OAuthUserInfo}가 아니라 원시값으로 받는다. 도메인이 infra 계층의
      * 타입에 묶이면 소셜 응답 구조가 바뀔 때 유저 도메인까지 흔들리기 때문이다.
      *
-     * <p><b>값 보정</b> — {@code User.email}은 NOT NULL + UNIQUE이고 {@code nickname}도
-     * NOT NULL(50자)인데, 소셜에서는 둘 다 안 올 수 있어 여기서 채운다.
+     * <p><b>값 보정</b> — {@code User.email}은 UNIQUE(탈퇴 시 재가입을 위해 null 허용)이고
+     * {@code nickname}은 NOT NULL(50자)인데, 소셜에서는 둘 다 안 올 수 있어 여기서 채운다.
      * <ul>
      *   <li>이메일 없음(애플 비공개 릴레이 미동의, 카카오·네이버 이메일 미동의) →
      *       {@code {provider}_{providerId}@social.freepets.local}. providerId 기반이라

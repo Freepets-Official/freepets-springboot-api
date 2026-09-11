@@ -13,11 +13,4 @@ public class FacilityConditionInquiryConverter {
                 inquiry.getFacility().getFacilityId()
         );
     }
-
-    public static FacilityConditionInquiryResponseDTO.CountResult toCountResult(
-            Long facilityId,
-            long count
-    ) {
-        return new FacilityConditionInquiryResponseDTO.CountResult(facilityId, count);
-    }
 }

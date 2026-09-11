@@ -4,11 +4,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.facility.repository.FacilityRepository;
-import com.freepets.domain.report.converter.FacilityConditionInquiryConverter;
 import com.freepets.domain.report.dto.FacilityConditionInquiryResponseDTO;
 import com.freepets.domain.report.repository.FacilityConditionInquiryRepository;
-import com.freepets.global.apiPayload.code.status.ErrorStatus;
-import com.freepets.global.apiPayload.exception.GeneralException;
 
 import lombok.RequiredArgsConstructor;
 
@@ -23,11 +20,9 @@ public class FacilityConditionInquiryQueryService {
     private final FacilityRepository facilityRepository;
 
     public FacilityConditionInquiryResponseDTO.CountResult getCount(Long facilityId) {
-        if (!facilityRepository.existsById(facilityId)) {
-            throw new GeneralException(ErrorStatus.FACILITY4001);
-        }
+        FacilityExistenceValidator.requireFacility(facilityRepository, facilityId);
 
         long count = facilityConditionInquiryRepository.countByFacility_FacilityId(facilityId);
-        return FacilityConditionInquiryConverter.toCountResult(facilityId, count);
+        return new FacilityConditionInquiryResponseDTO.CountResult(facilityId, count);
     }
 }

@@ -16,8 +16,6 @@ import com.freepets.domain.report.converter.DenialReportConverter;
 import com.freepets.domain.report.dto.DenialReportResponseDTO;
 import com.freepets.domain.report.entity.FacilityReport;
 import com.freepets.domain.report.repository.FacilityReportRepository;
-import com.freepets.global.apiPayload.code.status.ErrorStatus;
-import com.freepets.global.apiPayload.exception.GeneralException;
 
 import lombok.RequiredArgsConstructor;
 
@@ -99,8 +97,6 @@ public class DenialReportQueryService {
     }
 
     private void requireFacility(Long facilityId) {
-        if (!facilityRepository.existsById(facilityId)) {
-            throw new GeneralException(ErrorStatus.FACILITY4001);
-        }
+        FacilityExistenceValidator.requireFacility(facilityRepository, facilityId);
     }
 }

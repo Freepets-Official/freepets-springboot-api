@@ -65,6 +65,23 @@ public class PetCheckQueryService {
         );
     }
 
+    /**
+     * GET /api/v1/pet-checks/{checkId} — 판별 이력 단건 상세. 목록(getMyChecks)은 요약만 주고
+     * verifyCode가 없어서, 예전 판별의 "동반 출입증"을 다시 보려면 이 API로 이미 저장된
+     * verdicts(verifyCode 포함)를 그대로 내려줘야 한다 — 그게 없으면 프론트가 판별을 새로
+     * 요청하게 되어(사용자 입장에선 "AI 판별을 또 해달라고 함") 매번 새 verifyCode가 발급되고
+     * 예전 출입증은 무효가 된 것처럼 보인다.
+     */
+    public PetCheckResponseDTO.CheckResult getCheckDetail(
+            Long userId,
+            Long checkId
+    ) {
+        PetCheck petCheck = petCheckRepository.findByCheckIdAndUser_Id(checkId, userId)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.PETCHECK4001));
+
+        return PetCheckConverter.toCheckResult(petCheck);
+    }
+
     // GET /verify/{code} — 동반 출입증 QR이 가리키는 공개 페이지가 조회한다. 인증 없음.
     public PetCheckResponseDTO.VerifyPage getVerifyPage(String verifyCode) {
         PetCheckVerdict verdict = petCheckVerdictRepository.findByVerifyCode(verifyCode)

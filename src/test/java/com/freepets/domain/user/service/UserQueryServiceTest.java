@@ -132,7 +132,7 @@ class UserQueryServiceTest {
     void getAccount_성공하면_닉네임과_아바타를_반환한다() {
         User user = createUser();
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
 
         UserResponseDTO.AccountResult result = userQueryService.getAccount(1L);
 
@@ -142,7 +142,7 @@ class UserQueryServiceTest {
 
     @Test
     void getAccount_존재하지_않는_유저면_예외를_던진다() {
-        when(userRepository.findById(1L)).thenReturn(Optional.empty());
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
 
         GeneralException exception = assertThrows(
                 GeneralException.class,

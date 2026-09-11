@@ -8,6 +8,8 @@ public class UserResponseDTO {
 
     public static class PushTokenResult {}
 
+    public static class WithdrawResult {}
+
     public record LoginResult(
             String accessToken,
             String refreshToken

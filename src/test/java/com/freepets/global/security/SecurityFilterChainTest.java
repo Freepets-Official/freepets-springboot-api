@@ -30,6 +30,7 @@ import com.freepets.domain.course.service.CourseQueryService;
 import com.freepets.domain.course.service.CourseSimilarService;
 import com.freepets.domain.user.controller.UserController;
 import com.freepets.domain.user.dto.UserResponseDTO;
+import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.domain.user.service.UserCommandService;
 import com.freepets.domain.user.service.UserQueryService;
 import com.freepets.global.config.SecurityConfig;
@@ -51,6 +52,9 @@ class SecurityFilterChainTest {
 
     @MockitoBean
     private UserQueryService userQueryService;
+
+    @MockitoBean
+    private UserRepository userRepository;
 
     @MockitoBean
     private AuthCommandService authCommandService;
@@ -90,11 +94,26 @@ class SecurityFilterChainTest {
     @Test
     void 유효한_토큰으로_보호된_경로_요청시_200을_반환한다() throws Exception {
         String token = jwtProvider.createAccessToken(1L);
+        when(userRepository.existsByIdAndDeletedAtIsNull(1L)).thenReturn(true);
 
         mockMvc.perform(get("/api/v1/security-test/ping")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(content().string("pong:1"));
+    }
+
+    // 탈퇴 직후에도 아직 만료되지 않은 토큰으로 다른 모든 도메인 API를 계속 호출할 수 있던
+    // 문제(각 서비스가 저마다 findById를 쓰던 것) — 인증 경계에서 한 번에 막는지 확인한다.
+    @Test
+    void 탈퇴한_유저의_토큰으로_보호된_경로_요청시_401과_MEMBER4007을_반환한다() throws Exception {
+        String token = jwtProvider.createAccessToken(1L);
+        when(userRepository.existsByIdAndDeletedAtIsNull(1L)).thenReturn(false);
+
+        mockMvc.perform(get("/api/v1/security-test/ping")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("MEMBER4007"));
     }
 
     @Test

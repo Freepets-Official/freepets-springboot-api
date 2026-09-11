@@ -42,7 +42,7 @@ public class UserQueryService {
     }
 
     public UserResponseDTO.AccountResult getAccount(Long userId) {
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
 
         return UserConverter.toAccountResult(user);

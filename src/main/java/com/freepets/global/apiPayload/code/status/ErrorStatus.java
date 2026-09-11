@@ -17,6 +17,7 @@ public enum ErrorStatus implements BaseErrorCode {
     MEMBER4001(CONFLICT, "MEMBER4001", "이미 가입된 이메일입니다."),
     MEMBER4005(NOT_FOUND, "MEMBER4005", "해당 아이디를 가진 유저가 존재하지 않습니다."),
     MEMBER4006(UNAUTHORIZED, "MEMBER4006", "비밀번호가 일치하지 않습니다."),
+    MEMBER4007(UNAUTHORIZED, "MEMBER4007", "탈퇴한 계정입니다."),
 
     // 반려동물 에러
     PET4001(NOT_FOUND, "PET4001", "해당 반려동물이 존재하지 않습니다."),

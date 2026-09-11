@@ -58,6 +58,16 @@ public class UserRequestDTO {
     @Getter
     @Setter
     @NoArgsConstructor
+    public static class WithdrawRequest {
+
+        // LOCAL 계정만 필수 — 세션(토큰)이 탈취돼도 비밀번호 없이는 탈퇴시킬 수 없게 한다.
+        // 소셜 계정은 비밀번호가 없어(User.passwordHash == null) 비워서 보내면 된다.
+        private String password;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
     public static class RegisterPushTokenRequest {
 
         @NotBlank(message = "토큰은 필수입니다.")

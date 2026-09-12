@@ -47,7 +47,23 @@ public class BusinessQueryService {
     }
 
     public BusinessResponseDTO.VerifyResult verify(BusinessRequestDTO.VerifyRequest request) {
-        NtsValidationResult result = validate(request);
+        return verify(
+                request.getBusinessNumber(),
+                request.getRepresentativeName(),
+                request.getOpeningDate()
+        );
+    }
+
+    /**
+     * 매장 등록도 같은 확인을 거치므로 원시값으로 받는 경로를 따로 둔다 — 등록 요청 DTO를 인증용
+     * DTO로 바꿔 담지 않기 위해서다.
+     */
+    public BusinessResponseDTO.VerifyResult verify(
+            String businessNumber,
+            String representativeName,
+            String openingDate
+    ) {
+        NtsValidationResult result = validate(businessNumber, representativeName, openingDate);
 
         if (!result.valid()) {
             // 어느 항목이 틀렸는지는 국세청이 알려주지 않는다. 사유 문구는 로그에만 남긴다.
@@ -66,7 +82,11 @@ public class BusinessQueryService {
         return BusinessConverter.toVerifyResult(result);
     }
 
-    private NtsValidationResult validate(BusinessRequestDTO.VerifyRequest request) {
+    private NtsValidationResult validate(
+            String businessNumber,
+            String representativeName,
+            String openingDate
+    ) {
         // 키가 없으면 클라이언트를 만들다 실패하는데, 그 예외는 스프링이 감싸서 던져 아래 catch에
         // 걸리지 않는다. 그대로 두면 서버 설정 문제가 사용자에게 500으로 나가므로 먼저 걸러낸다.
         if (!hasServiceKey()) {
@@ -75,11 +95,7 @@ public class BusinessQueryService {
         }
 
         try {
-            return ntsClient.validate(
-                    request.getBusinessNumber(),
-                    request.getRepresentativeName(),
-                    request.getOpeningDate()
-            );
+            return ntsClient.validate(businessNumber, representativeName, openingDate);
         } catch (NtsException exception) {
             // 사업자등록번호는 남기지 않는다.
             log.warn("국세청 진위확인 호출 실패: {}", exception.getMessage(), exception);

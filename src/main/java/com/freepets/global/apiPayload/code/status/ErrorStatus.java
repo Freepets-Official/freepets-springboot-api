@@ -84,6 +84,7 @@ public enum ErrorStatus implements BaseErrorCode {
     // 사업자 에러
     BUSINESS4001(BAD_REQUEST, "BUSINESS4001", "사업자등록정보가 일치하지 않습니다."),
     BUSINESS4002(BAD_REQUEST, "BUSINESS4002", "휴업 또는 폐업한 사업자입니다."),
+    BUSINESS4003(CONFLICT, "BUSINESS4003", "이미 다른 사업자가 등록한 매장입니다."),
     BUSINESS5001(BAD_GATEWAY, "BUSINESS5001", "국세청 사업자등록정보 서비스와의 통신에 실패했습니다.");
 
     private final HttpStatus httpStatus;

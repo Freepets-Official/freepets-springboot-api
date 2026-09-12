@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDateTime;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -16,7 +18,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.freepets.domain.business.dto.BusinessResponseDTO;
+import com.freepets.domain.business.service.BusinessCommandService;
 import com.freepets.domain.business.service.BusinessQueryService;
+import com.freepets.domain.facility.entity.Confidence;
+import com.freepets.domain.facility.entity.ConfidenceSource;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
 
@@ -28,11 +33,20 @@ class BusinessControllerTest {
             {"businessNumber":"1234567890","representativeName":"홍길동","openingDate":"20200315"}
             """;
 
+    private static final String CLAIM_BODY = """
+            {"businessNumber":"1234567890","representativeName":"홍길동","openingDate":"20200315",
+             "petAllowed":"ALLOWED","maxWeight":10.0,"maxWeightInclusive":true,
+             "requirements":["LEASH"],"conditionRaw":"리드줄 착용 시 실내 동반 가능"}
+            """;
+
     @Autowired
     private MockMvc mockMvc;
 
     @MockitoBean
     private BusinessQueryService businessQueryService;
+
+    @MockitoBean
+    private BusinessCommandService businessCommandService;
 
     @Test
     void verify_성공하면_200과_사업_상태를_반환한다() throws Exception {
@@ -102,5 +116,49 @@ class BusinessControllerTest {
                         .content(VALID_BODY))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("BUSINESS5001"));
+    }
+
+    @Test
+    void claim_성공하면_200과_확정_신뢰도를_반환한다() throws Exception {
+        LocalDateTime confirmedAt = LocalDateTime.of(2026, 9, 12, 14, 2, 11);
+        when(businessCommandService.claim(any(), any(), any())).thenReturn(
+                new BusinessResponseDTO.ClaimResult(6L, Confidence.CONFIRMED, ConfidenceSource.OWNER, confirmedAt)
+        );
+
+        mockMvc.perform(post("/api/v1/business/facilities/6/claim")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CLAIM_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.facilityId").value(6))
+                .andExpect(jsonPath("$.result.confidence").value("CONFIRMED"))
+                .andExpect(jsonPath("$.result.confidenceSource").value("OWNER"));
+    }
+
+    @Test
+    void claim_동반_여부가_없으면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/business/facilities/6/claim")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"businessNumber":"1234567890","representativeName":"홍길동","openingDate":"20200315"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"))
+                .andExpect(jsonPath("$.result.petAllowed").exists());
+
+        verifyNoInteractions(businessCommandService);
+    }
+
+    @Test
+    void claim_다른_사업자가_이미_등록한_매장이면_409를_반환한다() throws Exception {
+        when(businessCommandService.claim(any(), any(), any()))
+                .thenThrow(new GeneralException(ErrorStatus.BUSINESS4003));
+
+        mockMvc.perform(post("/api/v1/business/facilities/6/claim")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CLAIM_BODY))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("BUSINESS4003"));
     }
 }

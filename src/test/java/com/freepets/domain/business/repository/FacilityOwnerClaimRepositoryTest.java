@@ -127,4 +127,21 @@ class FacilityOwnerClaimRepositoryTest {
         assertThatThrownBy(() -> facilityOwnerClaimRepository.saveAndFlush(createClaim(otherOwner, facility)))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
+
+    @Test
+    void findByFacility_FacilityId_시설의_소유_기록을_찾는다() {
+        // 매장 등록이 "이 시설에 이미 주인이 있는지"를 이 조회로 판단한다.
+        Facility claimedFacility = createFacility("카페 파도살롱");
+        Facility unclaimedFacility = createFacility("옆 가게");
+        facilityOwnerClaimRepository.saveAndFlush(createClaim(owner, claimedFacility));
+        entityManager.clear();
+
+        FacilityOwnerClaim found = facilityOwnerClaimRepository
+                .findByFacility_FacilityId(claimedFacility.getFacilityId())
+                .orElseThrow();
+
+        assertThat(found.isOwnedBy(owner.getId())).isTrue();
+        assertThat(facilityOwnerClaimRepository.findByFacility_FacilityId(unclaimedFacility.getFacilityId()))
+                .isEmpty();
+    }
 }

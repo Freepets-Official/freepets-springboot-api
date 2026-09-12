@@ -1,5 +1,10 @@
 package com.freepets.domain.business.dto;
 
+import java.time.LocalDateTime;
+
+import com.freepets.domain.facility.entity.Confidence;
+import com.freepets.domain.facility.entity.ConfidenceSource;
+
 public class BusinessResponseDTO {
 
     private BusinessResponseDTO() {}
@@ -13,5 +18,19 @@ public class BusinessResponseDTO {
             boolean valid,
             String status,
             String statusLabel
+    ) {}
+
+    /**
+     * 매장 등록 결과. 등록이 성공하는 순간 그 계정에 사업자 프로필이 붙으므로, 앱은 이 응답을 받고
+     * 계정 조회를 다시 불러 프로필 목록을 갱신하면 된다.
+     *
+     * @param confidence       확정된 직후라 항상 {@code CONFIRMED}다
+     * @param confidenceSource 확정 근거. 사업자 본인이 적었으므로 {@code OWNER}
+     */
+    public record ClaimResult(
+            Long facilityId,
+            Confidence confidence,
+            ConfidenceSource confidenceSource,
+            LocalDateTime confirmedAt
     ) {}
 }

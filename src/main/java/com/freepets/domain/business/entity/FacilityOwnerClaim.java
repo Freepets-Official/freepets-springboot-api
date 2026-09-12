@@ -84,4 +84,12 @@ public class FacilityOwnerClaim extends BaseEntity {
         this.verifiedAt = verifiedAt;
     }
 
+    /**
+     * 요청자가 이 매장의 주인인지. 사업자 기능을 써도 되는지는 요청마다 이 기록으로 확인한다 —
+     * 프로필은 화면 세트일 뿐 권한이 아니다.
+     */
+    public boolean isOwnedBy(Long userId) {
+        return user.getId().equals(userId);
+    }
+
 }

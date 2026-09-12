@@ -456,6 +456,44 @@ class FacilityQueryServiceTest {
     }
 
     @Test
+    @DisplayName("사업자가 조건을 확정한 시설은 CONFIRMED/OWNER로 내려준다")
+    void 사업자가_확정한_시설은_확정_신뢰도로_내려준다() {
+        Facility facility = createFacility(FACILITY_ID);
+        ReflectionTestUtils.setField(facility, "confirmedAt", LocalDateTime.now().minusDays(1));
+        when(facilityRepository.findWithDistanceById(anyDouble(), anyDouble(), eq(FACILITY_ID)))
+                .thenReturn(Optional.of(new FacilityWithDistance(facility, 100.0)));
+        givenNoReviews();
+        givenNoPets();
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.confidence()).isEqualTo(Confidence.CONFIRMED);
+        assertThat(result.confidenceSource()).isEqualTo(ConfidenceSource.OWNER);
+    }
+
+    @Test
+    @DisplayName("확정 이후에 들어온 거부 제보만 세도록 확정 시각을 기준으로 조회한다")
+    void 확정_이전_제보는_신뢰도에_반영하지_않는다() {
+        // 사장님이 조건을 바로잡으면서 그 이전 제보는 해소된 것으로 본다. 확정 시각을 넘기지
+        // 않으면 이미 해소된 제보가 계속 배지를 끌어내린다.
+        LocalDateTime confirmedAt = LocalDateTime.now().minusDays(1);
+        Facility facility = createFacility(FACILITY_ID);
+        ReflectionTestUtils.setField(facility, "confirmedAt", confirmedAt);
+        when(facilityRepository.findWithDistanceById(anyDouble(), anyDouble(), eq(FACILITY_ID)))
+                .thenReturn(Optional.of(new FacilityWithDistance(facility, 100.0)));
+        givenNoReviews();
+        givenNoPets();
+        // 확정 시각이 아닌 값으로 조회하면 이 스텁이 쓰이지 않아 테스트가 실패한다.
+        when(facilityReportRepository.countByFacility_FacilityIdAndIsRealtimeTrueAndCreatedAtAfter(
+                eq(FACILITY_ID), eq(confirmedAt))
+        ).thenReturn(0L);
+
+        FacilityResponseDTO.FacilityDetail result = getDetailFromSeoul();
+
+        assertThat(result.confidence()).isEqualTo(Confidence.CONFIRMED);
+    }
+
+    @Test
     @DisplayName("최근 거부 제보가 없어도 관광공사 원문이 있으면 ESTIMATED/PARSED로 내려준다")
     void 최근_거부_제보가_없으면_원문_유무로_신뢰도를_판단한다() {
         Facility facility = createFacility(FACILITY_ID);

@@ -416,9 +416,16 @@ public class Facility extends BaseEntity {
         this.etcAccompanyText = fetched.etcAccompanyText;
         this.accidentRiskText = fetched.accidentRiskText;
         this.petConditionHash = fetched.petConditionHash;
-        this.petAllowed = fetched.petAllowed;
-        this.maxWeight = fetched.maxWeight;
-        this.maxWeightInclusive = fetched.maxWeightInclusive;
+
+        // 사업자가 확정한 조건은 관광공사 원문보다 정확하다고 보는 것이 이 기능의 전제다. 확정된
+        // 시설은 동반 여부와 체중 상한을 덮어쓰지 않는다 — 안 그러면 다음 동기화가 사장님이 직접
+        // 적은 값을 지워버린다. 원문 필드와 나머지 기본 정보는 그대로 갱신한다.
+        if (this.confirmedAt == null) {
+            this.petAllowed = fetched.petAllowed;
+            this.maxWeight = fetched.maxWeight;
+            this.maxWeightInclusive = fetched.maxWeightInclusive;
+        }
+
         this.parserVersion = fetched.parserVersion;
         this.petTourListed = fetched.petTourListed;
         this.isActive = fetched.isActive;
@@ -450,6 +457,31 @@ public class Facility extends BaseEntity {
                         .isChecked(false)
                         .build()
         ));
+    }
+
+    /**
+     * 사업자가 확정한 출입 조건을 반영한다. 이 값이 그 시설의 정답이 되고, 조회 시 신뢰도가
+     * {@code CONFIRMED}/{@code OWNER}로 올라간다.
+     *
+     * <p>확정 이후에는 {@link #updateFromTourApi}가 동반 여부·체중 상한을 덮어쓰지 않는다.
+     *
+     * <p>{@code requiredItems}(LLM이 만든 화면 표시 문구)와 {@code petConditionStatus}는 건드리지
+     * 않는다. 그쪽은 "조건 원문을 얼마나 구조화했는지"를 나타내는 별개 축이다.
+     */
+    public void confirmByOwner(
+            PetAllowed petAllowed,
+            BigDecimal maxWeight,
+            Boolean maxWeightInclusive,
+            List<Requirement> requirements,
+            String conditionRaw
+    ) {
+        this.petAllowed = petAllowed;
+        this.maxWeight = maxWeight;
+        // 상한이 없으면 경계 종류("이하"/"미만")도 의미가 없다.
+        this.maxWeightInclusive = maxWeight == null ? null : maxWeightInclusive;
+        this.petConditionRaw = conditionRaw;
+        this.confirmedAt = LocalDateTime.now();
+        replaceRequirements(requirements);
     }
 
     /**

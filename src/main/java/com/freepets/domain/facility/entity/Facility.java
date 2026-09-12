@@ -64,6 +64,9 @@ public class Facility extends BaseEntity {
     @Column(name = "content_id", length = 20)
     private String contentId;
 
+    // 키워드 검색(FacilityRepository.SEARCH_FILTER)이 lower(name) like '%keyword%'로 앞뒤
+    // 와일드카드를 쓴다 — 일반 인덱스로는 못 타서 db/pending-manual-migrations.sql에 pg_trgm
+    // GIN 인덱스를 추가해뒀다(ddl-auto=update가 못 만드는 확장·인덱스라 수동 조치 필요).
     @Column(length = 200, nullable = false)
     private String name;
 
@@ -71,6 +74,7 @@ public class Facility extends BaseEntity {
     @Column(nullable = false, length = 20)
     private FacilityCategory category;
 
+    // name과 같은 이유로 pg_trgm GIN 인덱스가 필요하다(db/pending-manual-migrations.sql 참고).
     @Column(length = 300)
     private String address;
 

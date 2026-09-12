@@ -138,3 +138,30 @@ UPDATE calendar_events SET end_date = start_date WHERE end_date IS NULL;
 ALTER TABLE freepets.courses DROP CONSTRAINT IF EXISTS courses_distance_option_check;
 ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
     CHECK (distance_option IN ('ONE_KM', 'FIVE_KM', 'TEN_KM', 'TWENTY_KM', 'THIRTY_KM', 'UNLIMITED'));
+
+-- ============================================================
+-- 2026-09-13 — 시설 검색 키워드 조회가 매번 전체 테이블 풀스캔 (성능, "서버가 가끔씩 불안정")
+-- ============================================================
+-- POST /api/v1/facilities/search가 키워드로 걸러낼 때
+-- FacilityRepository.SEARCH_FILTER의 `lower(facility.name) like :keyword`(그리고 address도
+-- 동일)를 쓰는데, FacilityQueryService.toLikePattern()이 항상 앞뒤로 %를 붙인
+-- "%keyword%" 패턴을 만든다. 앞쪽 %가 있으면 일반 B-tree 인덱스를 못 타서(그리고 원래
+-- name/address엔 인덱스 자체가 없다) 이 쿼리는 매 검색 요청마다 facilities 테이블 전체를
+-- lower() 계산까지 하면서 풀스캔한다.
+--
+-- 실제 규모 확인(로컬에서 운영 DB 조회): facilities 48,786행. 절대적으로 크진 않지만, 매
+-- 검색 요청마다 이 스캔 + 거리 계산(haversine) + 정렬이 겹치면 DB CPU를 많이 먹는다 —
+-- "서버가 가끔씩 불안정하다"/"로딩이 오래 걸린다"는 리포트에 이 쿼리가 기여했을 가능성이
+-- 있다(동시에 여러 명이 검색하면 특히 두드러짐).
+--
+-- pg_trgm 확장 + GIN 트라이그램 인덱스를 걸면 앞뒤 % 패턴의 LIKE도 인덱스를 탄다. 인덱스
+-- 자체가 lower(name)/lower(address) 표현식 기준이라 쿼리 코드는 안 바꿔도 된다.
+--
+-- 상태: ⬜ 미적용
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE INDEX IF NOT EXISTS idx_facilities_name_trgm
+    ON freepets.facilities USING gin (lower(name) gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_facilities_address_trgm
+    ON freepets.facilities USING gin (lower(address) gin_trgm_ops);

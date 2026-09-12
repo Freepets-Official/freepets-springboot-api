@@ -32,6 +32,8 @@ public enum ErrorStatus implements BaseErrorCode {
     // 토큰 에러
     TOKEN4001(UNAUTHORIZED, "TOKEN4001", "유효하지 않은 토큰입니다."),
     TOKEN4002(UNAUTHORIZED, "TOKEN4002", "만료된 토큰입니다."),
+    TOKEN4003(UNAUTHORIZED, "TOKEN4003", "토큰의 용도가 올바르지 않습니다."),
+    TOKEN4004(UNAUTHORIZED, "TOKEN4004", "리프레시 토큰이 만료되었습니다. 다시 로그인해주세요."),
 
     // 소셜 로그인 에러
     OAUTH4001(BAD_REQUEST, "OAUTH4001", "지원하지 않는 소셜 로그인 제공자입니다."),

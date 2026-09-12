@@ -40,6 +40,9 @@ public class SecurityConfig {
             "/api/v1/courses/optimize-order",
             // 소셜 로그인. 아직 우리 토큰이 없는 상태로 들어오므로 인증을 요구할 수 없다.
             "/api/v1/auth/social/*",
+            // 액세스 토큰이 만료된 상태로 들어오는 요청이라 인증을 요구할 수 없다.
+            // 신원 확인은 헤더로 받은 리프레시 토큰으로 서비스에서 직접 한다.
+            "/api/v1/auth/refresh",
             // 동반 출입증 QR이 가리키는 공개 웹페이지 — 스캔하는 시설 직원은 앱 계정이 없다.
             "/verify/**",
             "/swagger-ui/**",

@@ -94,6 +94,7 @@ class AuthCommandServiceTest {
                 authCommandService.socialLogin("kakao", createRequest());
 
         assertThat(result.isNewUser()).isTrue();
+        assertThat(result.userId()).isEqualTo("1");
         assertThat(result.accessToken()).isEqualTo("access-token");
         assertThat(result.refreshToken()).isEqualTo("refresh-token");
     }
@@ -111,6 +112,7 @@ class AuthCommandServiceTest {
                 authCommandService.socialLogin("google", createRequest());
 
         assertThat(result.isNewUser()).isFalse();
+        assertThat(result.userId()).isEqualTo("7");
     }
 
     @Test

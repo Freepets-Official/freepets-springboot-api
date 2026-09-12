@@ -31,7 +31,8 @@ ALTER TABLE pet_checks ALTER COLUMN pet_id DROP NOT NULL;
 -- 87.96을 88로 저장하면 88점이 기준인 4등급으로 잘못 올라간다.
 -- 현재 이 컬럼은 값을 채우는 코드가 없어 전 행이 null이라 안전하다.
 --
--- 상태: ⬜ 미적용
+-- 상태: ✅ 적용 완료 (2026-09-13 확인 — information_schema 조회로 data_type이 이미
+-- double precision임을 확인. 언제 적용됐는지는 기록이 없음)
 ALTER TABLE facilities ALTER COLUMN pet_score TYPE double precision;
 
 -- ddl-auto가 정렬 방향까지 반영하지 못해 인덱스가 안 생겼다면 아래를 직접 실행한다.
@@ -51,7 +52,8 @@ ALTER TABLE facilities ALTER COLUMN pet_score TYPE double precision;
 -- users.provider_id 컬럼과 (provider, provider_id) 유니크 제약은 ddl-auto=update가 만들어 준다.
 -- 기존 LOCAL 유저 데이터는 영향이 없다(값이 이미 채워져 있고 제약만 느슨해진다).
 --
--- 상태: ⬜ 미적용
+-- 상태: ✅ 적용 완료 (2026-09-13 확인 — information_schema 조회로 is_nullable=YES 확인.
+-- 언제 적용됐는지는 기록이 없음)
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 
 -- ============================================================
@@ -86,7 +88,8 @@ ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_denial_rea
 -- 즉 지금까지 거부 제보는 한 번도 실제로 저장에 성공한 적이 없다 — denial_reason만 고쳐서는
 -- 부족하고, 이 두 제약조건도 같이 갱신해야 완전히 해결된다.
 --
--- 상태: ⬜ 미적용 (긴급 — 이거 때문에 거부 제보 저장이 여전히 전부 실패 중)
+-- 상태: ✅ 적용 완료 (2026-09-13 확인 — pg_constraint 조회로 report_type_check에 DENIED,
+-- status_check에 APPLIED가 이미 포함돼있음을 확인. 언제 적용됐는지는 기록이 없음)
 ALTER TABLE freepets.facility_reports DROP CONSTRAINT facility_reports_report_type_check;
 ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_report_type_check
     CHECK (report_type IN ('INFO_CORRECTION', 'PET_POLICY_CHANGE', 'PERMANENTLY_CLOSED', 'NEW_FACILITY', 'ETC', 'DENIED'));
@@ -103,7 +106,7 @@ ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_status_che
 -- 풀어주지 않으므로 수동 조치가 필요하다. 기존 활성 유저 데이터는 영향이 없다(값이 이미
 -- 채워져 있고 제약만 느슨해진다).
 --
--- 상태: ⬜ 미적용
+-- 상태: ✅ 적용 완료 (2026-09-13 확인 — information_schema 조회로 is_nullable=YES 확인)
 ALTER TABLE freepets.users ALTER COLUMN email DROP NOT NULL;
 
 -- ============================================================
@@ -115,7 +118,7 @@ ALTER TABLE freepets.users ALTER COLUMN email DROP NOT NULL;
 -- 계층(CalendarEvent.getEndDate())이 null이면 start_date로 대체해서 동작 자체는 문제없지만,
 -- DB에서 직접 조회하는 배치·리포팅이 있다면 null을 다르게 취급할 수 있으니 백필해둔다.
 --
--- 상태: ⬜ 미적용
+-- 상태: ⬜ 미적용 (2026-09-13 확인 — null 1건 남아있음, 실행해도 안전)
 UPDATE calendar_events SET end_date = start_date WHERE end_date IS NULL;
 
 -- ============================================================
@@ -134,7 +137,9 @@ UPDATE calendar_events SET end_date = start_date WHERE end_date IS NULL;
 -- 실행 전 SQL Editor로 기존 제약조건이 실제로 있는지, 있다면 정확한 이름·값 목록을 먼저
 -- 확인할 것 — 위 사례들처럼 이름이 다를 수 있다. 아래는 Postgres 기본 명명 규칙 기준 추정이다.
 --
--- 상태: ⬜ 미적용
+-- 상태: ✅ 적용 완료 (2026-09-13 확인 — pg_constraint 조회로 UNLIMITED가 이미 포함돼있음을
+-- 확인. courses_source_check/courses_theme_check도 같이 대조해봤는데 CourseSource/
+-- CourseTheme enum과 정확히 일치해 문제없음)
 ALTER TABLE freepets.courses DROP CONSTRAINT IF EXISTS courses_distance_option_check;
 ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
     CHECK (distance_option IN ('ONE_KM', 'FIVE_KM', 'TEN_KM', 'TWENTY_KM', 'THIRTY_KM', 'UNLIMITED'));

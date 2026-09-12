@@ -307,10 +307,27 @@ public class FacilityQueryService {
 
         long recentDenialReportCount = facilityReportRepository.countByFacility_FacilityIdAndIsRealtimeTrueAndCreatedAtAfter(
                 facilityId,
-                LocalDateTime.now().minusDays(FacilityReport.RECENT_WINDOW_DAYS)
+                denialReportSince(facility)
         );
 
         return FacilityConverter.toFacilityDetail(facility, distanceM, aggregate, myPets, recentDenialReportCount);
+    }
+
+    /**
+     * 신뢰도를 내릴 거부 제보를 어느 시점부터 셀지 정한다.
+     *
+     * <p>기본은 최근 {@code RECENT_WINDOW_DAYS}일이지만, 사업자가 조건을 확정했다면 그 시각 이후에
+     * 들어온 제보만 센다. 확정 이전 제보는 사장님이 직접 조건을 바로잡으면서 해소된 것으로 본다.
+     * 반대로 확정 이후에 들어온 제보는 그대로 신뢰도를 내린다 — 사장님이 적어둔 값과 현장이
+     * 다르다는 신호라 배지를 유지하면 헛걸음으로 이어진다.
+     */
+    private LocalDateTime denialReportSince(Facility facility) {
+        LocalDateTime recentWindowStart = LocalDateTime.now().minusDays(FacilityReport.RECENT_WINDOW_DAYS);
+        LocalDateTime confirmedAt = facility.getConfirmedAt();
+
+        return confirmedAt == null || confirmedAt.isBefore(recentWindowStart)
+                ? recentWindowStart
+                : confirmedAt;
     }
 
     /**

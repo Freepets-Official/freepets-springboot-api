@@ -1,10 +1,13 @@
 package com.freepets.domain.user.service;
 
+import java.util.List;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
 import com.freepets.domain.user.converter.UserConverter;
 import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
@@ -25,6 +28,7 @@ import lombok.RequiredArgsConstructor;
 public class UserCommandService {
 
     private final UserRepository userRepository;
+    private final FacilityOwnerClaimRepository facilityOwnerClaimRepository;
     private final PasswordEncoder passwordEncoder;
     private final S3ImageService s3ImageService;
     private final UserDeviceTokenRepository userDeviceTokenRepository;
@@ -102,7 +106,9 @@ public class UserCommandService {
             s3ImageService.delete(previousAvatarUri);
         }
 
-        return UserConverter.toAccountResult(user);
+        // 계정 조회와 같은 응답이라 프로필도 함께 채운다. 빠뜨리면 수정 직후 앱이 사업자 프로필을 잃는다.
+        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findFacilityIdsByUserId(userId);
+        return UserConverter.toAccountResult(user, ownedFacilityIds);
     }
 
     // 등록할 때마다 이 토큰을 가진 기존 행을 지우고 새로 저장한다 — 기기 재설치·기기 변경·다른
@@ -168,6 +174,9 @@ public class UserCommandService {
         String avatarUri = user.getAvatarUri();
         user.withdraw();
         userDeviceTokenRepository.deleteAllByUser_Id(userId);
+        // 탈퇴는 소프트 삭제라 사용자 행이 남아 외래 키 CASCADE가 동작하지 않는다. 소유 기록을
+        // 남겨두면 탈퇴한 계정이 매장을 붙잡고 있어 진짜 사장이 그 매장을 영영 등록하지 못한다.
+        facilityOwnerClaimRepository.deleteAllByUser_Id(userId);
 
         if (avatarUri != null) {
             s3ImageService.delete(avatarUri);

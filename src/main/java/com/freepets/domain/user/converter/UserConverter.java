@@ -1,7 +1,10 @@
 package com.freepets.domain.user.converter;
 
+import java.util.List;
+
 import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
+import com.freepets.domain.user.entity.Profile;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 
@@ -93,8 +96,16 @@ public class UserConverter {
         return new UserResponseDTO.LoginResult(accessToken, refreshToken);
     }
 
-    public static UserResponseDTO.AccountResult toAccountResult(User user) {
-        return new UserResponseDTO.AccountResult(user.getNickname(), user.getAvatarUri());
+    public static UserResponseDTO.AccountResult toAccountResult(
+            User user,
+            List<Long> ownedFacilityIds
+    ) {
+        return new UserResponseDTO.AccountResult(
+                user.getNickname(),
+                user.getAvatarUri(),
+                Profile.of(ownedFacilityIds),
+                ownedFacilityIds
+        );
     }
 
     public static UserResponseDTO.PushTokenResult toPushTokenResult() {

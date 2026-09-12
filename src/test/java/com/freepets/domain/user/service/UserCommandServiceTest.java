@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -20,8 +21,10 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
 import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
+import com.freepets.domain.user.entity.Profile;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.entity.UserDeviceToken;
@@ -36,6 +39,9 @@ class UserCommandServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private FacilityOwnerClaimRepository facilityOwnerClaimRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -270,6 +276,9 @@ class UserCommandServiceTest {
         // "탈퇴한 계정"으로 나가야 한다.
         assertThat(user.getNickname()).isEqualTo("탈퇴한 계정");
         verify(userDeviceTokenRepository).deleteAllByUser_Id(1L);
+        // 탈퇴는 소프트 삭제라 사용자 행이 남는다. 소유 기록을 남겨두면 탈퇴한 계정이 매장을
+        // 붙잡고 있어 진짜 사장이 그 매장을 등록하지 못한다.
+        verify(facilityOwnerClaimRepository).deleteAllByUser_Id(1L);
         verify(s3ImageService).delete("https://s3-url/avatar.jpg");
     }
 
@@ -342,5 +351,21 @@ class UserCommandServiceTest {
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.MEMBER4005);
         verifyNoInteractions(userDeviceTokenRepository, s3ImageService);
+    }
+
+    @Test
+    void updateAccount_소유_매장이_있으면_사업자_프로필을_함께_반환한다() {
+        User user = createUser();
+
+        UserRequestDTO.UpdateAccountRequest request = new UserRequestDTO.UpdateAccountRequest();
+        request.setNickname("newNickname");
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(facilityOwnerClaimRepository.findFacilityIdsByUserId(1L)).thenReturn(List.of(6L));
+
+        UserResponseDTO.AccountResult result = userCommandService.updateAccount(1L, request);
+
+        assertThat(result.profiles()).containsExactly(Profile.CONSUMER, Profile.OWNER);
+        assertThat(result.ownedFacilityIds()).containsExactly(6L);
     }
 }

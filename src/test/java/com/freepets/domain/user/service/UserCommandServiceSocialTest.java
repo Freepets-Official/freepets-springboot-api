@@ -17,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
@@ -29,6 +30,9 @@ class UserCommandServiceSocialTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private FacilityOwnerClaimRepository facilityOwnerClaimRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;

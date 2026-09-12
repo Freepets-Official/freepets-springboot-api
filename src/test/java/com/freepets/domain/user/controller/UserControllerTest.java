@@ -5,10 +5,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +22,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.freepets.domain.user.dto.UserResponseDTO;
+import com.freepets.domain.user.entity.Profile;
 import com.freepets.domain.user.service.UserCommandService;
 import com.freepets.domain.user.service.UserQueryService;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -138,5 +142,23 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.result.password").exists());
 
         verifyNoInteractions(userQueryService);
+    }
+
+    @Test
+    void getAccount_성공하면_프로필과_소유_매장_목록을_함께_반환한다() throws Exception {
+        when(userQueryService.getAccount(any())).thenReturn(new UserResponseDTO.AccountResult(
+                "tester",
+                null,
+                List.of(Profile.CONSUMER, Profile.OWNER),
+                List.of(6L)
+        ));
+
+        mockMvc.perform(get("/api/v1/users/account"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.nickname").value("tester"))
+                .andExpect(jsonPath("$.result.profiles[0]").value("CONSUMER"))
+                .andExpect(jsonPath("$.result.profiles[1]").value("OWNER"))
+                .andExpect(jsonPath("$.result.ownedFacilityIds[0]").value(6));
     }
 }

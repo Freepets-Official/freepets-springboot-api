@@ -1,5 +1,7 @@
 package com.freepets.domain.facility.entity;
 
+import java.time.LocalDateTime;
+
 /**
  * 시설의 반려동물 동반 조건 정보를 얼마나 믿을 수 있는지. 리뷰 기반 친화도 등급({@link PetFriendlyGrade},
  * "여기가 반려동물 다니기 좋은 곳인지")과는 다른 축이다 — 이건 "여기 적힌 조건 자체가 맞는지"를 나타낸다.
@@ -21,19 +23,29 @@ public enum Confidence {
     ) {}
 
     /**
-     * 신뢰도는 저장하지 않고 조회 시점에 계산한다(F4). 실제로 낼 수 있는 신호가 지금은 이 둘뿐이다:
-     * 최근 1주 내 실시간 거부 제보가 있는지, 관광공사 원문이라도 있는지. 사업자 셀프 등록·방문자
-     * 다수 일치·직접 전화 확인은 그 기능 자체가 없어 이 메서드가 절대 그 값을 내지 않는다.
+     * 신뢰도는 저장하지 않고 조회 시점에 계산한다(F4). 방문자 다수 일치({@code CROWD})와 직접 전화
+     * 확인({@code USER_CALL})은 그 기능 자체가 없어 이 메서드가 절대 그 값을 내지 않는다.
      *
-     * @param petConditionRaw      시설에 정리돼 있는 조건 안내문. 비어있으면(공백 포함) 신호로 안 침
-     * @param recentDenialReportCount 최근(FacilityReport.RECENT_WINDOW_DAYS) 실시간 거부 제보 수
+     * <p><b>거부 제보가 사업자 확정을 이긴다.</b> 사장님이 "동반 가능"으로 확정해둬도 현장에서 거부당한
+     * 제보가 들어오면 배지를 내려야 한다. 그러지 않으면 헛걸음을 막는다는 목적과 정면으로 부딪힌다.
+     *
+     * @param petConditionRaw         시설에 정리돼 있는 조건 안내문. 비어있으면(공백 포함) 신호로 안 침
+     * @param recentDenialReportCount 최근 실시간 거부 제보 수. <b>확정 이후에 들어온 것만</b> 세서
+     *                                넘겨야 한다 — 확정 시점에 그 이전 제보는 해소된 것으로 본다
+     *                                (호출부 {@code FacilityQueryService})
+     * @param confirmedAt             사업자가 조건을 확정한 시각. 확정한 적이 없으면 {@code null}
      */
     public static View of(
             String petConditionRaw,
-            long recentDenialReportCount
+            long recentDenialReportCount,
+            LocalDateTime confirmedAt
     ) {
         if (recentDenialReportCount > 0) {
             return new View(UNVERIFIED, ConfidenceSource.DENIAL_REPORT);
+        }
+
+        if (confirmedAt != null) {
+            return new View(CONFIRMED, ConfidenceSource.OWNER);
         }
 
         boolean hasCuratedCondition = petConditionRaw != null && !petConditionRaw.isBlank();

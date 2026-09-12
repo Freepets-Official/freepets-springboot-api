@@ -1,9 +1,12 @@
 package com.freepets.domain.user.service;
 
+import java.util.List;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
 import com.freepets.domain.user.converter.UserConverter;
 import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
@@ -21,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 public class UserQueryService {
 
     private final UserRepository userRepository;
+    private final FacilityOwnerClaimRepository facilityOwnerClaimRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
 
@@ -41,10 +45,15 @@ public class UserQueryService {
         return UserConverter.toLoginResult(accessToken, refreshToken);
     }
 
+    /**
+     * 프로필 목록은 저장된 값이 아니라 소유 기록에서 매번 파생한다. 매장 등록 직후 이 API를 다시
+     * 부르면 재로그인 없이 {@code OWNER}가 보인다.
+     */
     public UserResponseDTO.AccountResult getAccount(Long userId) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
+        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findFacilityIdsByUserId(userId);
 
-        return UserConverter.toAccountResult(user);
+        return UserConverter.toAccountResult(user, ownedFacilityIds);
     }
 }

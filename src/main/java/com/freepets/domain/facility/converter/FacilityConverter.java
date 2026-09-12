@@ -189,7 +189,11 @@ public class FacilityConverter {
             List<Pet> myPets,
             long recentDenialReportCount
     ) {
-        Confidence.View confidence = Confidence.of(facility.getPetConditionRaw(), recentDenialReportCount);
+        Confidence.View confidence = Confidence.of(
+                facility.getPetConditionRaw(),
+                recentDenialReportCount,
+                facility.getConfirmedAt()
+        );
 
         return new FacilityResponseDTO.FacilityDetail(
                 facility.getFacilityId(),

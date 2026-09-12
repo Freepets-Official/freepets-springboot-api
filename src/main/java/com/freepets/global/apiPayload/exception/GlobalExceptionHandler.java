@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -102,6 +103,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Map<String, String>>> handleMissingServletRequestParameterException(MissingServletRequestParameterException exception) {
         Map<String, String> errors = new HashMap<>();
         errors.put(exception.getParameterName(), exception.getParameterName() + "은(는) 필수입니다.");
+
+        return ResponseEntity
+                .status(ErrorStatus.COMMON400.getHttpStatus())
+                .body(ApiResponse.onFailure(ErrorStatus.COMMON400, errors));
+    }
+
+    /**
+     * 필수 {@code @RequestHeader}가 아예 안 왔을 때. 예: {@code POST /auth/refresh}에서
+     * {@code RefreshToken} 헤더를 안 보냄.
+     *
+     * <p>바로 위 {@link MissingServletRequestParameterException}과 같은 이유로, 이 핸들러가
+     * 없으면 catch-all에 걸려 500이 나간다 — 헤더 누락도 컨트롤러 메소드에 진입하기 전에
+     * 예외가 나서 검증 경로를 타지 않는다.
+     */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiResponse<Map<String, String>>> handleMissingRequestHeaderException(MissingRequestHeaderException exception) {
+        Map<String, String> errors = new HashMap<>();
+        errors.put(exception.getHeaderName(), exception.getHeaderName() + " 헤더는 필수입니다.");
 
         return ResponseEntity
                 .status(ErrorStatus.COMMON400.getHttpStatus())

@@ -20,6 +20,7 @@ import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.service.SocialUserResolution;
 import com.freepets.domain.user.service.UserCommandService;
+import com.freepets.domain.user.service.UserQueryService;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
 import com.freepets.global.security.jwt.JwtProvider;
@@ -36,6 +37,9 @@ class AuthCommandServiceTest {
 
     @Mock
     private UserCommandService userCommandService;
+
+    @Mock
+    private UserQueryService userQueryService;
 
     @Mock
     private JwtProvider jwtProvider;
@@ -167,5 +171,46 @@ class AuthCommandServiceTest {
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.OAUTH4001);
+    }
+    @Test
+    void 리프레시_토큰으로_액세스_토큰과_리프레시_토큰을_다시_발급한다() {
+        when(jwtProvider.getUserIdFromRefreshToken("refresh-token")).thenReturn(7L);
+        when(userQueryService.isActiveUser(7L)).thenReturn(true);
+        when(jwtProvider.createAccessToken(7L)).thenReturn("new-access-token");
+        when(jwtProvider.createRefreshToken(7L)).thenReturn("new-refresh-token");
+
+        AuthResponseDTO.TokenRefreshResult result = authCommandService.refreshToken("refresh-token");
+
+        assertThat(result.userId()).isEqualTo("7");
+        assertThat(result.accessToken()).isEqualTo("new-access-token");
+        assertThat(result.refreshToken()).isEqualTo("new-refresh-token");
+    }
+
+    @Test
+    void 탈퇴한_계정의_리프레시_토큰이면_MEMBER4007을_던지고_토큰을_발급하지_않는다() {
+        when(jwtProvider.getUserIdFromRefreshToken("refresh-token")).thenReturn(7L);
+        when(userQueryService.isActiveUser(7L)).thenReturn(false);
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> authCommandService.refreshToken("refresh-token")
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.MEMBER4007);
+        verify(jwtProvider, never()).createAccessToken(any());
+    }
+
+    @Test
+    void 리프레시_토큰이_유효하지_않으면_계정_조회까지_가지_않는다() {
+        when(jwtProvider.getUserIdFromRefreshToken("broken-token"))
+                .thenThrow(new GeneralException(ErrorStatus.TOKEN4003));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> authCommandService.refreshToken("broken-token")
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.TOKEN4003);
+        verify(userQueryService, never()).isActiveUser(any());
     }
 }

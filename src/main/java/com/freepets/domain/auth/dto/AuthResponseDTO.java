@@ -13,4 +13,13 @@ public class AuthResponseDTO {
             String refreshToken,
             boolean isNewUser
     ) {}
+
+    /**
+     * @param userId 명세가 문자열로 정의해 문자열로 내려보낸다. 서버 내부 타입은 {@code Long}이다
+     */
+    public record TokenRefreshResult(
+            String userId,
+            String accessToken,
+            String refreshToken
+    ) {}
 }

@@ -9,6 +9,7 @@ import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.service.SocialUserResolution;
 import com.freepets.domain.user.service.UserCommandService;
+import com.freepets.domain.user.service.UserQueryService;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
 import com.freepets.global.security.jwt.JwtProvider;
@@ -34,6 +35,7 @@ public class AuthCommandService {
 
     private final OAuthClientRegistry oAuthClientRegistry;
     private final UserCommandService userCommandService;
+    private final UserQueryService userQueryService;
     private final JwtProvider jwtProvider;
 
     public AuthResponseDTO.SocialLoginResult socialLogin(
@@ -55,6 +57,30 @@ public class AuthCommandService {
                 jwtProvider.createAccessToken(user.getId()),
                 jwtProvider.createRefreshToken(user.getId()),
                 resolution.isNewUser()
+        );
+    }
+
+    /**
+     * 리프레시 토큰으로 액세스 토큰을 다시 내준다. 리프레시 토큰도 함께 새로 발급하므로
+     * 앱은 응답의 두 값을 모두 저장해야 한다.
+     *
+     * <p>리프레시 토큰을 서버에 저장하지 않기 때문에 검사할 수 있는 것은 서명·만료·용도와
+     * 계정의 생존 여부뿐이다. 즉 <b>직전 리프레시 토큰도 만료 전까지 그대로 유효하고</b>,
+     * 탈취된 토큰을 개별적으로 끊을 방법은 없다. 토큰 폐기가 필요해지면 저장소를 붙여야 한다.
+     */
+    public AuthResponseDTO.TokenRefreshResult refreshToken(String refreshToken) {
+        Long userId = jwtProvider.getUserIdFromRefreshToken(refreshToken);
+
+        // 서명이 유효해도 그 사이 탈퇴했을 수 있다. 탈퇴한 계정에 새 액세스 토큰을 내주면
+        // 탈퇴가 사실상 무효가 된다.
+        if (!userQueryService.isActiveUser(userId)) {
+            throw new GeneralException(ErrorStatus.MEMBER4007);
+        }
+
+        return AuthConverter.toTokenRefreshResult(
+                userId,
+                jwtProvider.createAccessToken(userId),
+                jwtProvider.createRefreshToken(userId)
         );
     }
 

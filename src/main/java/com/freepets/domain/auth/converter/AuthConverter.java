@@ -39,4 +39,12 @@ public class AuthConverter {
     ) {
         return new AuthResponseDTO.SocialLoginResult(accessToken, refreshToken, isNewUser);
     }
+
+    public static AuthResponseDTO.TokenRefreshResult toTokenRefreshResult(
+            Long userId,
+            String accessToken,
+            String refreshToken
+    ) {
+        return new AuthResponseDTO.TokenRefreshResult(String.valueOf(userId), accessToken, refreshToken);
+    }
 }

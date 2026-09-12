@@ -56,4 +56,12 @@ public class UserQueryService {
 
         return UserConverter.toAccountResult(user, ownedFacilityIds);
     }
+
+    /**
+     * 토큰의 주인이 아직 쓸 수 있는 계정인지 확인한다. 탈퇴한 계정은 행이 남아있어도
+     * 없는 것으로 본다.
+     */
+    public boolean isActiveUser(Long userId) {
+        return userRepository.existsByIdAndDeletedAtIsNull(userId);
+    }
 }

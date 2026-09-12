@@ -31,7 +31,8 @@ ALTER TABLE pet_checks ALTER COLUMN pet_id DROP NOT NULL;
 -- 87.96을 88로 저장하면 88점이 기준인 4등급으로 잘못 올라간다.
 -- 현재 이 컬럼은 값을 채우는 코드가 없어 전 행이 null이라 안전하다.
 --
--- 상태: ⬜ 미적용
+-- 상태: ✅ 적용 완료 (2026-09-13 확인 — information_schema 조회로 data_type이 이미
+-- double precision임을 확인. 언제 적용됐는지는 기록이 없음)
 ALTER TABLE facilities ALTER COLUMN pet_score TYPE double precision;
 
 -- ddl-auto가 정렬 방향까지 반영하지 못해 인덱스가 안 생겼다면 아래를 직접 실행한다.
@@ -51,7 +52,8 @@ ALTER TABLE facilities ALTER COLUMN pet_score TYPE double precision;
 -- users.provider_id 컬럼과 (provider, provider_id) 유니크 제약은 ddl-auto=update가 만들어 준다.
 -- 기존 LOCAL 유저 데이터는 영향이 없다(값이 이미 채워져 있고 제약만 느슨해진다).
 --
--- 상태: ⬜ 미적용
+-- 상태: ✅ 적용 완료 (2026-09-13 확인 — information_schema 조회로 is_nullable=YES 확인.
+-- 언제 적용됐는지는 기록이 없음)
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 
 -- ============================================================
@@ -86,7 +88,8 @@ ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_denial_rea
 -- 즉 지금까지 거부 제보는 한 번도 실제로 저장에 성공한 적이 없다 — denial_reason만 고쳐서는
 -- 부족하고, 이 두 제약조건도 같이 갱신해야 완전히 해결된다.
 --
--- 상태: ⬜ 미적용 (긴급 — 이거 때문에 거부 제보 저장이 여전히 전부 실패 중)
+-- 상태: ✅ 적용 완료 (2026-09-13 확인 — pg_constraint 조회로 report_type_check에 DENIED,
+-- status_check에 APPLIED가 이미 포함돼있음을 확인. 언제 적용됐는지는 기록이 없음)
 ALTER TABLE freepets.facility_reports DROP CONSTRAINT facility_reports_report_type_check;
 ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_report_type_check
     CHECK (report_type IN ('INFO_CORRECTION', 'PET_POLICY_CHANGE', 'PERMANENTLY_CLOSED', 'NEW_FACILITY', 'ETC', 'DENIED'));
@@ -103,7 +106,7 @@ ALTER TABLE freepets.facility_reports ADD CONSTRAINT facility_reports_status_che
 -- 풀어주지 않으므로 수동 조치가 필요하다. 기존 활성 유저 데이터는 영향이 없다(값이 이미
 -- 채워져 있고 제약만 느슨해진다).
 --
--- 상태: ⬜ 미적용
+-- 상태: ✅ 적용 완료 (2026-09-13 확인 — information_schema 조회로 is_nullable=YES 확인)
 ALTER TABLE freepets.users ALTER COLUMN email DROP NOT NULL;
 
 -- ============================================================
@@ -115,8 +118,8 @@ ALTER TABLE freepets.users ALTER COLUMN email DROP NOT NULL;
 -- 계층(CalendarEvent.getEndDate())이 null이면 start_date로 대체해서 동작 자체는 문제없지만,
 -- DB에서 직접 조회하는 배치·리포팅이 있다면 null을 다르게 취급할 수 있으니 백필해둔다.
 --
--- 상태: ⬜ 미적용
-UPDATE calendar_events SET end_date = start_date WHERE end_date IS NULL;
+-- 상태: ✅ 적용 완료 (2026-09-13, 운영 DB 확인 — null 0건)
+UPDATE freepets.calendar_events SET end_date = start_date WHERE end_date IS NULL;
 
 -- ============================================================
 -- 2026-09-12 — 코스 "거리 제한 없음" 선택 시 500 오류 (courses.distance_option CHECK 제약조건 갱신, #48)
@@ -134,7 +137,37 @@ UPDATE calendar_events SET end_date = start_date WHERE end_date IS NULL;
 -- 실행 전 SQL Editor로 기존 제약조건이 실제로 있는지, 있다면 정확한 이름·값 목록을 먼저
 -- 확인할 것 — 위 사례들처럼 이름이 다를 수 있다. 아래는 Postgres 기본 명명 규칙 기준 추정이다.
 --
--- 상태: ⬜ 미적용
+-- 상태: ✅ 적용 완료 (2026-09-13 확인 — pg_constraint 조회로 UNLIMITED가 이미 포함돼있음을
+-- 확인. courses_source_check/courses_theme_check도 같이 대조해봤는데 CourseSource/
+-- CourseTheme enum과 정확히 일치해 문제없음)
 ALTER TABLE freepets.courses DROP CONSTRAINT IF EXISTS courses_distance_option_check;
 ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
     CHECK (distance_option IN ('ONE_KM', 'FIVE_KM', 'TEN_KM', 'TWENTY_KM', 'THIRTY_KM', 'UNLIMITED'));
+
+-- ============================================================
+-- 2026-09-13 — 시설 검색 키워드 조회가 매번 전체 테이블 풀스캔 (성능, "서버가 가끔씩 불안정")
+-- ============================================================
+-- POST /api/v1/facilities/search가 키워드로 걸러낼 때
+-- FacilityRepository.SEARCH_FILTER의 `lower(facility.name) like :keyword`(그리고 address도
+-- 동일)를 쓰는데, FacilityQueryService.toLikePattern()이 항상 앞뒤로 %를 붙인
+-- "%keyword%" 패턴을 만든다. 앞쪽 %가 있으면 일반 B-tree 인덱스를 못 타서(그리고 원래
+-- name/address엔 인덱스 자체가 없다) 이 쿼리는 매 검색 요청마다 facilities 테이블 전체를
+-- lower() 계산까지 하면서 풀스캔한다.
+--
+-- 실제 규모 확인(로컬에서 운영 DB 조회): facilities 48,786행. 절대적으로 크진 않지만, 매
+-- 검색 요청마다 이 스캔 + 거리 계산(haversine) + 정렬이 겹치면 DB CPU를 많이 먹는다 —
+-- "서버가 가끔씩 불안정하다"/"로딩이 오래 걸린다"는 리포트에 이 쿼리가 기여했을 가능성이
+-- 있다(동시에 여러 명이 검색하면 특히 두드러짐).
+--
+-- pg_trgm 확장 + GIN 트라이그램 인덱스를 걸면 앞뒤 % 패턴의 LIKE도 인덱스를 탄다. 인덱스
+-- 자체가 lower(name)/lower(address) 표현식 기준이라 쿼리 코드는 안 바꿔도 된다.
+--
+-- 상태: ✅ 적용 완료 (2026-09-13, 운영 DB 확인 — idx_facilities_name_trgm/
+-- idx_facilities_address_trgm 둘 다 생성 확인)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE INDEX IF NOT EXISTS idx_facilities_name_trgm
+    ON freepets.facilities USING gin (lower(name) gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_facilities_address_trgm
+    ON freepets.facilities USING gin (lower(address) gin_trgm_ops);

@@ -118,8 +118,9 @@ ALTER TABLE freepets.users ALTER COLUMN email DROP NOT NULL;
 -- 계층(CalendarEvent.getEndDate())이 null이면 start_date로 대체해서 동작 자체는 문제없지만,
 -- DB에서 직접 조회하는 배치·리포팅이 있다면 null을 다르게 취급할 수 있으니 백필해둔다.
 --
--- 상태: ⬜ 미적용 (2026-09-13 확인 — null 1건 남아있음, 실행해도 안전)
-UPDATE calendar_events SET end_date = start_date WHERE end_date IS NULL;
+-- 상태: ⬜ 미적용 (2026-09-13 확인 — null 1건 남아있음, 실행해도 안전. 스키마 이름 없이
+-- 실행하면 "relation calendar_events does not exist"로 실패한다 — freepets 스키마 필요)
+UPDATE freepets.calendar_events SET end_date = start_date WHERE end_date IS NULL;
 
 -- ============================================================
 -- 2026-09-12 — 코스 "거리 제한 없음" 선택 시 500 오류 (courses.distance_option CHECK 제약조건 갱신, #48)

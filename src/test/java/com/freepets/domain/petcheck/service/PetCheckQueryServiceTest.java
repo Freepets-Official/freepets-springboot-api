@@ -104,6 +104,52 @@ class PetCheckQueryServiceTest {
     }
 
     @Test
+    void 판별_상세_조회시_본인_판별이면_verifyCode를_포함해_반환한다() {
+        Facility facility = Facility.builder()
+                .name("테라로자 커피공장")
+                .category(FacilityCategory.CAFE)
+                .petAllowed(PetAllowed.ALLOWED)
+                .build();
+        PetCheck petCheck = PetCheck.builder()
+                .facility(facility)
+                .overall(PetCheckResult.ALLOWED)
+                .build();
+        Pet pet = Pet.builder()
+                .name("몽이")
+                .kind(Kind.DOG)
+                .species("말티즈")
+                .weight(new BigDecimal("3.20"))
+                .breedSize(BreedSize.SMALL)
+                .isVaccinated(true)
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(pet, "petId", 5L);
+        PetCheckVerdict verdict = PetCheckVerdict.builder()
+                .pet(pet)
+                .result(PetCheckResult.ALLOWED)
+                .reason("모든 조건을 충족해 출입 가능합니다")
+                .conditions(JsonListUtil.toJson(List.of()))
+                .verifyCode("FP-ABC1234567")
+                .build();
+        petCheck.addVerdict(verdict);
+
+        when(petCheckRepository.findByCheckIdAndUser_Id(100L, 1L)).thenReturn(Optional.of(petCheck));
+
+        PetCheckResponseDTO.CheckResult result = petCheckQueryService.getCheckDetail(1L, 100L);
+
+        assertThat(result.verdicts()).hasSize(1);
+        assertThat(result.verdicts().get(0).verifyCode()).isEqualTo("FP-ABC1234567");
+        assertThat(result.verdicts().get(0).petId()).isEqualTo(5L);
+    }
+
+    @Test
+    void 판별_상세_조회시_존재하지_않거나_본인_판별이_아니면_예외() {
+        when(petCheckRepository.findByCheckIdAndUser_Id(100L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> petCheckQueryService.getCheckDetail(1L, 100L))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
     void 존재하지_않는_검증_코드로_조회하면_예외() {
         when(petCheckVerdictRepository.findByVerifyCode("FP-NOPE")).thenReturn(Optional.empty());
 

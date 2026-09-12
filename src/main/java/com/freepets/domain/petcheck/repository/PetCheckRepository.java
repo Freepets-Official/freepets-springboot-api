@@ -1,6 +1,7 @@
 package com.freepets.domain.petcheck.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -15,6 +16,14 @@ public interface PetCheckRepository extends JpaRepository<PetCheck, Long> {
     Page<PetCheck> findAllByUser_IdOrderByCreatedAtDesc(
             Long userId,
             Pageable pageable
+    );
+
+    // GET /api/v1/pet-checks/{checkId} — 판별 이력 단건 상세(동반 출입증 다시 보기). user_id를
+    // 같이 걸어 본인 것만 조회되게 한다 — 존재는 하지만 남의 판별이면 존재하지 않는 것과 같은
+    // PETCHECK4001로 응답해, 남의 checkId를 넣어봐서 존재 여부를 알아내는 것도 막는다.
+    Optional<PetCheck> findByCheckIdAndUser_Id(
+            Long checkId,
+            Long userId
     );
 
     Page<PetCheck> findAllByUser_IdAndFacility_FacilityIdOrderByCreatedAtDesc(

@@ -2,6 +2,7 @@ package com.freepets.domain.petcheck.controller;
 
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -44,6 +45,21 @@ public class PetCheckController {
     ) {
         return ApiResponse.onSuccess(
                 petCheckQueryService.getMyChecks(userId, facilityId, limit, offset)
+        );
+    }
+
+    /**
+     * 판별 이력 단건 상세 — 목록(getMyChecks)과 달리 아이별 verdict(verifyCode 포함)를 그대로
+     * 내려준다. "동반 출입증 다시 보기"가 이 API로 예전 verifyCode를 다시 가져와야, 볼 때마다
+     * 판별을 새로 요청하지 않는다.
+     */
+    @GetMapping("/pet-checks/{checkId}")
+    public ApiResponse<PetCheckResponseDTO.CheckResult> getCheckDetail(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long checkId
+    ) {
+        return ApiResponse.onSuccess(
+                petCheckQueryService.getCheckDetail(userId, checkId)
         );
     }
 }

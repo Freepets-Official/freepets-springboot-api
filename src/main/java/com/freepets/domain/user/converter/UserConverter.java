@@ -90,10 +90,11 @@ public class UserConverter {
     }
 
     public static UserResponseDTO.LoginResult toLoginResult(
+            Long userId,
             String accessToken,
             String refreshToken
     ) {
-        return new UserResponseDTO.LoginResult(accessToken, refreshToken);
+        return new UserResponseDTO.LoginResult(String.valueOf(userId), accessToken, refreshToken);
     }
 
     public static UserResponseDTO.AccountResult toAccountResult(
@@ -101,6 +102,7 @@ public class UserConverter {
             List<Long> ownedFacilityIds
     ) {
         return new UserResponseDTO.AccountResult(
+                String.valueOf(user.getId()),
                 user.getNickname(),
                 user.getAvatarUri(),
                 Profile.of(ownedFacilityIds),

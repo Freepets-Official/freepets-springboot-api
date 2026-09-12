@@ -42,7 +42,7 @@ public class UserQueryService {
         String accessToken = jwtProvider.createAccessToken(user.getId());
         String refreshToken = jwtProvider.createRefreshToken(user.getId());
 
-        return UserConverter.toLoginResult(accessToken, refreshToken);
+        return UserConverter.toLoginResult(user.getId(), accessToken, refreshToken);
     }
 
     /**

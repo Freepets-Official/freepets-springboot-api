@@ -54,6 +54,7 @@ public class AuthCommandService {
 
         User user = resolution.user();
         return AuthConverter.toSocialLoginResult(
+                user.getId(),
                 jwtProvider.createAccessToken(user.getId()),
                 jwtProvider.createRefreshToken(user.getId()),
                 resolution.isNewUser()

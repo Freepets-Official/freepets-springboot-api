@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -16,8 +17,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
 import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
+import com.freepets.domain.user.entity.Profile;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
@@ -30,6 +33,9 @@ class UserQueryServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private FacilityOwnerClaimRepository facilityOwnerClaimRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -129,15 +135,31 @@ class UserQueryServiceTest {
     }
 
     @Test
-    void getAccount_성공하면_닉네임과_아바타를_반환한다() {
+    void getAccount_소유_매장이_없으면_소비자_프로필만_반환한다() {
         User user = createUser();
 
         when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(facilityOwnerClaimRepository.findFacilityIdsByUserId(1L)).thenReturn(List.of());
 
         UserResponseDTO.AccountResult result = userQueryService.getAccount(1L);
 
         assertThat(result.nickname()).isEqualTo(user.getNickname());
         assertThat(result.avatarUri()).isEqualTo(user.getAvatarUri());
+        assertThat(result.profiles()).containsExactly(Profile.CONSUMER);
+        assertThat(result.ownedFacilityIds()).isEmpty();
+    }
+
+    @Test
+    void getAccount_소유_매장이_있으면_사업자_프로필과_소유_매장을_함께_반환한다() {
+        User user = createUser();
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(facilityOwnerClaimRepository.findFacilityIdsByUserId(1L)).thenReturn(List.of(6L, 9L));
+
+        UserResponseDTO.AccountResult result = userQueryService.getAccount(1L);
+
+        assertThat(result.profiles()).containsExactly(Profile.CONSUMER, Profile.OWNER);
+        assertThat(result.ownedFacilityIds()).containsExactly(6L, 9L);
     }
 
     @Test
@@ -150,5 +172,6 @@ class UserQueryServiceTest {
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.MEMBER4005);
+        verifyNoInteractions(facilityOwnerClaimRepository);
     }
 }

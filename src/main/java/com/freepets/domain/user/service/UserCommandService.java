@@ -1,10 +1,13 @@
 package com.freepets.domain.user.service;
 
+import java.util.List;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
 import com.freepets.domain.user.converter.UserConverter;
 import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
@@ -25,6 +28,7 @@ import lombok.RequiredArgsConstructor;
 public class UserCommandService {
 
     private final UserRepository userRepository;
+    private final FacilityOwnerClaimRepository facilityOwnerClaimRepository;
     private final PasswordEncoder passwordEncoder;
     private final S3ImageService s3ImageService;
     private final UserDeviceTokenRepository userDeviceTokenRepository;
@@ -102,7 +106,9 @@ public class UserCommandService {
             s3ImageService.delete(previousAvatarUri);
         }
 
-        return UserConverter.toAccountResult(user);
+        // 계정 조회와 같은 응답이라 프로필도 함께 채운다. 빠뜨리면 수정 직후 앱이 사업자 프로필을 잃는다.
+        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findFacilityIdsByUserId(userId);
+        return UserConverter.toAccountResult(user, ownedFacilityIds);
     }
 
     // 등록할 때마다 이 토큰을 가진 기존 행을 지우고 새로 저장한다 — 기기 재설치·기기 변경·다른

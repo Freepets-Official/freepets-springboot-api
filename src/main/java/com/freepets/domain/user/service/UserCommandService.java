@@ -174,6 +174,9 @@ public class UserCommandService {
         String avatarUri = user.getAvatarUri();
         user.withdraw();
         userDeviceTokenRepository.deleteAllByUser_Id(userId);
+        // 탈퇴는 소프트 삭제라 사용자 행이 남아 외래 키 CASCADE가 동작하지 않는다. 소유 기록을
+        // 남겨두면 탈퇴한 계정이 매장을 붙잡고 있어 진짜 사장이 그 매장을 영영 등록하지 못한다.
+        facilityOwnerClaimRepository.deleteAllByUser_Id(userId);
 
         if (avatarUri != null) {
             s3ImageService.delete(avatarUri);

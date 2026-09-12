@@ -276,6 +276,9 @@ class UserCommandServiceTest {
         // "탈퇴한 계정"으로 나가야 한다.
         assertThat(user.getNickname()).isEqualTo("탈퇴한 계정");
         verify(userDeviceTokenRepository).deleteAllByUser_Id(1L);
+        // 탈퇴는 소프트 삭제라 사용자 행이 남는다. 소유 기록을 남겨두면 탈퇴한 계정이 매장을
+        // 붙잡고 있어 진짜 사장이 그 매장을 등록하지 못한다.
+        verify(facilityOwnerClaimRepository).deleteAllByUser_Id(1L);
         verify(s3ImageService).delete("https://s3-url/avatar.jpg");
     }
 

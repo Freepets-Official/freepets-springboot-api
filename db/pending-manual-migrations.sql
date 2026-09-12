@@ -162,7 +162,8 @@ ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
 -- pg_trgm 확장 + GIN 트라이그램 인덱스를 걸면 앞뒤 % 패턴의 LIKE도 인덱스를 탄다. 인덱스
 -- 자체가 lower(name)/lower(address) 표현식 기준이라 쿼리 코드는 안 바꿔도 된다.
 --
--- 상태: ⬜ 미적용
+-- 상태: ✅ 적용 완료 (2026-09-13, 운영 DB 확인 — idx_facilities_name_trgm/
+-- idx_facilities_address_trgm 둘 다 생성 확인)
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE INDEX IF NOT EXISTS idx_facilities_name_trgm

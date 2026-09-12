@@ -489,6 +489,45 @@ tasks.register('facilityConditionCleanUpMaxWeightSample', Test) {
 	outputs.upToDateWhen { false }
 }
 
+// 국세청 사업자등록정보 진위확인 실호출 탐사. 실제 외부 API를 호출하므로 test 태스크에서는 돌지 않는다.
+// 문서로 조사한 응답 구조가 실제와 같은지 확인하는 용도다.
+// 실행: ./gradlew ntsProbe -Dnts.probe.business-number=1234567890 \
+//           -Dnts.probe.representative-name=홍길동 -Dnts.probe.opening-date=20200315
+//      서비스키는 환경변수 NTS_SERVICE_KEY 또는 -Dnts.service-key 로 넘긴다.
+tasks.register('ntsProbe', Test) {
+	group = 'verification'
+	description = '국세청 사업자등록정보 진위확인 실호출 (외부 API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.infra.nts.NtsProbeTest'
+	}
+
+	systemProperty 'nts.probe', 'true'
+
+	[
+			'nts.service-key',
+			'nts.probe.business-number',
+			'nts.probe.representative-name',
+			'nts.probe.opening-date'
+	].each { key ->
+		if (System.getProperty(key) != null) {
+			systemProperty key, System.getProperty(key)
+		}
+	}
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	// 매번 실제 호출 결과를 받아야 하므로 캐시된 성공 결과를 재사용하지 않는다.
+	outputs.upToDateWhen { false }
+}
+
 // FCM 실제 발송 탐사용 일회성 실행. 실제 기기 토큰으로 진짜 푸시를 보내므로 test 태스크에서는
 // 돌지 않는다. 시스템 프로퍼티로 대상 토큰을 넘긴다.
 // 실행: ./gradlew fcmProbe -Dfcm.probe.token=실제토큰값

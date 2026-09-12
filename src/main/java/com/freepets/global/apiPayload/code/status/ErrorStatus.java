@@ -79,7 +79,12 @@ public enum ErrorStatus implements BaseErrorCode {
     CALENDAR4004(BAD_REQUEST, "CALENDAR4004", "약 복용(MED) 유형 일정에만 복용 체크를 할 수 있습니다."),
     CALENDAR4005(BAD_REQUEST, "CALENDAR4005", "일정 시작일 이전 날짜는 체크할 수 없습니다."),
     CALENDAR4006(BAD_REQUEST, "CALENDAR4006", "종료일은 시작일보다 빠를 수 없습니다."),
-    CALENDAR4007(BAD_REQUEST, "CALENDAR4007", "반복 일정에는 기간(종료일)을 설정할 수 없습니다.");
+    CALENDAR4007(BAD_REQUEST, "CALENDAR4007", "반복 일정에는 기간(종료일)을 설정할 수 없습니다."),
+
+    // 사업자 에러
+    BUSINESS4001(BAD_REQUEST, "BUSINESS4001", "사업자등록정보가 일치하지 않습니다."),
+    BUSINESS4002(BAD_REQUEST, "BUSINESS4002", "휴업 또는 폐업한 사업자입니다."),
+    BUSINESS5001(BAD_GATEWAY, "BUSINESS5001", "국세청 사업자등록정보 서비스와의 통신에 실패했습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

@@ -2,6 +2,7 @@ package com.freepets.domain.user.service;
 
 import java.util.List;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,6 +14,7 @@ import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
+import com.freepets.domain.user.event.UserWithdrawnEvent;
 import com.freepets.domain.user.entity.UserDeviceToken;
 import com.freepets.domain.user.repository.UserDeviceTokenRepository;
 import com.freepets.domain.user.repository.UserRepository;
@@ -32,6 +34,7 @@ public class UserCommandService {
     private final PasswordEncoder passwordEncoder;
     private final S3ImageService s3ImageService;
     private final UserDeviceTokenRepository userDeviceTokenRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public UserResponseDTO.SignUpResult signUp(UserRequestDTO.SignUpRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -181,6 +184,11 @@ public class UserCommandService {
         if (avatarUri != null) {
             s3ImageService.delete(avatarUri);
         }
+
+        // 애플 토큰 폐기는 커밋된 뒤에 처리한다 — 이 트랜잭션이 롤백되면 사용자는 여전히
+        // 회원인데 애플 연결만 끊긴, 되돌릴 수 없는 상태가 된다(AppleTokenRevocationListener 참고).
+        // userId는 withdraw()가 지우지 않으므로 avatarUri처럼 미리 담아둘 필요가 없다.
+        eventPublisher.publishEvent(new UserWithdrawnEvent(userId));
 
         return UserConverter.toWithdrawResult();
     }

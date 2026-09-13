@@ -138,3 +138,25 @@ UPDATE calendar_events SET end_date = start_date WHERE end_date IS NULL;
 ALTER TABLE freepets.courses DROP CONSTRAINT IF EXISTS courses_distance_option_check;
 ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
     CHECK (distance_option IN ('ONE_KM', 'FIVE_KM', 'TEN_KM', 'TWENTY_KM', 'THIRTY_KM', 'UNLIMITED'));
+
+-- ============================================================
+-- 2026-09-13 — 애플 토큰 폐기용 테이블 추가 (feat/apple-token-revoke)
+-- ============================================================
+-- App Store 심사 지침 5.1.1(v)는 Sign in with Apple을 쓰는 앱이 계정을 삭제할 때 애플 토큰까지
+-- 폐기하도록 요구한다. 폐기하려면 애플이 발급한 refresh token이 있어야 해서 보관 테이블이
+-- 필요하다(apple_refresh_tokens).
+--
+-- 신규 테이블이라 ddl-auto=update가 컬럼·유니크 제약을 전부 자동 생성한다. 기존 테이블 변경이
+-- 없으므로 수동 조치는 없다 — 아래는 ddl-auto를 끈 환경을 위한 참고용이다.
+--
+-- 상태: ✅ 조치 불필요 (참고용 기록)
+-- CREATE TABLE freepets.apple_refresh_tokens (
+--     id                      BIGSERIAL PRIMARY KEY,
+--     user_id                 BIGINT       NOT NULL UNIQUE REFERENCES freepets.users (id),
+--     encrypted_refresh_token TEXT         NOT NULL,
+--     revoke_requested_at     TIMESTAMP,
+--     revoke_failed_reason    VARCHAR(500),
+--     revoke_attempt_count    INTEGER      NOT NULL,
+--     created_at              TIMESTAMP    NOT NULL,
+--     updated_at              TIMESTAMP    NOT NULL
+-- );

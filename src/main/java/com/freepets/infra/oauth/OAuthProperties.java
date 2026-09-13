@@ -37,8 +37,32 @@ public record OAuthProperties(
     /** @param clientIds iOS/Android/Web 등 앱에 발급된 OAuth 클라이언트 ID 전부 */
     public record Google(List<String> clientIds) {}
 
-    /** @param clientIds 네이티브 앱 Bundle ID 및 웹 Service ID */
-    public record Apple(List<String> clientIds) {}
+    /**
+     * 애플은 두 가지 용도로 설정이 나뉜다.
+     *
+     * <p>{@code clientIds}는 로그인할 때마다 쓰는 <b>필수</b> 값이다(id_token의 {@code aud} 검증).
+     *
+     * <p>나머지는 계정 삭제 시 애플에 토큰 폐기를 요청하기 위한 <b>선택</b> 값이다. 넷이 모두
+     * 채워졌을 때만 폐기 기능이 켜지고, 하나라도 비면 로그인은 그대로 되면서 토큰 교환·폐기만
+     * 조용히 건너뛴다 — 키 발급 전에도 서버가 떠야 하기 때문이다({@code OAuthConfig} 참고).
+     *
+     * @param clientIds                네이티브 앱 Bundle ID 및 웹 Service ID
+     * @param teamId                   Apple Developer 멤버십의 Team ID. client_secret의 {@code iss}
+     * @param keyId                    Sign in with Apple 키의 Key ID. client_secret 헤더의 {@code kid}
+     * @param privateKey               그 키의 {@code .p8} 내용. 진짜 여러 줄 PEM, 줄바꿈이
+     *                                 이스케이프 문자로 들어간 PEM, 헤더를 떼어낸 한 줄 Base64
+     *                                 어느 형태든 받는다({@code AppleClientSecretGenerator} 참고)
+     * @param tokenEncryptionPassword  애플 refresh token을 DB에 암호화해 저장할 때 쓸 비밀번호
+     * @param tokenEncryptionSalt      같은 용도의 솔트. 16진수 문자열이어야 한다
+     */
+    public record Apple(
+            List<String> clientIds,
+            String teamId,
+            String keyId,
+            String privateKey,
+            String tokenEncryptionPassword,
+            String tokenEncryptionSalt
+    ) {}
 
     /**
      * @param appId 카카오 개발자 콘솔 &gt; 앱 설정 &gt; 요약 정보의 앱 ID. 액세스 토큰이 우리 앱에서

@@ -189,6 +189,51 @@ class CourseCommandServiceTest {
     }
 
     @Test
+    void 공개_토글로도_스톱_전체_없이_공개_전환과_경험치_지급이_된다() {
+        Course course = ownedCourseWithStops(1L, 2L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        stubVerified(1L, 1L, 2L);
+
+        CourseResponseDTO.MyCourse result = courseCommandService.updateVisibility(1L, 10L, true);
+
+        assertThat(result.isPublic()).isTrue();
+        // 스톱 2개면 20(기본) + 5×2 = 30.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30));
+    }
+
+    @Test
+    void 공개_토글로_비공개_전환시_경험치가_지급되지_않는다() {
+        Course course = ownedPublicCourseWithStops(1L);
+
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.updateVisibility(1L, 10L, false);
+
+        assertThat(result.isPublic()).isFalse();
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void 공개_토글시_판별_또는_리뷰가_없는_스톱이_있으면_COURSE4045() {
+        Course course = ownedCourseWithStops(1L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        // 판별·리뷰 스텁 없음 — 검증되지 않은 시설로 취급된다.
+
+        assertThatThrownBy(() -> courseCommandService.updateVisibility(1L, 10L, true))
+                .isInstanceOf(GeneralException.class);
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void 본인_코스가_아니면_공개_토글시_COURSE4042() {
+        Course course = ownedCourseWithStops(1L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        assertThatThrownBy(() -> courseCommandService.updateVisibility(2L, 10L, true))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
     void 존재하지_않는_코스_삭제시_COURSE4041() {
         when(courseRepository.findById(10L)).thenReturn(Optional.empty());
 

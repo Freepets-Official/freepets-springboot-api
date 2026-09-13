@@ -12,6 +12,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -78,6 +79,21 @@ public class CourseController {
     ) {
         return ApiResponse.onSuccess(
                 courseCommandService.updateCourse(userId, courseId, request)
+        );
+    }
+
+    /**
+     * 공개 여부만 바꾼다 — updateCourse(PUT)와 달리 name·stopIds 없이 isPublic만 보내면 된다.
+     * "공개" 토글 버튼처럼 가볍게 켜고 끄는 용도.
+     */
+    @PatchMapping("/{courseId}/visibility")
+    public ApiResponse<CourseResponseDTO.MyCourse> updateVisibility(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long courseId,
+            @Valid @RequestBody CourseRequestDTO.VisibilityRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                courseCommandService.updateVisibility(userId, courseId, request.isPublic())
         );
     }
 

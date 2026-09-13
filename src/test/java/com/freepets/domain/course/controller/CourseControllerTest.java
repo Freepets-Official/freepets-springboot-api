@@ -499,7 +499,9 @@ class CourseControllerTest {
                 )),
                 1
         );
-        when(courseQueryService.getPublicCourses(any())).thenReturn(result);
+        // @WebMvcTest는 별도 인증을 안 걸어 SecurityContext가 비어 있다 — 컨트롤러가 이때
+        // 개인화용 userId를 null로 넘기는지까지 함께 확인한다.
+        when(courseQueryService.getPublicCourses(isNull(), any())).thenReturn(result);
 
         mockMvc.perform(get("/api/v1/courses/public"))
                 .andExpect(status().isOk())

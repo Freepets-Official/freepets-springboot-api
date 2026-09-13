@@ -88,4 +88,16 @@ public class CourseRequestDTO {
         }
     }
 
+    // PATCH /api/v1/courses/{courseId}/name 전용 — 이름만 바꾼다. VisibilityRequest와 같은
+    // 이유 — SaveRequest(PUT)는 stopIds 전체를 다시 요구해서 이름만 고치는 가벼운 인터랙션에도
+    // 부담이 있었다.
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class NameRequest {
+
+        @NotBlank(message = "코스 이름을 입력해주세요.")
+        private String name;
+    }
+
 }

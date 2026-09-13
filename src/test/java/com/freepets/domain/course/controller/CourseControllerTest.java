@@ -397,6 +397,30 @@ class CourseControllerTest {
     }
 
     @Test
+    @DisplayName("이름 변경에 성공하면 200과 변경된 코스를 반환한다")
+    void 이름_변경에_성공하면_200과_변경된_코스를_반환한다() throws Exception {
+        when(courseCommandService.updateName(isNull(), eq(10L), eq("새 이름")))
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "새 이름", null, List.of(1L, 2L), LocalDateTime.now(), false));
+
+        mockMvc.perform(patch("/api/v1/courses/{courseId}/name", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"새 이름\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.name").value("새 이름"));
+    }
+
+    @Test
+    @DisplayName("이름 변경 시 name이 없으면 400을 반환한다")
+    void 이름_변경_시_name이_없으면_400을_반환한다() throws Exception {
+        mockMvc.perform(patch("/api/v1/courses/{courseId}/name", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(courseCommandService);
+    }
+
+    @Test
     @DisplayName("공개 토글에 성공하면 200과 변경된 코스를 반환한다")
     void 공개_토글에_성공하면_200과_변경된_코스를_반환한다() throws Exception {
         when(courseCommandService.updateVisibility(isNull(), eq(10L), eq(true)))

@@ -17,6 +17,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -28,6 +29,7 @@ import com.freepets.domain.user.entity.Profile;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.entity.UserDeviceToken;
+import com.freepets.domain.user.event.UserWithdrawnEvent;
 import com.freepets.domain.user.repository.UserDeviceTokenRepository;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -51,6 +53,9 @@ class UserCommandServiceTest {
 
     @Mock
     private UserDeviceTokenRepository userDeviceTokenRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private UserCommandService userCommandService;
@@ -280,6 +285,29 @@ class UserCommandServiceTest {
         // 붙잡고 있어 진짜 사장이 그 매장을 등록하지 못한다.
         verify(facilityOwnerClaimRepository).deleteAllByUser_Id(1L);
         verify(s3ImageService).delete("https://s3-url/avatar.jpg");
+
+        // 애플 토큰 폐기 등 탈퇴 후처리는 커밋 이후에 돌아야 해서 이벤트로 넘긴다.
+        ArgumentCaptor<UserWithdrawnEvent> eventCaptor = ArgumentCaptor.forClass(UserWithdrawnEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().userId()).isEqualTo(1L);
+    }
+
+    // 탈퇴가 실패했는데 후처리가 돌면 멀쩡한 계정의 애플 연결이 끊긴다.
+    @Test
+    void withdraw_비밀번호가_틀리면_탈퇴_이벤트를_발행하지_않는다() {
+        User user = createUser();
+        UserRequestDTO.WithdrawRequest request = new UserRequestDTO.WithdrawRequest();
+        request.setPassword("wrongPassword");
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("wrongPassword", "encodedPassword")).thenReturn(false);
+
+        assertThrows(
+                GeneralException.class,
+                () -> userCommandService.withdraw(1L, request)
+        );
+
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test

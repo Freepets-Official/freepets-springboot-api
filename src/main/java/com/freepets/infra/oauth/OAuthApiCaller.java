@@ -2,18 +2,22 @@ package com.freepets.infra.oauth;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * 액세스 토큰으로 소셜 userinfo API를 호출한다. 카카오·네이버가 공유한다.
+ * 소셜 제공자의 HTTP API를 호출한다. 카카오·네이버의 userinfo 조회와 애플의 토큰 교환·폐기가
+ * 이 클래스를 공유한다.
  *
  * <p>{@code TourApiClient}와 같은 방식으로 {@link HttpClient}를 직접 쓴다.
  * 스프링에 의존하지 않는 POJO이고, {@link HttpClient}가 스레드 안전하므로 이 클래스도 안전하다.
@@ -46,6 +50,59 @@ public class OAuthApiCaller {
                 .GET()
                 .build();
 
+        return readTree(uri, sendExpectingOk(uri, httpRequest));
+    }
+
+    /**
+     * 폼 인코딩 POST 후 JSON 응답을 돌려준다. 애플 토큰 교환({@code /auth/token})이 쓴다.
+     *
+     * @throws OAuthException 통신 실패 또는 200이 아닌 응답
+     */
+    public JsonNode postFormForJson(
+            String uri,
+            Map<String, String> formParameters
+    ) {
+        return readTree(uri, sendExpectingOk(uri, formRequest(uri, formParameters)));
+    }
+
+    /**
+     * 폼 인코딩 POST를 보내고 응답 본문은 버린다. 애플 토큰 폐기({@code /auth/revoke})가 쓴다 —
+     * 성공하면 200에 본문이 비어 있어서, JSON 파싱을 강제하면 정상 응답에서 오히려 실패한다.
+     *
+     * @throws OAuthException 통신 실패 또는 200이 아닌 응답
+     */
+    public void postForm(
+            String uri,
+            Map<String, String> formParameters
+    ) {
+        sendExpectingOk(uri, formRequest(uri, formParameters));
+    }
+
+    private HttpRequest formRequest(
+            String uri,
+            Map<String, String> formParameters
+    ) {
+        String body = formParameters.entrySet().stream()
+                .map(parameter -> encode(parameter.getKey()) + "=" + encode(parameter.getValue()))
+                .collect(Collectors.joining("&"));
+
+        return HttpRequest.newBuilder(URI.create(uri))
+                .timeout(REQUEST_TIMEOUT)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    /** 전송과 상태코드 판정을 한자리에 모은다. */
+    private String sendExpectingOk(
+            String uri,
+            HttpRequest httpRequest
+    ) {
         HttpResponse<String> httpResponse;
         try {
             httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -63,7 +120,7 @@ public class OAuthApiCaller {
             );
         }
 
-        return readTree(uri, httpResponse.body());
+        return httpResponse.body();
     }
 
     private JsonNode readTree(

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import com.freepets.domain.auth.dto.AuthRequestDTO;
 import com.freepets.domain.auth.dto.AuthResponseDTO;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
+import com.freepets.domain.user.service.AppleRefreshTokenService;
 import com.freepets.domain.user.service.SocialUserResolution;
 import com.freepets.domain.user.service.UserCommandService;
 import com.freepets.domain.user.service.UserQueryService;
@@ -47,6 +49,9 @@ class AuthCommandServiceTest {
     @Mock
     private OAuthClient oAuthClient;
 
+    @Mock
+    private AppleRefreshTokenService appleRefreshTokenService;
+
     @InjectMocks
     private AuthCommandService authCommandService;
 
@@ -54,6 +59,7 @@ class AuthCommandServiceTest {
         AuthRequestDTO.SocialLoginRequest request = new AuthRequestDTO.SocialLoginRequest();
         request.setProviderToken("provider-token");
         request.setName("홍길동");
+        request.setAuthorizationCode("apple-auth-code");
         return request;
     }
 
@@ -123,6 +129,36 @@ class AuthCommandServiceTest {
         )).thenReturn(new SocialUserResolution(createUser(3L), true));
 
         assertThat(authCommandService.socialLogin("APPLE", createRequest())).isNotNull();
+    }
+
+    // 탈퇴 시 폐기할 토큰은 애플에만 필요하다. 다른 제공자까지 부르면 불필요한 외부 호출이 된다.
+    @Test
+    void 애플_로그인이면_인가_코드를_보관한다() {
+        OAuthUserInfo userInfo = new OAuthUserInfo("apple-1", "foo@bar.com", "홍길동");
+        givenVerifiedUser(Provider.APPLE, userInfo);
+        givenIssuedTokens(5L);
+        User user = createUser(5L);
+        when(userCommandService.findOrRegisterSocialUser(
+                Provider.APPLE, "apple-1", "foo@bar.com", "홍길동"
+        )).thenReturn(new SocialUserResolution(user, true));
+
+        authCommandService.socialLogin("apple", createRequest());
+
+        verify(appleRefreshTokenService).storeFromAuthorizationCode(user, "apple-auth-code");
+    }
+
+    @Test
+    void 애플이_아닌_로그인은_인가_코드를_보관하지_않는다() {
+        OAuthUserInfo userInfo = new OAuthUserInfo("kakao-1", "foo@bar.com", "홍길동");
+        givenVerifiedUser(Provider.KAKAO, userInfo);
+        givenIssuedTokens(1L);
+        when(userCommandService.findOrRegisterSocialUser(
+                Provider.KAKAO, "kakao-1", "foo@bar.com", "홍길동"
+        )).thenReturn(new SocialUserResolution(createUser(1L), false));
+
+        authCommandService.socialLogin("kakao", createRequest());
+
+        verifyNoInteractions(appleRefreshTokenService);
     }
 
     @Test

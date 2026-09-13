@@ -7,6 +7,7 @@ import com.freepets.domain.auth.dto.AuthRequestDTO;
 import com.freepets.domain.auth.dto.AuthResponseDTO;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
+import com.freepets.domain.user.service.AppleRefreshTokenService;
 import com.freepets.domain.user.service.SocialUserResolution;
 import com.freepets.domain.user.service.UserCommandService;
 import com.freepets.domain.user.service.UserQueryService;
@@ -37,6 +38,7 @@ public class AuthCommandService {
     private final UserCommandService userCommandService;
     private final UserQueryService userQueryService;
     private final JwtProvider jwtProvider;
+    private final AppleRefreshTokenService appleRefreshTokenService;
 
     public AuthResponseDTO.SocialLoginResult socialLogin(
             String providerPathVariable,
@@ -53,6 +55,14 @@ public class AuthCommandService {
         );
 
         User user = resolution.user();
+
+        // 애플만: 탈퇴할 때 폐기할 refresh token을 미리 확보해둔다. 실패해도 로그인은 그대로
+        // 진행된다 — 애플이 흔들렸다고 로그인 자체가 막히는 쪽이 훨씬 나쁘고, 이 토큰은
+        // 탈퇴 시점에나 필요한 값이다(AppleRefreshTokenService 참고).
+        if (provider == Provider.APPLE) {
+            appleRefreshTokenService.storeFromAuthorizationCode(user, request.getAuthorizationCode());
+        }
+
         return AuthConverter.toSocialLoginResult(
                 jwtProvider.createAccessToken(user.getId()),
                 jwtProvider.createRefreshToken(user.getId()),

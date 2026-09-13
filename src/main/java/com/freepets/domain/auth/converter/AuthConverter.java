@@ -33,11 +33,17 @@ public class AuthConverter {
     }
 
     public static AuthResponseDTO.SocialLoginResult toSocialLoginResult(
+            Long userId,
             String accessToken,
             String refreshToken,
             boolean isNewUser
     ) {
-        return new AuthResponseDTO.SocialLoginResult(accessToken, refreshToken, isNewUser);
+        return new AuthResponseDTO.SocialLoginResult(
+                String.valueOf(userId),
+                accessToken,
+                refreshToken,
+                isNewUser
+        );
     }
 
     public static AuthResponseDTO.TokenRefreshResult toTokenRefreshResult(

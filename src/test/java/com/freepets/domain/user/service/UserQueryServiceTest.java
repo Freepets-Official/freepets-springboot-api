@@ -16,6 +16,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
 import com.freepets.domain.user.dto.UserRequestDTO;
@@ -54,12 +55,15 @@ class UserQueryServiceTest {
     }
 
     private User createUser() {
-        return User.builder()
+        User user = User.builder()
                 .email("test@test.com")
                 .passwordHash("encodedPassword")
                 .nickname("tester")
                 .provider(Provider.LOCAL)
                 .build();
+        // 응답에 userId를 담으므로 식별자가 있어야 한다 — 영속화 전 엔티티는 id가 null이다.
+        ReflectionTestUtils.setField(user, "id", 1L);
+        return user;
     }
 
     @Test
@@ -74,6 +78,7 @@ class UserQueryServiceTest {
 
         UserResponseDTO.LoginResult result = userQueryService.login(request);
 
+        assertThat(result.userId()).isEqualTo("1");
         assertThat(result.accessToken()).isEqualTo("access-token");
         assertThat(result.refreshToken()).isEqualTo("refresh-token");
     }
@@ -143,6 +148,7 @@ class UserQueryServiceTest {
 
         UserResponseDTO.AccountResult result = userQueryService.getAccount(1L);
 
+        assertThat(result.userId()).isEqualTo("1");
         assertThat(result.nickname()).isEqualTo(user.getNickname());
         assertThat(result.avatarUri()).isEqualTo(user.getAvatarUri());
         assertThat(result.profiles()).containsExactly(Profile.CONSUMER);

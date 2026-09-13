@@ -130,7 +130,7 @@ class SecurityFilterChainTest {
     void 소셜_로그인_경로는_토큰없이도_통과한다() throws Exception {
         // 아직 우리 토큰이 없는 상태로 들어오는 경로라 인증을 요구하면 로그인 자체가 불가능하다.
         when(authCommandService.socialLogin(any(), any()))
-                .thenReturn(new AuthResponseDTO.SocialLoginResult("access", "refresh", true));
+                .thenReturn(new AuthResponseDTO.SocialLoginResult("1", "access", "refresh", true));
 
         mockMvc.perform(post("/api/v1/auth/social/kakao")
                         .contentType(MediaType.APPLICATION_JSON)

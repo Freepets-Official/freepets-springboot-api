@@ -6,7 +6,9 @@ import java.util.Set;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -150,6 +152,11 @@ public class CourseController {
     }
 
     // 로그인 불필요 — 다른 사용자가 공개한 코스를 로그인 전에도 둘러보고 담아갈 마음이 들게 한다.
+    // 다만 로그인 상태면 그 정보로 개인화 정렬을 해준다(CourseQueryService.getPublicCourses 참고)
+    // — permitAll 경로라 @AuthenticationPrincipal을 그대로 못 쓴다. 비로그인 요청은 Spring
+    // Security의 AnonymousAuthenticationToken(principal이 "anonymousUser" 문자열)이 채워지는데,
+    // @AuthenticationPrincipal Long userId로 받으면 이 문자열을 Long에 그대로 대입하려다 타입
+    // 불일치로 500이 난다 — 그래서 직접 SecurityContext를 보고 Long인 경우에만 값을 쓴다.
     @GetMapping("/public")
     public ApiResponse<CourseResponseDTO.PublicCourseResult> getPublicCourses(
             @RequestParam(defaultValue = "0")
@@ -161,8 +168,15 @@ public class CourseController {
             int size
     ) {
         return ApiResponse.onSuccess(
-                courseQueryService.getPublicCourses(PageRequest.of(page, size))
+                courseQueryService.getPublicCourses(resolveOptionalUserId(), PageRequest.of(page, size))
         );
+    }
+
+    private Long resolveOptionalUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getPrincipal() instanceof Long userId
+                ? userId
+                : null;
     }
 
     // 로그인 불필요 — preset과 마찬가지로 로그인 전 지역 선택 드롭다운에 쓴다.

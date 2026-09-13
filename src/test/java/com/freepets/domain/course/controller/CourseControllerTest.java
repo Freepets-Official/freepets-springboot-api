@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -396,6 +397,19 @@ class CourseControllerTest {
     }
 
     @Test
+    @DisplayName("공개 토글에 성공하면 200과 변경된 코스를 반환한다")
+    void 공개_토글에_성공하면_200과_변경된_코스를_반환한다() throws Exception {
+        when(courseCommandService.updateVisibility(isNull(), eq(10L), eq(true)))
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(1L, 2L), LocalDateTime.now(), true));
+
+        mockMvc.perform(patch("/api/v1/courses/{courseId}/visibility", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"isPublic\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.isPublic").value(true));
+    }
+
+    @Test
     @DisplayName("코스 삭제에 성공하면 200과 삭제된 courseId를 반환한다")
     void 코스_삭제에_성공하면_200과_삭제된_courseId를_반환한다() throws Exception {
         when(courseCommandService.deleteCourse(isNull(), eq(10L)))
@@ -499,7 +513,9 @@ class CourseControllerTest {
                 )),
                 1
         );
-        when(courseQueryService.getPublicCourses(any())).thenReturn(result);
+        // @WebMvcTest는 별도 인증을 안 걸어 SecurityContext가 비어 있다 — 컨트롤러가 이때
+        // 개인화용 userId를 null로 넘기는지까지 함께 확인한다.
+        when(courseQueryService.getPublicCourses(isNull(), any())).thenReturn(result);
 
         mockMvc.perform(get("/api/v1/courses/public"))
                 .andExpect(status().isOk())

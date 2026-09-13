@@ -99,6 +99,13 @@ public class Course extends BaseEntity {
     @Column(name = "share_code", unique = true, length = 20)
     private String shareCode;
 
+    // 공유 코드로 이 코스가 복사된 누적 횟수(GET /courses/public 인기순 폴백의 신호). isPublic과
+    // 무관하게 셈한다 — 비공개 코스도 지인에게 공유 코드로만 알려주는 쓰임이 있고, 이후 공개로
+    // 전환됐을 때 그동안의 인기를 반영해야 하기 때문. 기존 라이브 코스는 전부 0부터 시작한다.
+    @ColumnDefault("0")
+    @Column(name = "copy_count", nullable = false)
+    private int copyCount;
+
     @Builder
     private Course(
             User user,
@@ -167,6 +174,10 @@ public class Course extends BaseEntity {
      */
     public void issueShareCode(String shareCode) {
         this.shareCode = shareCode;
+    }
+
+    public void incrementCopyCount() {
+        this.copyCount++;
     }
 
 }

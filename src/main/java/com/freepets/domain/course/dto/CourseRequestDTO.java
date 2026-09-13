@@ -69,4 +69,23 @@ public class CourseRequestDTO {
         private Long facilityId;
     }
 
+    // PATCH /api/v1/courses/{courseId}/visibility 전용 — 공개 여부만 바꾼다. SaveRequest(PUT)는
+    // name·stopIds 전체를 요구해서 "공개 토글"만 하려는 클라이언트에도 코스 전체를 다시 구성해
+    // 보내야 하는 부담이 있었다 — 그 부담 자체가 토글 실패의 원인이 될 수 있어 가볍게 뺐다.
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class VisibilityRequest {
+
+        // SaveRequest.isPublic과 같은 이유(Lombok 기본 setPublic이 JSON 프로퍼티명을 public으로
+        // 깎는 문제) — setter를 직접 선언해 고정한다.
+        @JsonProperty("isPublic")
+        @Setter(AccessLevel.NONE)
+        private boolean isPublic;
+
+        public void setIsPublic(boolean isPublic) {
+            this.isPublic = isPublic;
+        }
+    }
+
 }

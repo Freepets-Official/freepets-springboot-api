@@ -108,6 +108,39 @@ public class CourseCommandService {
     }
 
     /**
+     * PATCH /api/v1/courses/{courseId}/visibility — 공개 여부만 바꾼다. updateCourse(PUT)는
+     * name·stopIds 전체를 요구해서, 공개만 켜고 싶은 요청도 코스를 통째로 다시 보내야 했다 —
+     * 그 부담 때문에 실제로는 토글이 거의 안 될 위험이 있어 가벼운 전용 경로를 따로 둔다.
+     * 공개 전환 시 스톱 발행 요건 검증·XP 지급은 updateCourse와 동일하게 적용한다.
+     */
+    public CourseResponseDTO.MyCourse updateVisibility(
+            Long userId,
+            Long courseId,
+            boolean isPublic
+    ) {
+        Course course = findOwnedCourse(userId, courseId);
+        boolean isPublicBeforeUpdate = course.isPublic();
+
+        if (isPublic) {
+            List<Facility> stops = course.getStops().stream()
+                    .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
+                    .map(CourseStop::getFacility)
+                    .toList();
+            validateStopsEligibleForPublish(userId, stops);
+        }
+
+        course.updateVisibility(isPublic);
+
+        if (!isPublicBeforeUpdate && course.isPublic()) {
+            gamificationService.grantXp(
+                    userId, XpSourceType.COURSE_PUBLISHED, course.getCourseId(), coursePublishedXp(course.getStops().size())
+            );
+        }
+
+        return CourseConverter.toMyCourse(course);
+    }
+
+    /**
      * POST /api/v1/courses/optimize-order — 저장하지 않고 스톱 순서만 최근접 이웃 방식으로
      * 다듬어 미리 보여준다. AI 코스를 fork했거나 직접 검색해서 스톱을 추가/삭제한 뒤, 동선을
      * 정리하고 싶을 때 쓴다(그대로 저장하려면 이 결과를 다시 POST/PUT에 넣어야 한다).
@@ -206,6 +239,11 @@ public class CourseCommandService {
         copy.replaceStops(stops);
 
         Course saved = courseRepository.save(copy);
+
+        // 인기순 폴백(GET /courses/public)의 신호라 자기 복사여도 센다 — XP와 달리 파밍 방지
+        // 대상이 아니다(경험치를 노리고 자기 코스를 반복 복사해도 "얼마나 담아갔는지"라는
+        // 사실 자체는 바뀌지 않는다).
+        original.incrementCopyCount();
 
         // 자기 코스를 자기 공유 코드로 복사하면 원 소유자 == 복사한 사람이라 실제 참여 없이도
         // 매번 새 courseId로 XP를 받아갈 수 있다(하루 상한만으로는 완전히 막지 못한다) —

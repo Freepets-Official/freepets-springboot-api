@@ -18,8 +18,14 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     List<Course> findAllByUser_Id(Long userId);
 
     // GET /api/v1/courses/public — 다른 사용자가 공개한 CUSTOM 코스 둘러보기. 전체 사용자를
-    // 대상으로 하는 목록이라 내 코스와 달리 페이지네이션이 필요하다.
+    // 대상으로 하는 목록이라 내 코스와 달리 페이지네이션이 필요하다. 개인화 후보 풀 조회(최신순)와
+    // 비로그인/취향 데이터 없는 유저의 정렬 기준 둘 다로 쓴다(CourseQueryService.getPublicCourses).
     Page<Course> findAllBySourceAndIsPublicTrueOrderByCreatedAtDesc(CourseSource source, Pageable pageable);
+
+    // GET /api/v1/courses/public 인기순 폴백 — 취향으로 매칭할 재료(반려동물·만족도 기록)가 없는
+    // 유저(비로그인 포함)에게는 개인화 대신 "많이 담아간 코스"부터 보여준다. copyCount가 같으면
+    // 최신순으로 한 번 더 정렬해 신규 공개 코스가 계속 맨 뒤로 밀리지 않게 한다.
+    Page<Course> findAllBySourceAndIsPublicTrueOrderByCopyCountDescCreatedAtDesc(CourseSource source, Pageable pageable);
 
     // PRESET 캐시 조회 — 지역×테마×거리 조합당 최대 1행. sigungu는 시/도 전체 대상일 때 null이라
     // 파라미터로 null이 들어오면 그대로 "IS NULL" 비교가 되는 derived query 기본 동작을 쓴다.

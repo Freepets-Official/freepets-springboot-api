@@ -180,4 +180,12 @@ public class Course extends BaseEntity {
         this.copyCount++;
     }
 
+    /**
+     * 이름만 바꾼다. update()는 스톱까지 같이 바꾸는 전체 교체라, 이름만 고치고 싶은 요청에도
+     * stopIds를 다시 보내야 하는 부담이 있었다 — updateVisibility()와 같은 이유로 분리한다.
+     */
+    public void rename(String name) {
+        this.name = name;
+    }
+
 }

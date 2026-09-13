@@ -108,6 +108,21 @@ public class CourseCommandService {
     }
 
     /**
+     * PATCH /api/v1/courses/{courseId}/name — 이름만 바꾼다. 남이 만든 코스는(본인 소유가
+     * 아니면) findOwnedCourse가 COURSE4042로 막는다 — 자기 코스만 바꿀 수 있다.
+     */
+    public CourseResponseDTO.MyCourse updateName(
+            Long userId,
+            Long courseId,
+            String name
+    ) {
+        Course course = findOwnedCourse(userId, courseId);
+        course.rename(name);
+
+        return CourseConverter.toMyCourse(course);
+    }
+
+    /**
      * PATCH /api/v1/courses/{courseId}/visibility — 공개 여부만 바꾼다. updateCourse(PUT)는
      * name·stopIds 전체를 요구해서, 공개만 켜고 싶은 요청도 코스를 통째로 다시 보내야 했다 —
      * 그 부담 때문에 실제로는 토글이 거의 안 될 위험이 있어 가벼운 전용 경로를 따로 둔다.

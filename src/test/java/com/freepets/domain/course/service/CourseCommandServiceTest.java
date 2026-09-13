@@ -189,6 +189,34 @@ class CourseCommandServiceTest {
     }
 
     @Test
+    void 이름_변경으로도_스톱_전체_없이_이름만_바뀐다() {
+        Course course = ownedCourseWithStops(1L, 2L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.updateName(1L, 10L, "새 이름");
+
+        assertThat(result.name()).isEqualTo("새 이름");
+        assertThat(result.stopIds()).containsExactly(1L, 2L);
+    }
+
+    @Test
+    void 본인_코스가_아니면_이름_변경시_COURSE4042() {
+        Course course = ownedCourseWithStops(1L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        assertThatThrownBy(() -> courseCommandService.updateName(2L, 10L, "남이 바꾸려는 이름"))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 존재하지_않는_코스_이름_변경시_COURSE4041() {
+        when(courseRepository.findById(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> courseCommandService.updateName(1L, 10L, "새 이름"))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
     void 공개_토글로도_스톱_전체_없이_공개_전환과_경험치_지급이_된다() {
         Course course = ownedCourseWithStops(1L, 2L);
         when(courseRepository.findById(10L)).thenReturn(Optional.of(course));

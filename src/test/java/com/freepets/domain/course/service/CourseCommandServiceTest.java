@@ -28,6 +28,7 @@ import com.freepets.domain.course.entity.CourseSource;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
@@ -132,6 +133,28 @@ class CourseCommandServiceTest {
         when(facilityRepository.findAllById(List.of(1L, 999L))).thenReturn(List.of(facility(1L, "A")));
 
         assertThatThrownBy(() -> courseCommandService.createCourse(1L, request("강릉 코스", List.of(1L, 999L))))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 동반_불가_시설을_담으면_COURSE4046() {
+        User user = user(1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(facilityRepository.findAllById(List.of(1L)))
+                .thenReturn(List.of(deniedFacility(1L, "동반불가 매장")));
+
+        assertThatThrownBy(() -> courseCommandService.createCourse(1L, request("강릉 코스", List.of(1L))))
+                .isInstanceOf(GeneralException.class);
+        verify(courseRepository, never()).save(any());
+    }
+
+    @Test
+    void 스톱_교체로도_동반_불가_시설은_담을_수_없다() {
+        Course course = ownedCourseWithStops(1L, 2L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(3L)).thenReturn(Optional.of(deniedFacility(3L, "동반불가 매장")));
+
+        assertThatThrownBy(() -> courseCommandService.replaceStop(1L, 10L, 0, 3L))
                 .isInstanceOf(GeneralException.class);
     }
 
@@ -530,6 +553,21 @@ class CourseCommandServiceTest {
         Facility facility = Facility.builder()
                 .name(name)
                 .category(FacilityCategory.CAFE)
+                .lat(new BigDecimal("37.0"))
+                .lng(new BigDecimal("128.0"))
+                .build();
+        ReflectionTestUtils.setField(facility, "facilityId", facilityId);
+        return facility;
+    }
+
+    private Facility deniedFacility(
+            Long facilityId,
+            String name
+    ) {
+        Facility facility = Facility.builder()
+                .name(name)
+                .category(FacilityCategory.CAFE)
+                .petAllowed(PetAllowed.DENIED)
                 .lat(new BigDecimal("37.0"))
                 .lng(new BigDecimal("128.0"))
                 .build();

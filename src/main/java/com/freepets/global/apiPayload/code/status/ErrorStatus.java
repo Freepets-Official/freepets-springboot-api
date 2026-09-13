@@ -69,6 +69,7 @@ public enum ErrorStatus implements BaseErrorCode {
     COURSE4043(NOT_FOUND, "COURSE4043", "존재하지 않는 스톱 순서입니다."),
     COURSE4044(NOT_FOUND, "COURSE4044", "존재하지 않는 공유 코드입니다."),
     COURSE4045(BAD_REQUEST, "COURSE4045", "공개하려면 코스에 담긴 모든 시설에 판별 기록과 리뷰가 있어야 합니다."),
+    COURSE4046(BAD_REQUEST, "COURSE4046", "반려동물 동반이 불가능한 시설은 코스에 담을 수 없습니다."),
 
     // 제보 에러
     REPORT4001(CONFLICT, "REPORT4001", "24시간 내 이미 제보한 시설입니다."),

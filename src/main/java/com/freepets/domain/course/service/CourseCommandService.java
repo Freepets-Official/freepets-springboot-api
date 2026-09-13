@@ -18,6 +18,7 @@ import com.freepets.domain.course.entity.CourseSource;
 import com.freepets.domain.course.entity.CourseStop;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
@@ -177,6 +178,7 @@ public class CourseCommandService {
 
         Facility newFacility = facilityRepository.findById(newFacilityId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.FACILITY4001));
+        validateStopsPetAllowed(List.of(newFacility));
 
         facilitiesInOrder.set(stopOrder, newFacility);
 
@@ -324,7 +326,24 @@ public class CourseCommandService {
             }
             ordered.add(facility);
         }
+        validateStopsPetAllowed(ordered);
         return ordered;
+    }
+
+    /**
+     * 반려동물 동반이 애초에 불가능한(PetAllowed.DENIED) 시설은 코스에 담을 수 없다 —
+     * preset/liked/similar 추천은 이미 후보 단계에서 DENIED를 걸러내지만(FacilityRepository의
+     * findPresetCandidates 등), CUSTOM 코스는 직접 검색해서 담는 방식이라 이 게이트가 없으면
+     * 프론트가 검색 필터를 깜빡했을 때 그대로 저장돼버린다. validateStopsEligibleForPublish(공개
+     * 게이트, "방문한 적 있는지")와는 별개 검사다 — 이건 비공개 코스를 만들 때도 항상 적용된다.
+     * PENDING(아직 파싱 안 됨)은 "불가로 확인된 것"이 아니므로 통과시킨다 — 다른 곳의 필터
+     * (petAllowed <> DENIED)와 기준을 맞춘다.
+     */
+    private void validateStopsPetAllowed(List<Facility> stops) {
+        boolean isAnyDenied = stops.stream().anyMatch(facility -> facility.getPetAllowed() == PetAllowed.DENIED);
+        if (isAnyDenied) {
+            throw new GeneralException(ErrorStatus.COURSE4046);
+        }
     }
 
 }

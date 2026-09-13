@@ -26,8 +26,6 @@ public class AppleTokenClient {
     private static final String TOKEN_URI = "https://appleid.apple.com/auth/token";
     private static final String REVOKE_URI = "https://appleid.apple.com/auth/revoke";
     private static final String REFRESH_TOKEN_FIELD = "refresh_token";
-    /** 애플이 "그 토큰은 이미 못 쓴다"고 알려줄 때 쓰는 오류 코드. */
-    private static final String INVALID_GRANT_ERROR = "invalid_grant";
 
     private final OAuthApiCaller oAuthApiCaller;
     private final AppleClientSecretGenerator clientSecretGenerator;
@@ -70,35 +68,20 @@ public class AppleTokenClient {
      *
      * <p>성공하면 애플은 본문 없는 200을 준다 — 그래서 JSON을 읽지 않는 쪽으로 호출한다.
      *
-     * <p><b>이미 무효한 토큰은 성공으로 친다.</b> 애플은 이 경우 {@code invalid_grant}로 거절하는데,
-     * 목적이 "이 토큰을 더 못 쓰게 하는 것"이니 이미 그 상태라면 할 일이 없다. 이걸 실패로 보면
-     * 영원히 폐기되지 않는 토큰으로 남아 재시도가 끝나지 않는다.
+     * <p><b>200 외에는 전부 실패로 올린다.</b> 특히 {@code invalid_grant}를 "이미 무효한 토큰"으로
+     * 넘겨짚으면 안 된다 — 애플은 같은 코드를 {@code client_id}가 토큰과 맞지 않을 때도 쓴다.
+     * 그 경우 실제 토큰은 멀쩡히 살아 있는데 성공으로 보고 보관하던 행을 지우면, 폐기되지 않은
+     * 채로 재시도 단서까지 사라진다. 반복 실패는 {@code AppleRefreshTokenService}의 시도 횟수
+     * 상한이 끊어주므로 여기서 따로 걸러낼 이유가 없다.
      *
-     * @throws OAuthException 통신 실패, 또는 고치면 재시도할 수 있는 거부(설정 오류·애플 장애 등)
+     * @throws OAuthException 통신 실패 또는 애플의 거부
      */
     public void revokeRefreshToken(String refreshToken) {
-        try {
-            oAuthApiCaller.postForm(REVOKE_URI, Map.of(
-                    "client_id", clientId,
-                    "client_secret", clientSecretGenerator.generate(),
-                    "token", refreshToken,
-                    "token_type_hint", REFRESH_TOKEN_FIELD
-            ));
-        } catch (OAuthException exception) {
-            if (isAlreadyInvalid(exception)) {
-                return;
-            }
-            throw exception;
-        }
-    }
-
-    /**
-     * 애플이 토큰 자체를 무효로 판단했는지. {@code OAuthApiCaller}가 실패 메시지에 응답 본문을
-     * 담아주므로 거기서 오류 코드를 읽는다 — 애플은 폐기 실패를 본문의 {@code error} 값으로만
-     * 구분해주고 상태코드는 다 400이라 이 방법뿐이다.
-     */
-    private static boolean isAlreadyInvalid(OAuthException exception) {
-        String message = exception.getMessage();
-        return message != null && message.contains(INVALID_GRANT_ERROR);
+        oAuthApiCaller.postForm(REVOKE_URI, Map.of(
+                "client_id", clientId,
+                "client_secret", clientSecretGenerator.generate(),
+                "token", refreshToken,
+                "token_type_hint", REFRESH_TOKEN_FIELD
+        ));
     }
 }

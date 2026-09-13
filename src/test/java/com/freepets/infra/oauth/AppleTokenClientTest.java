@@ -1,7 +1,6 @@
 package com.freepets.infra.oauth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -98,17 +97,20 @@ class AppleTokenClientTest {
         ));
     }
 
-    // 이미 무효한 토큰을 실패로 보면 영원히 폐기되지 않는 토큰으로 남아 재시도가 끝나지 않는다.
+    // invalid_grant는 client_id가 토큰과 맞지 않을 때도 온다. 성공으로 넘기면 멀쩡히 살아 있는
+    // 토큰을 폐기됐다고 보고 보관 행까지 지워, 재시도할 단서가 사라진다.
     @Test
-    void 이미_무효한_토큰은_성공으로_친다() {
+    void invalid_grant_거부도_예외로_올린다() {
         when(clientSecretGenerator.generate()).thenReturn("client-secret-jwt");
         doThrow(new OAuthException(REVOKE_URI + " 호출이 거부되었습니다. HTTP 400 body={\"error\":\"invalid_grant\"}"))
                 .when(oAuthApiCaller).postForm(anyString(), any());
 
-        assertDoesNotThrow(() -> appleTokenClient.revokeRefreshToken(REFRESH_TOKEN));
+        assertThrows(
+                OAuthException.class,
+                () -> appleTokenClient.revokeRefreshToken(REFRESH_TOKEN)
+        );
     }
 
-    // 반면 설정 오류는 고치면 재시도할 수 있으므로 실패로 올라가야 한다.
     @Test
     void 설정_오류_거부는_예외로_올린다() {
         when(clientSecretGenerator.generate()).thenReturn("client-secret-jwt");

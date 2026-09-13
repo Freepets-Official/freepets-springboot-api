@@ -36,18 +36,27 @@ public class AppleAuthConfig {
     private final OAuthProperties oAuthProperties;
 
     /**
-     * 애플 토큰 암복호기. <b>설정이 없어도 빈은 항상 등록한다</b> — 주입받는 쪽이 빈 존재 여부가
-     * 아니라 {@link AppleTokenCipher#isEnabled()}로 판단하게 해서, 설정 유무가 컨텍스트 구성을
-     * 흔들지 않게 한다.
+     * 애플 토큰 암복호기. <b>설정이 없거나 잘못돼도 빈은 항상 등록한다</b> — 주입받는 쪽이 빈 존재
+     * 여부가 아니라 {@link AppleTokenCipher#isEnabled()}로 판단하게 해서, 설정 상태가 컨텍스트
+     * 구성을 흔들지 않게 한다.
+     *
+     * <p>솔트는 <b>16진수 문자열이어야 한다.</b> 아니면 암복호기를 만드는 시점에 예외가 나는데,
+     * 그대로 두면 오타 하나로 서버가 기동조차 못 한다. 개인키 형식이 틀렸을 때와 똑같이
+     * 경고만 남기고 비활성으로 넘긴다 — 애플 토큰 폐기는 없어도 서비스가 도는 기능이다.
      */
     @Bean
     public AppleTokenCipher appleTokenCipher() {
         OAuthProperties.Apple apple = oAuthProperties.apple();
 
-        return new AppleTokenCipher(
-                apple == null ? null : apple.tokenEncryptionPassword(),
-                apple == null ? null : apple.tokenEncryptionSalt()
-        );
+        try {
+            return new AppleTokenCipher(
+                    apple == null ? null : apple.tokenEncryptionPassword(),
+                    apple == null ? null : apple.tokenEncryptionSalt()
+            );
+        } catch (IllegalArgumentException exception) {
+            warnDisabled("oauth.apple.token-encryption-salt가 16진수 문자열이 아닙니다: " + exception.getMessage());
+            return AppleTokenCipher.disabled();
+        }
     }
 
     /**
@@ -58,7 +67,10 @@ public class AppleAuthConfig {
      * 터뜨리는 것보다, 아예 없다는 사실이 드러나는 편이 낫다.
      */
     @Bean
-    public AppleTokenClient appleTokenClient(OAuthApiCaller oAuthApiCaller) {
+    public AppleTokenClient appleTokenClient(
+            OAuthApiCaller oAuthApiCaller,
+            AppleTokenCipher appleTokenCipher
+    ) {
         OAuthProperties.Apple apple = oAuthProperties.apple();
         if (apple == null) {
             warnDisabled("oauth.apple 설정이 통째로 없습니다.");
@@ -68,6 +80,13 @@ public class AppleAuthConfig {
         List<String> missingKeys = missingKeysOf(apple);
         if (!missingKeys.isEmpty()) {
             warnDisabled("다음 설정이 비어 있습니다: " + String.join(", ", missingKeys));
+            return null;
+        }
+
+        // 암복호기가 죽어 있으면 토큰을 저장할 수 없어 폐기할 대상도 생기지 않는다. 여기서 같이
+        // 꺼야 "활성화되었습니다" 로그만 찍히고 실제로는 아무것도 안 되는 상태를 피할 수 있다.
+        if (!appleTokenCipher.isEnabled()) {
+            warnDisabled("토큰 암호화 설정이 유효하지 않습니다(위 경고 참고).");
             return null;
         }
 

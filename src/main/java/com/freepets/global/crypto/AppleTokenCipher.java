@@ -23,6 +23,13 @@ public class AppleTokenCipher {
 
     private final TextEncryptor textEncryptor;
 
+    /**
+     * @throws IllegalArgumentException 솔트가 16진수 문자열이 아닌 경우. 값이 아예 없는 것과
+     *                                  형식이 틀린 것은 다른 문제라 조용히 넘기지 않는다 —
+     *                                  설정을 넣었는데 오타가 난 상황이므로 알려야 한다.
+     *                                  기동을 막을지 말지는 설정을 읽는 쪽이 정한다
+     *                                  ({@code AppleAuthConfig} 참고)
+     */
     public AppleTokenCipher(
             String password,
             String salt
@@ -30,6 +37,15 @@ public class AppleTokenCipher {
         this.textEncryptor = isConfigured(password, salt)
                 ? Encryptors.delux(password, salt)
                 : null;
+    }
+
+    private AppleTokenCipher() {
+        this.textEncryptor = null;
+    }
+
+    /** 설정이 없거나 잘못됐을 때 쓸 비활성 인스턴스. 빈은 항상 등록하되 기능만 끄기 위해 필요하다. */
+    public static AppleTokenCipher disabled() {
+        return new AppleTokenCipher();
     }
 
     /** 설정이 갖춰져 실제로 암복호를 할 수 있는 상태인지. 애플 토큰 기능 전체의 on/off 조건 중 하나다. */

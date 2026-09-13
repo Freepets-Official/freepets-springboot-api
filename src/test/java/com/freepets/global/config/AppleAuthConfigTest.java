@@ -10,6 +10,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import com.freepets.global.crypto.AppleTokenCipher;
 import com.freepets.infra.oauth.OAuthApiCaller;
 import com.freepets.infra.oauth.OAuthProperties;
 
@@ -48,7 +49,7 @@ class AppleAuthConfigTest {
     void 설정이_모두_있으면_토큰_클라이언트를_등록한다() {
         AppleAuthConfig config = configWith(fullyConfigured());
 
-        assertThat(config.appleTokenClient(new OAuthApiCaller())).isNotNull();
+        assertThat(config.appleTokenClient(new OAuthApiCaller(), config.appleTokenCipher())).isNotNull();
         assertThat(config.appleTokenCipher().isEnabled()).isTrue();
     }
 
@@ -57,7 +58,7 @@ class AppleAuthConfigTest {
     void 애플_설정이_통째로_없어도_예외가_나지_않는다() {
         AppleAuthConfig config = configWith(null);
 
-        assertThat(config.appleTokenClient(new OAuthApiCaller())).isNull();
+        assertThat(config.appleTokenClient(new OAuthApiCaller(), config.appleTokenCipher())).isNull();
         assertThat(config.appleTokenCipher().isEnabled()).isFalse();
     }
 
@@ -67,7 +68,7 @@ class AppleAuthConfigTest {
                 new OAuthProperties.Apple(CLIENT_IDS, null, null, null, null, null)
         );
 
-        assertThat(config.appleTokenClient(new OAuthApiCaller())).isNull();
+        assertThat(config.appleTokenClient(new OAuthApiCaller(), config.appleTokenCipher())).isNull();
     }
 
     @Test
@@ -76,7 +77,7 @@ class AppleAuthConfigTest {
                 new OAuthProperties.Apple(CLIENT_IDS, TEAM_ID, KEY_ID, privateKey, null, null)
         );
 
-        assertThat(config.appleTokenClient(new OAuthApiCaller())).isNull();
+        assertThat(config.appleTokenClient(new OAuthApiCaller(), config.appleTokenCipher())).isNull();
     }
 
     // 잘못된 client_id로 폐기하면 애플이 invalid_client로 거절한다. 조용히 실패하느니 꺼두는 게 낫다.
@@ -87,7 +88,7 @@ class AppleAuthConfigTest {
                 TEAM_ID, KEY_ID, privateKey, PASSWORD, SALT
         ));
 
-        assertThat(config.appleTokenClient(new OAuthApiCaller())).isNull();
+        assertThat(config.appleTokenClient(new OAuthApiCaller(), config.appleTokenCipher())).isNull();
     }
 
     // 키 형식이 틀렸다고 서버까지 못 뜨게 하면 안 된다.
@@ -97,6 +98,27 @@ class AppleAuthConfigTest {
                 CLIENT_IDS, TEAM_ID, KEY_ID, "이건 키가 아닙니다", PASSWORD, SALT
         ));
 
-        assertThat(config.appleTokenClient(new OAuthApiCaller())).isNull();
+        assertThat(config.appleTokenClient(new OAuthApiCaller(), config.appleTokenCipher())).isNull();
+    }
+
+    // 솔트는 16진수여야 한다. 그대로 넘기면 암복호기 빈 생성이 실패해 오타 하나로 서버가 기동조차
+    // 못 한다 — 개인키와 똑같이 경고만 남기고 비활성으로 넘어가야 한다.
+    @Test
+    void 솔트가_16진수가_아니어도_기동을_막지_않는다() {
+        AppleAuthConfig config = configWith(new OAuthProperties.Apple(
+                CLIENT_IDS, TEAM_ID, KEY_ID, privateKey, PASSWORD, "16진수가-아닌-솔트"
+        ));
+
+        assertThat(config.appleTokenCipher().isEnabled()).isFalse();
+        assertThat(config.appleTokenClient(new OAuthApiCaller(), config.appleTokenCipher())).isNull();
+    }
+
+    // 암복호가 안 되면 토큰을 저장할 수 없다. "활성화되었습니다" 로그만 찍히고 실제로는 아무것도
+    // 안 되는 상태를 만들지 않는다.
+    @Test
+    void 암복호기가_비활성이면_토큰_클라이언트도_등록하지_않는다() {
+        AppleAuthConfig config = configWith(fullyConfigured());
+
+        assertThat(config.appleTokenClient(new OAuthApiCaller(), AppleTokenCipher.disabled())).isNull();
     }
 }

@@ -207,6 +207,11 @@ public class CourseCommandService {
 
         Course saved = courseRepository.save(copy);
 
+        // 인기순 폴백(GET /courses/public)의 신호라 자기 복사여도 센다 — XP와 달리 파밍 방지
+        // 대상이 아니다(경험치를 노리고 자기 코스를 반복 복사해도 "얼마나 담아갔는지"라는
+        // 사실 자체는 바뀌지 않는다).
+        original.incrementCopyCount();
+
         // 자기 코스를 자기 공유 코드로 복사하면 원 소유자 == 복사한 사람이라 실제 참여 없이도
         // 매번 새 courseId로 XP를 받아갈 수 있다(하루 상한만으로는 완전히 막지 못한다) —
         // 원 소유자 본인이 복사한 경우는 지급하지 않는다.

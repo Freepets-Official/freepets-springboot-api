@@ -62,6 +62,7 @@ public class CourseCommandService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
         List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
+        validateStopsPetAllowed(stops);
 
         if (request.isPublic()) {
             validateStopsEligibleForPublish(userId, stops);
@@ -92,6 +93,7 @@ public class CourseCommandService {
     ) {
         Course course = findOwnedCourse(userId, courseId);
         List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
+        validateStopsPetAllowed(stops);
         boolean isPublicBeforeUpdate = course.isPublic();
 
         if (request.isPublic()) {
@@ -230,6 +232,10 @@ public class CourseCommandService {
                 .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
                 .map(CourseStop::getFacility)
                 .toList();
+        // 원본이 이 게이트가 생기기 전에 만들어졌거나, 저장 이후 시설의 petAllowed가 DENIED로
+        // 바뀌었을 수 있다 — 복사도 결국 새 CUSTOM 코스를 만드는 경로라 createCourse/updateCourse와
+        // 같은 검증을 거쳐야 한다.
+        validateStopsPetAllowed(stops);
 
         Course copy = Course.builder()
                 .user(user)
@@ -326,7 +332,6 @@ public class CourseCommandService {
             }
             ordered.add(facility);
         }
-        validateStopsPetAllowed(ordered);
         return ordered;
     }
 

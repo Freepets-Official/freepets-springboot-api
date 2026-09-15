@@ -106,6 +106,42 @@ class BadgeEvaluationServiceTest {
         verify(userBadgeRepository, never()).existsByUser_IdAndBadge(any(), any());
     }
 
+    @Test
+    void 도움됐어요_총합이_10회_이상이면_구원자_배지가_부여된다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_10)).thenReturn(false);
+
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(user, 10L);
+
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.HELPFUL_10));
+        verify(gamificationNotificationService).notifyBadgeEarned(1L, Badge.HELPFUL_10);
+    }
+
+    @Test
+    void 도움됐어요_총합이_기준에_못_미치면_구원자_배지를_주지_않는다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_10)).thenReturn(false);
+
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(user, 9L);
+
+        verify(userBadgeRepository, never()).save(any());
+        verify(gamificationNotificationService, never()).notifyBadgeEarned(any(), any());
+    }
+
+    @Test
+    void 이미_구원자_배지가_있으면_다시_부여하지_않는다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_10)).thenReturn(true);
+
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(user, 100L);
+
+        verify(userBadgeRepository, never()).save(any());
+        verify(gamificationNotificationService, never()).notifyBadgeEarned(any(), any());
+    }
+
     private UserBadge argThatBadgeIs(Badge badge) {
         return org.mockito.ArgumentMatchers.argThat(userBadge -> userBadge != null && userBadge.getBadge() == badge);
     }

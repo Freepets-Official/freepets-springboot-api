@@ -31,11 +31,13 @@ public class BadgeEvaluationService {
             if (badge.getRelatedSourceType() != sourceType) {
                 continue;
             }
-            evaluate(user, badge, sourceType);
+            evaluateXpBadge(user, badge, sourceType);
         }
     }
 
-    private void evaluate(
+    // 이미 보유 중이면 개수 조회 자체를 안 하도록, exists 확인을 count 쿼리보다 먼저 한다 —
+    // XpEvent 개수 집계가 매번 값싼 연산은 아니라서다.
+    private void evaluateXpBadge(
             User user,
             Badge badge,
             XpSourceType sourceType
@@ -45,6 +47,31 @@ public class BadgeEvaluationService {
         }
 
         long achievedCount = xpEventRepository.countByUser_IdAndSourceType(user.getId(), sourceType);
+        award(user, badge, achievedCount);
+    }
+
+    /**
+     * "구원자"(HELPFUL_10) 평가 — 본인 행동(XpEvent)이 아니라 남이 내 리뷰를 "도움됐어요"로
+     * 표시하는 게 트리거라 {@link #evaluateAfterXpEvent}의 XpEvent 카운트 방식을 못 쓴다.
+     * 리뷰 도메인이 이미 계산해 온 총합(review 도메인 소유 개념 — 이 서비스가 ReviewRepository를
+     * 직접 참조하지 않는다)을 그대로 받아 임계값만 비교한다.
+     */
+    public void evaluateHelpfulSaviorBadge(
+            User reviewAuthor,
+            long totalHelpfulReceived
+    ) {
+        if (userBadgeRepository.existsByUser_IdAndBadge(reviewAuthor.getId(), Badge.HELPFUL_10)) {
+            return;
+        }
+
+        award(reviewAuthor, Badge.HELPFUL_10, totalHelpfulReceived);
+    }
+
+    private void award(
+            User user,
+            Badge badge,
+            long achievedCount
+    ) {
         if (achievedCount < badge.getThreshold()) {
             return;
         }

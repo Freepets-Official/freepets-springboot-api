@@ -52,7 +52,7 @@ public class UserQueryService {
     public UserResponseDTO.AccountResult getAccount(Long userId) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
-        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findFacilityIdsByUserId(userId);
+        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(userId);
 
         return UserConverter.toAccountResult(user, ownedFacilityIds);
     }

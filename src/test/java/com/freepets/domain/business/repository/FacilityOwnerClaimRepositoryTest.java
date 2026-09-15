@@ -1,7 +1,6 @@
 package com.freepets.domain.business.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -12,9 +11,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import com.freepets.domain.business.entity.ClaimStatus;
 import com.freepets.domain.business.entity.FacilityOwnerClaim;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
@@ -27,7 +27,7 @@ import com.freepets.global.config.JpaAuditingConfig;
 import jakarta.persistence.EntityManager;
 
 /**
- * 소유 기록 조회 쿼리와 "한 시설 = 한 사업자" 제약 검증. 목으로는 잡을 수 없어 H2에 넣고 돌린다.
+ * 소유 기록 조회 쿼리와 상태별 조회 검증. 목으로는 잡을 수 없어 H2에 넣고 돌린다.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -96,13 +96,49 @@ class FacilityOwnerClaimRepositoryTest {
                 .build();
     }
 
-    @Test
-    void findFacilityIdsByUserId_소유_기록이_없으면_빈_목록을_반환한다() {
-        assertThat(facilityOwnerClaimRepository.findFacilityIdsByUserId(owner.getId())).isEmpty();
+    // 상태 전이 메서드는 승인·반려 기능과 함께 붙는다. 그 전까지는 필드에 직접 넣어 상태별 조회를 검증한다.
+    private FacilityOwnerClaim createClaim(
+            User user,
+            Facility facility,
+            ClaimStatus status
+    ) {
+        FacilityOwnerClaim claim = createClaim(user, facility);
+        ReflectionTestUtils.setField(claim, "status", status);
+        return claim;
     }
 
     @Test
-    void findFacilityIdsByUserId_본인_소유_시설만_소유_기록이_생긴_순서대로_반환한다() {
+    void 새로_만든_소유_기록의_상태는_APPROVED다() {
+        // 운영자 승인 대기가 붙기 전까지는 등록이 곧 승인이다.
+        FacilityOwnerClaim saved = facilityOwnerClaimRepository.saveAndFlush(
+                createClaim(owner, createFacility("카페 파도살롱"))
+        );
+
+        assertThat(saved.getStatus()).isEqualTo(ClaimStatus.APPROVED);
+    }
+
+    @Test
+    void findApprovedFacilityIdsByUserId_소유_기록이_없으면_빈_목록을_반환한다() {
+        assertThat(facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(owner.getId())).isEmpty();
+    }
+
+    @Test
+    void findApprovedFacilityIdsByUserId_승인되지_않은_기록은_소유_매장으로_세지_않는다() {
+        // 심사 중이거나 반려·해제된 매장이 소유 매장으로 잡히면 승인 전에 사업자 프로필이 붙는다.
+        Facility approvedFacility = createFacility("카페 파도살롱");
+        entityManager.persist(createClaim(owner, approvedFacility, ClaimStatus.APPROVED));
+        entityManager.persist(createClaim(owner, createFacility("대기 매장"), ClaimStatus.PENDING));
+        entityManager.persist(createClaim(owner, createFacility("반려 매장"), ClaimStatus.REJECTED));
+        entityManager.persist(createClaim(owner, createFacility("해제 매장"), ClaimStatus.REVOKED));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(owner.getId()))
+                .containsExactly(approvedFacility.getFacilityId());
+    }
+
+    @Test
+    void findApprovedFacilityIdsByUserId_본인_소유_시설만_소유_기록이_생긴_순서대로_반환한다() {
         Facility firstFacility = createFacility("카페 파도살롱");
         Facility secondFacility = createFacility("강릉 중앙시장");
         Facility otherOwnerFacility = createFacility("옆 가게");
@@ -114,34 +150,54 @@ class FacilityOwnerClaimRepositoryTest {
         entityManager.flush();
         entityManager.clear();
 
-        assertThat(facilityOwnerClaimRepository.findFacilityIdsByUserId(owner.getId()))
+        assertThat(facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(owner.getId()))
                 .containsExactly(firstFacility.getFacilityId(), secondFacility.getFacilityId());
     }
 
     @Test
-    void save_이미_소유자가_있는_시설이면_유니크_제약에_걸린다() {
+    void save_같은_시설에_승인되지_않은_기록은_여러_개_저장할_수_있다() {
+        // "시설당 한 행" 제약이 남아 있으면 누가 신청만 넣어둬도 다른 사람이 신청조차 못 한다(선점).
+        // "시설당 승인된 소유자 하나"는 PostgreSQL 조건부 유니크 인덱스라 H2에서는 검증할 수 없다
+        // (db/pending-manual-migrations.sql 참고).
         Facility facility = createFacility("카페 파도살롱");
-        User otherOwner = createUser("other@test.com");
-        facilityOwnerClaimRepository.saveAndFlush(createClaim(owner, facility));
+        User otherApplicant = createUser("other@test.com");
 
-        assertThatThrownBy(() -> facilityOwnerClaimRepository.saveAndFlush(createClaim(otherOwner, facility)))
-                .isInstanceOf(DataIntegrityViolationException.class);
+        facilityOwnerClaimRepository.saveAndFlush(createClaim(owner, facility, ClaimStatus.APPROVED));
+        facilityOwnerClaimRepository.saveAndFlush(createClaim(otherApplicant, facility, ClaimStatus.PENDING));
+        facilityOwnerClaimRepository.saveAndFlush(createClaim(otherApplicant, facility, ClaimStatus.REJECTED));
+
+        assertThat(facilityOwnerClaimRepository.count()).isEqualTo(3);
     }
 
     @Test
-    void findByFacility_FacilityId_시설의_소유_기록을_찾는다() {
-        // 매장 등록이 "이 시설에 이미 주인이 있는지"를 이 조회로 판단한다.
+    void findApprovedByFacilityId_대기_신청이_여러_개여도_승인된_소유_기록만_찾는다() {
+        // 매장 등록이 "이 시설에 이미 승인된 주인이 있는지"를 이 조회로 판단한다. 대기 신청이 여러 건 섞여
+        // 있어도 결과가 한 건으로 좁혀져야 한다 — 두 건 이상이면 조회 자체가 실패한다.
         Facility claimedFacility = createFacility("카페 파도살롱");
-        Facility unclaimedFacility = createFacility("옆 가게");
-        facilityOwnerClaimRepository.saveAndFlush(createClaim(owner, claimedFacility));
+        User firstApplicant = createUser("first@test.com");
+        User secondApplicant = createUser("second@test.com");
+        facilityOwnerClaimRepository.saveAndFlush(createClaim(owner, claimedFacility, ClaimStatus.APPROVED));
+        facilityOwnerClaimRepository.saveAndFlush(createClaim(firstApplicant, claimedFacility, ClaimStatus.PENDING));
+        facilityOwnerClaimRepository.saveAndFlush(createClaim(secondApplicant, claimedFacility, ClaimStatus.PENDING));
         entityManager.clear();
 
         FacilityOwnerClaim found = facilityOwnerClaimRepository
-                .findByFacility_FacilityId(claimedFacility.getFacilityId())
+                .findApprovedByFacilityId(claimedFacility.getFacilityId())
                 .orElseThrow();
 
         assertThat(found.isOwnedBy(owner.getId())).isTrue();
-        assertThat(facilityOwnerClaimRepository.findByFacility_FacilityId(unclaimedFacility.getFacilityId()))
+    }
+
+    @Test
+    void findApprovedByFacilityId_대기_신청만_있는_시설은_주인이_없다() {
+        Facility pendingOnlyFacility = createFacility("옆 가게");
+        facilityOwnerClaimRepository.saveAndFlush(createClaim(owner, pendingOnlyFacility, ClaimStatus.PENDING));
+        facilityOwnerClaimRepository.saveAndFlush(
+                createClaim(createUser("other@test.com"), pendingOnlyFacility, ClaimStatus.PENDING)
+        );
+        entityManager.clear();
+
+        assertThat(facilityOwnerClaimRepository.findApprovedByFacilityId(pendingOnlyFacility.getFacilityId()))
                 .isEmpty();
     }
 }

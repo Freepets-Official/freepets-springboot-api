@@ -110,7 +110,7 @@ public class UserCommandService {
         }
 
         // 계정 조회와 같은 응답이라 프로필도 함께 채운다. 빠뜨리면 수정 직후 앱이 사업자 프로필을 잃는다.
-        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findFacilityIdsByUserId(userId);
+        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(userId);
         return UserConverter.toAccountResult(user, ownedFacilityIds);
     }
 

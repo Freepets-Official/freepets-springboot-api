@@ -12,15 +12,27 @@ import com.freepets.domain.business.entity.FacilityOwnerClaim;
 public interface FacilityOwnerClaimRepository extends JpaRepository<FacilityOwnerClaim, Long> {
 
     /**
-     * 사용자가 소유한 시설 ID를 소유 기록이 생긴 순서대로 반환한다. 비어 있지 않으면 곧 사업자
-     * 프로필이 있다는 뜻이라, 소유 매장 목록과 프로필 파생을 이 쿼리 하나로 처리한다.
+     * 사용자가 소유한 시설 ID를 소유 기록이 생긴 순서대로 반환한다. <b>승인된 기록만</b> 센다 — 심사 중이거나
+     * 반려·해제된 매장은 소유 매장이 아니다. 비어 있지 않으면 곧 사업자 프로필이 있다는 뜻이라, 소유 매장
+     * 목록과 프로필 파생을 이 쿼리 하나로 처리한다.
      */
     @Query("select claim.facility.facilityId from FacilityOwnerClaim claim"
-            + " where claim.user.id = :userId order by claim.claimId")
-    List<Long> findFacilityIdsByUserId(@Param("userId") Long userId);
+            + " where claim.user.id = :userId"
+            + " and claim.status = com.freepets.domain.business.entity.ClaimStatus.APPROVED"
+            + " order by claim.claimId")
+    List<Long> findApprovedFacilityIdsByUserId(@Param("userId") Long userId);
 
-    /** 한 시설은 한 사업자만 소유하므로 결과는 최대 한 건이다. 매장 등록 시 주인이 이미 있는지 본다. */
-    Optional<FacilityOwnerClaim> findByFacility_FacilityId(Long facilityId);
+    /**
+     * 시설의 승인된 소유 기록을 찾는다. 한 시설에 승인된 사업자는 하나뿐이라 결과는 최대 한 건이다.
+     * 매장 등록 시 주인이 이미 있는지 본다.
+     *
+     * <p>상태를 인자로 받지 않는다 — 대기 신청은 한 시설에 여러 개일 수 있어, 다른 상태로 부르면 결과가
+     * 두 건 이상이 되어 조회 자체가 실패한다.
+     */
+    @Query("select claim from FacilityOwnerClaim claim"
+            + " where claim.facility.facilityId = :facilityId"
+            + " and claim.status = com.freepets.domain.business.entity.ClaimStatus.APPROVED")
+    Optional<FacilityOwnerClaim> findApprovedByFacilityId(@Param("facilityId") Long facilityId);
 
     /**
      * 탈퇴 시 소유 기록을 지운다. 탈퇴는 소프트 삭제라 사용자 행이 남아 외래 키 CASCADE가 동작하지

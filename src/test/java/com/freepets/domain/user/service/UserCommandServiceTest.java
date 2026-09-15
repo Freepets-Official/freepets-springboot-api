@@ -389,7 +389,7 @@ class UserCommandServiceTest {
         request.setNickname("newNickname");
 
         when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
-        when(facilityOwnerClaimRepository.findFacilityIdsByUserId(1L)).thenReturn(List.of(6L));
+        when(facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(1L)).thenReturn(List.of(6L));
 
         UserResponseDTO.AccountResult result = userCommandService.updateAccount(1L, request);
 

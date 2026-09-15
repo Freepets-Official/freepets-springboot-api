@@ -1,6 +1,7 @@
 package com.freepets.domain.gamification.service;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -71,7 +72,9 @@ class BadgeEvaluationServiceTest {
     void 이미_보유한_배지는_다시_부여하지_않는다() {
         setUpService();
         User user = user();
-        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.FIRST_PETCHECK)).thenReturn(true);
+        // PETCHECK 관련 배지(FIRST_PETCHECK/PETCHECKS_10/50/100) 전부 이미 가진 것으로 —
+        // 이 테스트가 확인하려는 건 "이미 있으면 개수 조회 자체를 안 한다"는 것뿐이다.
+        when(userBadgeRepository.existsByUser_IdAndBadge(eq(1L), any())).thenReturn(true);
 
         badgeEvaluationService.evaluateAfterXpEvent(user, XpSourceType.PETCHECK);
 
@@ -99,11 +102,15 @@ class BadgeEvaluationServiceTest {
     void 관련없는_sourceType의_배지는_확인하지_않는다() {
         setUpService();
         User user = user();
+        // 이미 다 가진 것으로 응답해 count 조회로까지 새지 않게 한다 — 이 테스트가 확인하려는
+        // 건 "관련 없는 sourceType의 배지는 아예 안 건드린다"는 것뿐이다.
+        when(userBadgeRepository.existsByUser_IdAndBadge(eq(1L), any())).thenReturn(true);
 
-        // SATISFACTION은 관련된 배지가 하나도 없다 — existsByUser_IdAndBadge 자체가 호출되면 안 된다.
-        badgeEvaluationService.evaluateAfterXpEvent(user, XpSourceType.SATISFACTION);
+        badgeEvaluationService.evaluateAfterXpEvent(user, XpSourceType.PETCHECK);
 
-        verify(userBadgeRepository, never()).existsByUser_IdAndBadge(any(), any());
+        verify(userBadgeRepository, never()).existsByUser_IdAndBadge(1L, Badge.FIRST_REVIEW);
+        verify(userBadgeRepository, never()).existsByUser_IdAndBadge(1L, Badge.REVIEWS_10);
+        verify(xpEventRepository, never()).countByUser_IdAndSourceType(1L, XpSourceType.REVIEW);
     }
 
     @Test
@@ -135,11 +142,31 @@ class BadgeEvaluationServiceTest {
         setUpService();
         User user = user();
         when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_10)).thenReturn(true);
+        // 상위 단계(50/100)는 아직 기준(50, 100) 미달이라 이 값(10)으로는 같이 확인돼도 부여되지 않는다.
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_50)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_100)).thenReturn(false);
 
-        badgeEvaluationService.evaluateHelpfulSaviorBadge(user, 100L);
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(user, 10L);
 
         verify(userBadgeRepository, never()).save(any());
         verify(gamificationNotificationService, never()).notifyBadgeEarned(any(), any());
+    }
+
+    @Test
+    void 총합이_한번에_크게_뛰면_해당하는_단계를_전부_부여한다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_10)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_50)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_100)).thenReturn(false);
+
+        // 여러 리뷰가 한꺼번에 몰려 도움됐어요를 받아 총합이 60이 됐다고 가정 — 10·50 단계는
+        // 이미 있고 100 단계는 아직이다.
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(user, 60L);
+
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.HELPFUL_10));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.HELPFUL_50));
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.HELPFUL_100));
     }
 
     private UserBadge argThatBadgeIs(Badge badge) {

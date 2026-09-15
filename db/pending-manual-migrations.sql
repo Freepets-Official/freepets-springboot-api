@@ -183,20 +183,23 @@ ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
 -- );
 
 -- ============================================================
--- 2026-09-15 — "구원자" 배지 추가로 인한 user_badges.badge CHECK 제약조건 갱신 (게이미피케이션)
+-- 2026-09-16 — Badge 카탈로그 확장(6개 → 23개) + user_badges.badge CHECK 제약조건 완전 제거
 -- ============================================================
--- Badge enum에 HELPFUL_10이 새로 추가됐다. user_badges 테이블은 게이미피케이션 기능이
--- 처음 만들어질 때 그 시점의 Badge 값(FIRST_PETCHECK/FIRST_REVIEW/REVIEWS_10/
--- FIRST_COURSE_PUBLISHED/COURSE_SHARED_5)만으로 Hibernate가 CHECK 제약조건을 자동
--- 생성해뒀다 — courses.distance_option·facility_reports.denial_reason·report_type·status와
--- 완전히 같은 패턴이다(테이블 생성 시점 enum 값으로 굳어지고, ddl-auto=update는 이후 값
--- 추가를 반영하지 않는다). 이걸 안 고치면 "구원자" 배지를 부여하려는 순간
--- ConstraintViolationException → COMMON500이 난다.
+-- Badge enum이 도전과제형으로 대폭 늘어났다(도메인별 1회·중간·상위 단계). user_badges 테이블은
+-- 게이미피케이션 기능이 처음 만들어질 때 그 시점의 Badge 값 6개만으로 Hibernate가 CHECK
+-- 제약조건을 자동 생성해뒀다 — courses.distance_option·facility_reports.denial_reason·
+-- report_type·status와 완전히 같은 패턴이다(테이블 생성 시점 enum 값으로 굳어지고,
+-- ddl-auto=update는 이후 값 추가를 반영하지 않는다). 이걸 안 고치면 새 배지를 부여하려는
+-- 순간 ConstraintViolationException → COMMON500이 난다.
 --
--- 실행 전 SQL Editor로 기존 제약조건이 실제로 있는지, 있다면 정확한 이름·값 목록을 먼저
--- 확인할 것 — 위 사례들처럼 이름이 다를 수 있다. 아래는 Postgres 기본 명명 규칙 기준 추정이다.
+-- 이번엔 값 목록을 갱신하는 대신 제약 자체를 아예 없앤다 — 배지 카탈로그가 앞으로도 계속
+-- 늘어날 걸로 보이는데, 늘어날 때마다 이 파일에 수동 조치를 또 남기고 실행하는 부담을
+-- 여기서 끝내기로 했다. badge 컬럼은 어차피 애플리케이션(Badge enum)이 값을 통제하고,
+-- 잘못된 문자열이 들어갈 경로 자체가 없다(Enumerated(STRING)으로만 쓰임) — DB CHECK가
+-- 막아주는 이득보다 이 배포 마찰이 더 크다고 판단했다.
+--
+-- 실행 전 SQL Editor로 기존 제약조건이 실제로 있는지, 정확한 이름을 먼저 확인할 것 —
+-- 위 사례들처럼 이름이 다를 수 있다. 아래는 Postgres 기본 명명 규칙 기준 추정이다.
 --
 -- 상태: ⬜ 미적용
 ALTER TABLE freepets.user_badges DROP CONSTRAINT IF EXISTS user_badges_badge_check;
-ALTER TABLE freepets.user_badges ADD CONSTRAINT user_badges_badge_check
-    CHECK (badge IN ('FIRST_PETCHECK', 'FIRST_REVIEW', 'REVIEWS_10', 'FIRST_COURSE_PUBLISHED', 'COURSE_SHARED_5', 'HELPFUL_10'));

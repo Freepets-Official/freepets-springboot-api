@@ -20,9 +20,11 @@ import com.freepets.domain.review.converter.ReviewConverter;
 import com.freepets.domain.review.dto.ReviewRequestDTO;
 import com.freepets.domain.review.dto.ReviewResponseDTO;
 import com.freepets.domain.review.entity.Review;
+import com.freepets.domain.review.entity.ReviewHelpful;
 import com.freepets.domain.review.entity.ReviewReport;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.Tag;
+import com.freepets.domain.review.repository.ReviewHelpfulRepository;
 import com.freepets.domain.review.repository.ReviewReportRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.User;
@@ -45,6 +47,7 @@ public class ReviewCommandService {
 
     private final ReviewRepository reviewRepository;
     private final ReviewReportRepository reviewReportRepository;
+    private final ReviewHelpfulRepository reviewHelpfulRepository;
     private final FacilityRepository facilityRepository;
     private final UserRepository userRepository;
     private final PetRepository petRepository;
@@ -83,7 +86,7 @@ public class ReviewCommandService {
         boolean isNewReview = existingReview == null;
         Review review = isNewReview
                 ? createReview(request, facility, user)
-                : updateReview(existingReview, request);
+                : applyUpdate(existingReview, request);
 
         review.replacePets(pets);
         review.replaceTags(tags);
@@ -109,7 +112,7 @@ public class ReviewCommandService {
         return ReviewConverter.toReview(request, facility, user, visitedAt);
     }
 
-    private Review updateReview(
+    private Review applyUpdate(
             Review review,
             ReviewRequestDTO.UpsertRequest request
     ) {
@@ -121,6 +124,31 @@ public class ReviewCommandService {
                 request.isShowPetInfo()
         );
         return review;
+    }
+
+    /**
+     * PUT /api/v1/reviews/{reviewId} — 별점·내용만 고치려 해도 지금까지는 삭제 후 재작성뿐이었다
+     * (facilityId 기준 upsertReview는 시설 컨텍스트가 있어야 호출 가능해 이 화면과는 안 맞는다).
+     * reviewId 하나로 바로 수정한다 — upsertReview의 수정 분기(applyUpdate)와 완전히 같은 로직을
+     * reviewId 기준 조회·소유권 검증으로만 감싼 것이다. 방문일은 update()가 안 받아서(엔티티
+     * 참고) 여기서도 그대로 유지된다. 새 리뷰가 아니라 경험치는 지급하지 않는다.
+     */
+    public ReviewResponseDTO.UpsertResult updateReview(
+            Long userId,
+            Long reviewId,
+            ReviewRequestDTO.UpsertRequest request
+    ) {
+        Review review = findOwnedReview(userId, reviewId);
+        List<Pet> pets = findOwnedPets(userId, request.getPetIds());
+        List<Tag> tags = distinctTags(request.getTags());
+
+        applyUpdate(review, request);
+        review.replacePets(pets);
+        review.replaceTags(tags);
+
+        facilityGradeCacheService.refresh(review.getFacility().getFacilityId());
+
+        return ReviewConverter.toUpsertResult(review);
     }
 
     // 신규 insert일 때는 Review가 GenerationType.IDENTITY라 save() 호출 시점에 바로 INSERT가
@@ -214,6 +242,49 @@ public class ReviewCommandService {
         ReviewReport savedReport = reviewReportRepository.save(reviewReport);
 
         return ReviewConverter.toReportResult(savedReport);
+    }
+
+    /**
+     * POST /api/v1/reviews/{reviewId}/helpful — "도움됐어요" 표시. 존재 여부가 곧 표시 상태라
+     * CalendarMedLog와 같은 방식 — 이미 표시한 리뷰에 다시 눌러도 에러 없이 그대로 성공
+     * 처리한다(멱등). 취소(un-mark)는 아직 없다 — 필요해지면 DELETE로 추가하면 된다.
+     *
+     * <p>본인 리뷰는 표시할 수 없다 — 작성자 본인이 자기 리뷰를 눌러 카운트를 스스로
+     * 올리는 걸 막는다(CourseCommandService의 자기 복사 방지와 같은 이유).
+     */
+    public ReviewResponseDTO.HelpfulResult markHelpful(
+            Long userId,
+            Long reviewId
+    ) {
+        Review review = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
+
+        if (review.isOwnedBy(userId)) {
+            throw new GeneralException(ErrorStatus.REVIEW4005);
+        }
+
+        if (!reviewHelpfulRepository.existsByReviewReviewIdAndUserId(reviewId, userId)) {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
+            saveHelpful(review, user);
+        }
+
+        return ReviewConverter.toHelpfulResult(review);
+    }
+
+    // uk_review_helpfuls_review_user가 마지막 방어선이다 — exists 확인과 save 사이에 거의
+    // 동시에 두 번 눌리면 유니크 제약이 뒤늦은 쪽을 막아준다. 이미 표시된 것으로 보고 조용히
+    // 넘어간다(멱등 — 원래 액션이 실패해야 할 이유가 없다).
+    private void saveHelpful(
+            Review review,
+            User user
+    ) {
+        try {
+            reviewHelpfulRepository.save(ReviewHelpful.builder().review(review).user(user).build());
+            review.incrementHelpfulCount();
+        } catch (DataIntegrityViolationException exception) {
+            log.warn("이미 표시된 도움됐어요입니다 — reviewId={}, userId={}", review.getReviewId(), user.getId());
+        }
     }
 
     // 반려동물 단위가 아니라 시설 단위로 확인한다 — 새·토끼처럼 개별 판별 자체가 없는 종도

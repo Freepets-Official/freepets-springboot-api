@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.ColumnDefault;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.pet.entity.Pet;
@@ -83,6 +84,14 @@ public class Review extends BaseEntity {
     @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReviewReport> reports = new ArrayList<>();
 
+    // "도움됐어요" 누적 카운트 — 매번 review_helpfuls를 COUNT하지 않도록 캐시해둔다
+    // (Course.copyCount와 같은 이유). 실제 중복 방지·존재 확인은 ReviewHelpful 유니크 제약이
+    // 한다 — 이 값은 그 결과를 반영한 표시용 캐시일 뿐이다. 기존 라이브 리뷰가 있어
+    // Course.isPublic과 같은 이유로 @ColumnDefault 필요.
+    @ColumnDefault("0")
+    @Column(name = "helpful_count", nullable = false)
+    private long helpfulCount;
+
     @Builder
     private Review(
             Facility facility,
@@ -139,6 +148,10 @@ public class Review extends BaseEntity {
 
     public void delete() {
         this.deletedAt = LocalDateTime.now();
+    }
+
+    public void incrementHelpfulCount() {
+        this.helpfulCount++;
     }
 
     public boolean isDeleted() {

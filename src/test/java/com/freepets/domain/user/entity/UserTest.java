@@ -36,6 +36,12 @@ class UserTest {
     }
 
     @Test
+    void 새로_만든_사용자의_역할은_USER다() {
+        // 가입 경로로 관리자가 만들어지면 안 된다. 관리자 지정은 운영자가 DB에서 직접 한다.
+        assertThat(user().getRole()).isEqualTo(Role.USER);
+    }
+
+    @Test
     void 탈퇴하면_인증_정보와_닉네임이_비워지고_소유한_펫도_소프트_삭제된다() {
         User user = user();
         Pet activePet = pet(user);

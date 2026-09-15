@@ -9,6 +9,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.freepets.domain.user.entity.Role;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
@@ -45,10 +46,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 // 리포는 로그아웃 때도 서버 쪽 토큰 무효화가 없어서(순수 서명 검증), 여기서
                 // 막지 않으면 탈퇴 후에도 토큰이 자연 만료될 때까지 다른 모든 도메인 API를
                 // 계속 호출할 수 있다.
-                if (!userRepository.existsByIdAndDeletedAtIsNull(userId)) {
-                    throw new GeneralException(ErrorStatus.MEMBER4007);
-                }
-                SecurityContextHolder.getContext().setAuthentication(createAuthentication(userId));
+                // 역할도 같은 조회로 DB에서 읽는다 — 토큰에 넣으면 관리자 권한을 회수해도 토큰이
+                // 만료될 때까지 관리자 API를 계속 쓸 수 있다.
+                Role role = userRepository.findActiveRoleById(userId)
+                        .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4007));
+                SecurityContextHolder.getContext().setAuthentication(createAuthentication(userId, role));
             } catch (GeneralException exception) {
                 SecurityContextHolder.clearContext();
                 request.setAttribute(JWT_EXCEPTION_ATTRIBUTE, exception);
@@ -66,8 +68,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return null;
     }
 
-    private Authentication createAuthentication(Long userId) {
-        List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+    private Authentication createAuthentication(
+            Long userId,
+            Role role
+    ) {
+        List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
         return new UsernamePasswordAuthenticationToken(userId, null, authorities);
     }
 }

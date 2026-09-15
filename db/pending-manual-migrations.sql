@@ -160,3 +160,24 @@ ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
 --     created_at              TIMESTAMP    NOT NULL,
 --     updated_at              TIMESTAMP    NOT NULL
 -- );
+
+-- ============================================================
+-- 2026-09-15 — 관리자 구분용 사용자 역할 컬럼 추가 (#83, feat/#83-business-claim-approval)
+-- ============================================================
+-- 매장 등록 운영자 승인(#83)은 관리자만 신청을 승인·반려할 수 있어야 하는데, 지금까지는 역할 개념이
+-- 없어 모든 사용자가 같은 권한이었다. users.role(USER/ADMIN)을 두고 /api/v1/admin/** 는 ADMIN만
+-- 통과시킨다. 역할은 토큰에 넣지 않고 요청마다 DB에서 읽으므로, 아래 UPDATE는 재로그인 없이 바로 반영된다.
+--
+-- 컬럼은 ddl-auto=update가 기본값 'USER'와 함께 자동으로 추가한다 — 기존 사용자는 전부 USER가 된다.
+-- 수동 조치는 없다.
+--
+-- 주의: Hibernate가 이 컬럼에 CHECK (role IN ('USER', 'ADMIN')) 제약을 함께 만들 수 있다. 나중에
+-- Role에 값을 추가하면 위 courses_distance_option_check 사례처럼 제약을 직접 DROP/ADD 해야 한다.
+--
+-- 상태: ✅ 조치 불필요 (컬럼 자동 추가)
+
+-- 관리자 지정 — 관리자로 만들 계정의 userId를 확인한 뒤 직접 실행한다. 관리자 지정 API는 두지 않는다.
+-- UPDATE freepets.users SET role = 'ADMIN' WHERE id = {관리자 userId} AND deleted_at IS NULL;
+
+-- 관리자 회수
+-- UPDATE freepets.users SET role = 'USER' WHERE id = {관리자 userId};

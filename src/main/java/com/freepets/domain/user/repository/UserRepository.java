@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
 import com.freepets.domain.user.entity.Provider;
+import com.freepets.domain.user.entity.Role;
 import com.freepets.domain.user.entity.User;
 
 public interface UserRepository extends JpaRepository<User, Long> {
@@ -44,10 +45,21 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByIdAndDeletedAtIsNull(Long id);
 
     /**
-     * {@code JwtAuthenticationFilter} 전용 — 인증 단계에서 탈퇴한 유저의 토큰을 걸러낸다.
-     * 이 확인이 없으면, 이미 탈퇴한 계정도 (아직 만료되지 않은) 예전 액세스 토큰으로 다른
-     * 모든 도메인(리뷰 작성, 코스 공개 등)의 API를 계속 호출할 수 있다 — 각 서비스가 저마다
-     * userId를 findById로 조회하기 전에, 인증 경계에서 한 번에 막는다.
+     * {@code UserQueryService.isActiveUser} 전용 — 리프레시 토큰 재발급 시 그 사이 탈퇴한 계정인지
+     * 확인한다. 요청 인증 단계에서는 역할까지 함께 읽는 {@link #findActiveRoleById}를 쓴다.
      */
     boolean existsByIdAndDeletedAtIsNull(Long id);
+
+    /**
+     * {@code JwtAuthenticationFilter} 전용 — 활성 계정의 역할을 읽는다. 탈퇴한 계정이면 비어 있다.
+     *
+     * <p>탈퇴 확인: 이 확인이 없으면, 이미 탈퇴한 계정도 (아직 만료되지 않은) 예전 액세스 토큰으로
+     * 다른 모든 도메인(리뷰 작성, 코스 공개 등)의 API를 계속 호출할 수 있다 — 각 서비스가 저마다
+     * userId를 findById로 조회하기 전에, 인증 경계에서 한 번에 막는다.
+     *
+     * <p>역할 확인: 역할을 토큰에 넣지 않고 여기서 읽어, 관리자 권한을 주거나 회수하면 재로그인 없이
+     * 바로 반영된다. 탈퇴 확인과 같은 쿼리 한 번으로 처리해 요청당 조회가 늘지 않는다.
+     */
+    @Query("select u.role from User u where u.id = :id and u.deletedAt is null")
+    Optional<Role> findActiveRoleById(@Param("id") Long id);
 }

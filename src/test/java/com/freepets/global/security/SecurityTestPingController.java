@@ -12,4 +12,9 @@ class SecurityTestPingController {
     public String ping(@AuthenticationPrincipal Long userId) {
         return "pong:" + userId;
     }
+
+    @GetMapping("/api/v1/admin/security-test/ping")
+    public String adminPing(@AuthenticationPrincipal Long userId) {
+        return "admin-pong:" + userId;
+    }
 }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,10 +17,12 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.business.entity.ClaimStatus;
 import com.freepets.domain.business.entity.FacilityOwnerClaim;
+import com.freepets.domain.business.entity.RequestedCondition;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
+import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.global.config.JpaAuditingConfig;
@@ -43,6 +46,8 @@ import jakarta.persistence.EntityManager;
         "spring.jpa.hibernate.ddl-auto=create-drop"
 })
 class FacilityOwnerClaimRepositoryTest {
+
+    private static final String CERTIFICATE_URL = "https://bucket.s3.ap-northeast-2.amazonaws.com/certificate.pdf";
 
     @Autowired
     private FacilityOwnerClaimRepository facilityOwnerClaimRepository;
@@ -93,6 +98,14 @@ class FacilityOwnerClaimRepositoryTest {
                 .facility(facility)
                 .maskedBusinessNumber("123-45-*****")
                 .verifiedAt(LocalDateTime.of(2026, 9, 12, 10, 0))
+                .requestedCondition(RequestedCondition.of(
+                        PetAllowed.ALLOWED,
+                        new BigDecimal("10.00"),
+                        true,
+                        List.of(Requirement.LEASH),
+                        "리드줄 착용 시 실내 동반 가능"
+                ))
+                .registrationCertificateUrl(CERTIFICATE_URL)
                 .build();
     }
 
@@ -108,13 +121,53 @@ class FacilityOwnerClaimRepositoryTest {
     }
 
     @Test
-    void 새로_만든_소유_기록의_상태는_APPROVED다() {
-        // 운영자 승인 대기가 붙기 전까지는 등록이 곧 승인이다.
+    void 새로_만든_신청의_상태는_PENDING이고_조건과_등록증이_저장된다() {
+        // 신청은 운영자 승인을 기다린다. 조건은 승인될 때 시설에 반영한다.
         FacilityOwnerClaim saved = facilityOwnerClaimRepository.saveAndFlush(
                 createClaim(owner, createFacility("카페 파도살롱"))
         );
+        entityManager.clear();
 
-        assertThat(saved.getStatus()).isEqualTo(ClaimStatus.APPROVED);
+        FacilityOwnerClaim found = facilityOwnerClaimRepository.findById(saved.getClaimId()).orElseThrow();
+
+        assertThat(found.getStatus()).isEqualTo(ClaimStatus.PENDING);
+        assertThat(found.getRegistrationCertificateUrl()).isEqualTo(CERTIFICATE_URL);
+        assertThat(found.getRequestedCondition().getPetAllowed()).isEqualTo(PetAllowed.ALLOWED);
+        assertThat(found.getRequestedCondition().getMaxWeight()).isEqualByComparingTo("10.00");
+        assertThat(found.getRequestedCondition().getMaxWeightInclusive()).isTrue();
+        assertThat(found.getRequestedCondition().getConditionRaw()).isEqualTo("리드줄 착용 시 실내 동반 가능");
+        // JSON 컬럼에 담긴 요구조건이 다시 읽히는지 — 목으로는 잡을 수 없는 부분이다.
+        assertThat(found.getRequestedCondition().getRequirements()).containsExactly(Requirement.LEASH);
+    }
+
+    @Test
+    void existsPendingByFacilityIdAndUserId_본인의_대기_신청만_찾는다() {
+        // 같은 사람이 같은 매장에 신청을 쌓지 못하게 막는 확인이다. 남이 낸 대기 신청은 막지 않는다.
+        Facility facility = createFacility("카페 파도살롱");
+        User otherApplicant = createUser("other@test.com");
+        entityManager.persist(createClaim(owner, facility, ClaimStatus.PENDING));
+        entityManager.persist(createClaim(owner, createFacility("반려된 매장"), ClaimStatus.REJECTED));
+        entityManager.flush();
+        entityManager.clear();
+
+        Long facilityId = facility.getFacilityId();
+        assertThat(facilityOwnerClaimRepository.existsPendingByFacilityIdAndUserId(facilityId, owner.getId()))
+                .isTrue();
+        assertThat(facilityOwnerClaimRepository.existsPendingByFacilityIdAndUserId(facilityId, otherApplicant.getId()))
+                .isFalse();
+    }
+
+    @Test
+    void existsPendingByFacilityIdAndUserId_대기가_아닌_기록은_세지_않는다() {
+        Facility rejectedFacility = createFacility("반려된 매장");
+        entityManager.persist(createClaim(owner, rejectedFacility, ClaimStatus.REJECTED));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(facilityOwnerClaimRepository.existsPendingByFacilityIdAndUserId(
+                rejectedFacility.getFacilityId(),
+                owner.getId()
+        )).isFalse();
     }
 
     @Test
@@ -144,9 +197,9 @@ class FacilityOwnerClaimRepositoryTest {
         Facility otherOwnerFacility = createFacility("옆 가게");
         User otherOwner = createUser("other@test.com");
 
-        entityManager.persist(createClaim(owner, firstFacility));
-        entityManager.persist(createClaim(otherOwner, otherOwnerFacility));
-        entityManager.persist(createClaim(owner, secondFacility));
+        entityManager.persist(createClaim(owner, firstFacility, ClaimStatus.APPROVED));
+        entityManager.persist(createClaim(otherOwner, otherOwnerFacility, ClaimStatus.APPROVED));
+        entityManager.persist(createClaim(owner, secondFacility, ClaimStatus.APPROVED));
         entityManager.flush();
         entityManager.clear();
 
@@ -185,7 +238,7 @@ class FacilityOwnerClaimRepositoryTest {
                 .findApprovedByFacilityId(claimedFacility.getFacilityId())
                 .orElseThrow();
 
-        assertThat(found.isOwnedBy(owner.getId())).isTrue();
+        assertThat(found.isRequestedBy(owner.getId())).isTrue();
     }
 
     @Test

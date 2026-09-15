@@ -35,6 +35,19 @@ public interface FacilityOwnerClaimRepository extends JpaRepository<FacilityOwne
     Optional<FacilityOwnerClaim> findApprovedByFacilityId(@Param("facilityId") Long facilityId);
 
     /**
+     * 요청자가 이 시설에 이미 심사 중인 신청을 냈는지. 같은 사람이 같은 매장에 신청을 여러 번 쌓지 못하게 한다
+     * (남이 낸 대기 신청은 막지 않는다 — 먼저 신청했다고 선점하면 안 된다).
+     */
+    @Query("select count(claim) > 0 from FacilityOwnerClaim claim"
+            + " where claim.facility.facilityId = :facilityId"
+            + " and claim.user.id = :userId"
+            + " and claim.status = com.freepets.domain.business.entity.ClaimStatus.PENDING")
+    boolean existsPendingByFacilityIdAndUserId(
+            @Param("facilityId") Long facilityId,
+            @Param("userId") Long userId
+    );
+
+    /**
      * 탈퇴 시 소유 기록을 지운다. 탈퇴는 소프트 삭제라 사용자 행이 남아 외래 키 CASCADE가 동작하지
      * 않는다. 그대로 두면 탈퇴한 계정이 매장을 붙잡고 있어 진짜 사장이 등록하지 못한다.
      */

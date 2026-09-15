@@ -1,27 +1,32 @@
 package com.freepets.domain.business.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.time.LocalDateTime;
-
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder;
 
+import com.freepets.domain.business.dto.BusinessRequestDTO;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
+import com.freepets.domain.business.entity.ClaimStatus;
 import com.freepets.domain.business.service.BusinessCommandService;
 import com.freepets.domain.business.service.BusinessQueryService;
-import com.freepets.domain.facility.entity.Confidence;
-import com.freepets.domain.facility.entity.ConfidenceSource;
+import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
 
@@ -31,12 +36,6 @@ class BusinessControllerTest {
 
     private static final String VALID_BODY = """
             {"businessNumber":"1234567890","representativeName":"홍길동","openingDate":"20200315"}
-            """;
-
-    private static final String CLAIM_BODY = """
-            {"businessNumber":"1234567890","representativeName":"홍길동","openingDate":"20200315",
-             "petAllowed":"ALLOWED","maxWeight":10.0,"maxWeightInclusive":true,
-             "requirements":["LEASH"],"conditionRaw":"리드줄 착용 시 실내 동반 가능"}
             """;
 
     @Autowired
@@ -118,30 +117,70 @@ class BusinessControllerTest {
                 .andExpect(jsonPath("$.code").value("BUSINESS5001"));
     }
 
+    private MockMultipartFile certificate() {
+        return new MockMultipartFile(
+                "registrationCertificate", "등록증.pdf", "application/pdf", new byte[] {1, 2, 3}
+        );
+    }
+
+    /** 파일이 있어 multipart로 받는다. 목록인 requirements는 같은 이름을 반복해서 보낸다. */
+    private MockMultipartHttpServletRequestBuilder claimRequest(MockMultipartFile... files) {
+        MockMultipartHttpServletRequestBuilder builder = multipart("/api/v1/business/facilities/6/claim");
+        for (MockMultipartFile file : files) {
+            builder.file(file);
+        }
+
+        return builder
+                .param("businessNumber", "1234567890")
+                .param("representativeName", "홍길동")
+                .param("openingDate", "20200315")
+                .param("petAllowed", "ALLOWED")
+                .param("maxWeight", "10.0")
+                .param("maxWeightInclusive", "true")
+                .param("requirements", "LEASH", "MUZZLE")
+                .param("conditionRaw", "리드줄 착용 시 실내 동반 가능");
+    }
+
     @Test
-    void claim_성공하면_200과_확정_신뢰도를_반환한다() throws Exception {
-        LocalDateTime confirmedAt = LocalDateTime.of(2026, 9, 12, 14, 2, 11);
+    void claim_성공하면_200과_대기_상태의_신청을_반환한다() throws Exception {
         when(businessCommandService.claim(any(), any(), any())).thenReturn(
-                new BusinessResponseDTO.ClaimResult(6L, Confidence.CONFIRMED, ConfidenceSource.OWNER, confirmedAt)
+                new BusinessResponseDTO.ClaimResult(11L, 6L, ClaimStatus.PENDING)
         );
 
-        mockMvc.perform(post("/api/v1/business/facilities/6/claim")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(CLAIM_BODY))
+        mockMvc.perform(claimRequest(certificate()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.claimId").value(11))
                 .andExpect(jsonPath("$.result.facilityId").value(6))
-                .andExpect(jsonPath("$.result.confidence").value("CONFIRMED"))
-                .andExpect(jsonPath("$.result.confidenceSource").value("OWNER"));
+                .andExpect(jsonPath("$.result.status").value("PENDING"));
+
+        // 목록으로 보낸 요구조건이 그대로 바인딩되는지 — multipart로 바뀌면서 깨지기 쉬운 부분이다.
+        ArgumentCaptor<BusinessRequestDTO.ClaimRequest> requestCaptor =
+                ArgumentCaptor.forClass(BusinessRequestDTO.ClaimRequest.class);
+        verify(businessCommandService).claim(any(), any(), requestCaptor.capture());
+        BusinessRequestDTO.ClaimRequest request = requestCaptor.getValue();
+        assertThat(request.getRequirements()).containsExactly(Requirement.LEASH, Requirement.MUZZLE);
+        assertThat(request.getMaxWeight()).isEqualByComparingTo("10.0");
+        assertThat(request.getRegistrationCertificate().getOriginalFilename()).isEqualTo("등록증.pdf");
+    }
+
+    @Test
+    void claim_사업자등록증이_없으면_400을_반환한다() throws Exception {
+        mockMvc.perform(claimRequest())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"))
+                .andExpect(jsonPath("$.result.registrationCertificate").exists());
+
+        verifyNoInteractions(businessCommandService);
     }
 
     @Test
     void claim_동반_여부가_없으면_400을_반환한다() throws Exception {
-        mockMvc.perform(post("/api/v1/business/facilities/6/claim")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"businessNumber":"1234567890","representativeName":"홍길동","openingDate":"20200315"}
-                                """))
+        mockMvc.perform(multipart("/api/v1/business/facilities/6/claim")
+                        .file(certificate())
+                        .param("businessNumber", "1234567890")
+                        .param("representativeName", "홍길동")
+                        .param("openingDate", "20200315"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("COMMON400"))
                 .andExpect(jsonPath("$.result.petAllowed").exists());
@@ -154,11 +193,29 @@ class BusinessControllerTest {
         when(businessCommandService.claim(any(), any(), any()))
                 .thenThrow(new GeneralException(ErrorStatus.BUSINESS4003));
 
-        mockMvc.perform(post("/api/v1/business/facilities/6/claim")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(CLAIM_BODY))
+        mockMvc.perform(claimRequest(certificate()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.isSuccess").value(false))
                 .andExpect(jsonPath("$.code").value("BUSINESS4003"));
+    }
+
+    @Test
+    void claim_이미_심사_중인_신청이_있으면_409를_반환한다() throws Exception {
+        when(businessCommandService.claim(any(), any(), any()))
+                .thenThrow(new GeneralException(ErrorStatus.BUSINESS4004));
+
+        mockMvc.perform(claimRequest(certificate()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("BUSINESS4004"));
+    }
+
+    @Test
+    void claim_이미_등록을_마친_내_매장이면_409를_반환한다() throws Exception {
+        when(businessCommandService.claim(any(), any(), any()))
+                .thenThrow(new GeneralException(ErrorStatus.BUSINESS4005));
+
+        mockMvc.perform(claimRequest(certificate()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("BUSINESS4005"));
     }
 }

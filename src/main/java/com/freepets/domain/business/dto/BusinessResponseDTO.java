@@ -1,9 +1,6 @@
 package com.freepets.domain.business.dto;
 
-import java.time.LocalDateTime;
-
-import com.freepets.domain.facility.entity.Confidence;
-import com.freepets.domain.facility.entity.ConfidenceSource;
+import com.freepets.domain.business.entity.ClaimStatus;
 
 public class BusinessResponseDTO {
 
@@ -21,16 +18,14 @@ public class BusinessResponseDTO {
     ) {}
 
     /**
-     * 매장 등록 결과. 등록이 성공하는 순간 그 계정에 사업자 프로필이 붙으므로, 앱은 이 응답을 받고
-     * 계정 조회를 다시 불러 프로필 목록을 갱신하면 된다.
+     * 매장 등록 신청 접수 결과. 접수일 뿐이라 아직 소유권도 사업자 프로필도 생기지 않는다 — 앱은 대시보드가
+     * 아니라 "심사 중" 화면으로 가야 한다. 운영자가 승인해야 조건이 시설에 반영되고 프로필이 붙는다.
      *
-     * @param confidence       확정된 직후라 항상 {@code CONFIRMED}다
-     * @param confidenceSource 확정 근거. 사업자 본인이 적었으므로 {@code OWNER}
+     * @param status 접수 직후라 항상 {@code PENDING}이다
      */
     public record ClaimResult(
+            Long claimId,
             Long facilityId,
-            Confidence confidence,
-            ConfidenceSource confidenceSource,
-            LocalDateTime confirmedAt
+            ClaimStatus status
     ) {}
 }

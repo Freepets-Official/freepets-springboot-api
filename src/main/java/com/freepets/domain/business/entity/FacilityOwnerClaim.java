@@ -11,6 +11,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.global.entity.BaseEntity;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -75,33 +76,49 @@ public class FacilityOwnerClaim extends BaseEntity {
     @Column(name = "verified_at", nullable = false)
     private LocalDateTime verifiedAt;
 
-    // 라이브 DB에 이미 등록된 매장이 있다. 그 기록은 승인 절차 이전에 곧바로 소유권을 준 것이라 APPROVED로 채운다.
+    // 기본값은 승인 절차 이전에 만들어진 기록을 채우기 위한 것이다. 그 기록들은 국세청 확인만으로 곧바로
+    // 소유권을 받았다. 새 신청은 아래 생성자대로 PENDING으로 시작한다.
     @ColumnDefault("'APPROVED'")
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ClaimStatus status;
+
+    /** 신청서에 적어 낸 출입 조건. 승인될 때 시설에 반영한다. */
+    @Embedded
+    private RequestedCondition requestedCondition;
+
+    /**
+     * 사업자등록증 파일 URL. 운영자가 등록증의 상호·소재지를 신청한 매장과 대조하는 데 쓴다.
+     *
+     * <p>민감 문서라 관리자 응답에만 내린다({@code S3ImageService.uploadDocument} 참고).
+     */
+    @Column(name = "registration_certificate_url", columnDefinition = "TEXT")
+    private String registrationCertificateUrl;
 
     @Builder
     private FacilityOwnerClaim(
             User user,
             Facility facility,
             String maskedBusinessNumber,
-            LocalDateTime verifiedAt
+            LocalDateTime verifiedAt,
+            RequestedCondition requestedCondition,
+            String registrationCertificateUrl
     ) {
         this.user = user;
         this.facility = facility;
         this.maskedBusinessNumber = maskedBusinessNumber;
         this.verifiedAt = verifiedAt;
-        // 아직은 등록이 곧 승인이다. 신청 접수(운영자 승인 대기)로 바뀌면 PENDING으로 시작한다.
-        // 빌더로 받지 않는다 — 호출부가 임의 상태로 기록을 만드는 경로를 두지 않는다.
-        this.status = ClaimStatus.APPROVED;
+        this.requestedCondition = requestedCondition;
+        this.registrationCertificateUrl = registrationCertificateUrl;
+        // 신청은 운영자 승인을 기다린다. 빌더로 받지 않는다 — 호출부가 임의 상태로 기록을 만드는 경로를 두지 않는다.
+        this.status = ClaimStatus.PENDING;
     }
 
     /**
-     * 요청자가 이 매장의 주인인지. 사업자 기능을 써도 되는지는 요청마다 이 기록으로 확인한다 —
-     * 프로필은 화면 세트일 뿐 권한이 아니다.
+     * 이 기록을 낸 사람이 요청자인지. <b>승인 여부는 보지 않는다</b> — 대기 신청에도 쓰이므로 이것만으로
+     * 매장의 주인이라고 볼 수 없다. 주인인지는 승인된 기록을 조회해서 판단한다.
      */
-    public boolean isOwnedBy(Long userId) {
+    public boolean isRequestedBy(Long userId) {
         return user.getId().equals(userId);
     }
 

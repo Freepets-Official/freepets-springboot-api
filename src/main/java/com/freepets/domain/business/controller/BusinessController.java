@@ -1,6 +1,8 @@
 package com.freepets.domain.business.controller;
 
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -41,14 +43,16 @@ public class BusinessController {
     }
 
     /**
-     * 매장 등록. 사업자 정보를 다시 확인해 소유 기록을 만들고, 함께 받은 출입 조건을 확정한다.
-     * 등록이 성공하면 그 계정에 사업자 프로필이 생긴다.
+     * 매장 등록 신청. 사업자 정보를 다시 확인하고 사업자등록증을 올린 뒤, 운영자 승인을 기다리는 신청을 만든다.
+     *
+     * <p>접수일 뿐이라 이 시점에는 소유권도 사업자 프로필도 생기지 않고, 함께 받은 출입 조건도 시설에 반영되지
+     * 않는다. 운영자가 등록증을 매장과 대조해 승인해야 반영된다.
      */
-    @PostMapping("/facilities/{facilityId}/claim")
+    @PostMapping(value = "/facilities/{facilityId}/claim", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<BusinessResponseDTO.ClaimResult> claim(
             @AuthenticationPrincipal Long userId,
             @PathVariable("facilityId") Long facilityId,
-            @Valid @RequestBody BusinessRequestDTO.ClaimRequest request
+            @Valid @ModelAttribute BusinessRequestDTO.ClaimRequest request
     ) {
         return ApiResponse.onSuccess(
                 businessCommandService.claim(userId, facilityId, request)

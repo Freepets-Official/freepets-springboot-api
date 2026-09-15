@@ -30,6 +30,7 @@ import com.freepets.domain.review.entity.ReviewReport;
 import com.freepets.domain.review.entity.ReviewReportReason;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.Tag;
+import com.freepets.domain.review.repository.ReviewHelpfulRepository;
 import com.freepets.domain.review.repository.ReviewReportRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.Provider;
@@ -48,6 +49,9 @@ class ReviewQueryServiceTest {
 
     @Mock
     private ReviewReportRepository reviewReportRepository;
+
+    @Mock
+    private ReviewHelpfulRepository reviewHelpfulRepository;
 
     @InjectMocks
     private ReviewQueryService reviewQueryService;

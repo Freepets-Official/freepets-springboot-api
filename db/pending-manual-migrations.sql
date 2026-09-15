@@ -160,3 +160,24 @@ ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
 --     created_at              TIMESTAMP    NOT NULL,
 --     updated_at              TIMESTAMP    NOT NULL
 -- );
+
+-- ============================================================
+-- 2026-09-15 — 리뷰 "도움됐어요" 카운트 추가 (feat/review-edit-and-helpful-count)
+-- ============================================================
+-- 리뷰에 "도움됐어요"를 표시하는 기능. 누가 표시했는지는 신규 테이블(review_helpfuls)에,
+-- 누적 카운트는 매번 COUNT하지 않도록 reviews에 캐시 컬럼(helpful_count)을 둔다.
+--
+-- 둘 다 ddl-auto=update가 자동 처리한다 — helpful_count는 @ColumnDefault("0")가 있어
+-- 기존 라이브 리뷰에도 NOT NULL 위반 없이 붙고, review_helpfuls는 신규 테이블이라 컬럼·
+-- 유니크 제약을 전부 자동 생성한다. 수동 조치는 없다 — 아래는 ddl-auto를 끈 환경을 위한 참고용이다.
+--
+-- 상태: ✅ 조치 불필요 (참고용 기록)
+-- ALTER TABLE freepets.reviews ADD COLUMN helpful_count BIGINT NOT NULL DEFAULT 0;
+-- CREATE TABLE freepets.review_helpfuls (
+--     review_helpful_id BIGSERIAL PRIMARY KEY,
+--     review_id         BIGINT    NOT NULL REFERENCES freepets.reviews (review_id),
+--     user_id           BIGINT    NOT NULL REFERENCES freepets.users (id),
+--     created_at        TIMESTAMP NOT NULL,
+--     updated_at        TIMESTAMP NOT NULL,
+--     CONSTRAINT uk_review_helpfuls_review_user UNIQUE (review_id, user_id)
+-- );

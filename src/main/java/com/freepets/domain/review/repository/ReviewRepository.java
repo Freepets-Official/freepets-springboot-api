@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -43,6 +44,21 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     );
 
     Optional<Review> findByReviewIdAndDeletedAtIsNull(Long reviewId);
+
+    /**
+     * "도움됐어요" 카운트를 애플리케이션에서 읽고-고치고-flush하는 대신 DB 단에서 원자적으로
+     * 1 올린다(Review.helpfulCount 주석 참고) — 다른 유저 두 명이 같은 리뷰에 거의 동시에
+     * 표시해도 lost update 없이 둘 다 반영된다.
+     *
+     * <p>{@code clearAutomatically = true}가 필요하다 — 이 벌크 업데이트는 영속성 컨텍스트를
+     * 거치지 않고 DB만 직접 바꿔서, 이미 로드해둔 Review 엔티티의 메모리 값은 그대로 안 바뀐다.
+     * 지우지 않으면 호출부가 그 stale한 엔티티를 계속 들고 있다가 나중에(같은 트랜잭션 안에서)
+     * 무심코 값을 또 고쳐 flush하면 이번 원자적 증가와 충돌한다 — 호출부는 최신 값이 필요하면
+     * 이 호출 뒤에 다시 조회해야 한다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("update Review review set review.helpfulCount = review.helpfulCount + 1 where review.reviewId = :reviewId")
+    void incrementHelpfulCount(@Param("reviewId") Long reviewId);
 
     /**
      * 시설별 리뷰 수를 한 번에 센다.

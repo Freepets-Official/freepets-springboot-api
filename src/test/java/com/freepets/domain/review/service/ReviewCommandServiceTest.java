@@ -43,7 +43,6 @@ import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.review.dto.ReviewRequestDTO;
 import com.freepets.domain.review.dto.ReviewResponseDTO;
 import com.freepets.domain.review.entity.Review;
-import com.freepets.domain.review.entity.ReviewHelpful;
 import com.freepets.domain.review.entity.ReviewReport;
 import com.freepets.domain.review.entity.ReviewReportReason;
 import com.freepets.domain.review.entity.ReviewReportStatus;
@@ -68,6 +67,9 @@ class ReviewCommandServiceTest {
 
     @Mock
     private ReviewHelpfulRepository reviewHelpfulRepository;
+
+    @Mock
+    private ReviewHelpfulRecorder reviewHelpfulRecorder;
 
     @Mock
     private FacilityRepository facilityRepository;
@@ -474,16 +476,33 @@ class ReviewCommandServiceTest {
                 .visitedAt(LocalDate.now())
                 .build();
         ReflectionTestUtils.setField(review, "reviewId", 7001L);
+        // incrementHelpfulCount는 영속성 컨텍스트를 안 거치는 벌크 업데이트라, 최신 값은 재조회로만
+        // 얻는다 — 재조회 시점에 DB가 이미 반영된 걸 흉내내려고 별도 인스턴스를 하나 더 둔다.
+        Review refreshed = Review.builder()
+                .facility(review.getFacility())
+                .user(review.getUser())
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(refreshed, "reviewId", 7001L);
+        ReflectionTestUtils.setField(refreshed, "helpfulCount", 1L);
         User marker = createUser(1L);
 
-        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L))
+                .thenReturn(Optional.of(review))
+                .thenReturn(Optional.of(refreshed));
         when(reviewHelpfulRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(false);
         when(userRepository.findById(1L)).thenReturn(Optional.of(marker));
 
         ReviewResponseDTO.HelpfulResult result = reviewCommandService.markHelpful(1L, 7001L);
 
         assertThat(result.helpfulCount()).isEqualTo(1L);
-        verify(reviewHelpfulRepository).save(any(ReviewHelpful.class));
+        verify(reviewHelpfulRecorder).record(review, marker);
+        verify(reviewRepository).incrementHelpfulCount(7001L);
     }
 
     @Test
@@ -506,8 +525,45 @@ class ReviewCommandServiceTest {
         ReviewResponseDTO.HelpfulResult result = reviewCommandService.markHelpful(1L, 7001L);
 
         assertThat(result.helpfulCount()).isEqualTo(0L);
-        verify(reviewHelpfulRepository, never()).save(any());
+        verify(reviewHelpfulRecorder, never()).record(any(), any());
+        verify(reviewRepository, never()).incrementHelpfulCount(any());
         verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    void markHelpful_이미_표시된_경우_저장_시점에_유니크_제약_위반이_나도_조용히_넘어간다() {
+        // exists 확인과 저장 사이에 거의 동시에 두 번 눌린 race — DB 유니크 제약이 뒤늦은 쪽을
+        // 막아준다. ReviewHelpfulRecorder는 별도 트랜잭션이라 이 예외를 여기서 잡아도 호출부의
+        // 트랜잭션(review 조회 등)에는 영향이 없다.
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+        User marker = createUser(1L);
+
+        ConstraintViolationException uniqueConstraintViolation = new ConstraintViolationException(
+                "duplicate key value violates unique constraint",
+                new SQLException("duplicate key"),
+                "uk_review_helpfuls_review_user"
+        );
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(reviewHelpfulRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(marker));
+        org.mockito.Mockito.doThrow(new DataIntegrityViolationException("duplicate key", uniqueConstraintViolation))
+                .when(reviewHelpfulRecorder).record(review, marker);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.markHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(0L);
+        verify(reviewRepository, never()).incrementHelpfulCount(any());
     }
 
     @Test
@@ -532,7 +588,7 @@ class ReviewCommandServiceTest {
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4005);
-        verify(reviewHelpfulRepository, never()).save(any());
+        verify(reviewHelpfulRecorder, never()).record(any(), any());
     }
 
     @Test

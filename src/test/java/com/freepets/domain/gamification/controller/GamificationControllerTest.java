@@ -44,7 +44,7 @@ class GamificationControllerTest {
         when(gamificationQueryService.getMyStatus(isNull())).thenReturn(
                 new GamificationResponseDTO.MyStatus(
                         2, 150L, 200L, PawAnimal.DOG, PawColor.RED, "개 발바닥 · 빨강", null, true,
-                        List.of(new GamificationResponseDTO.BadgeSummary("FIRST_REVIEW", "첫 리뷰", "첫 리뷰를 남겼어요", null))
+                        List.of(new GamificationResponseDTO.BadgeSummary("REVIEW_BRONZE", "리뷰 동", "리뷰를 1개 작성했어요", null))
                 )
         );
 
@@ -56,7 +56,7 @@ class GamificationControllerTest {
                 .andExpect(jsonPath("$.result.tierAnimal").value("DOG"))
                 .andExpect(jsonPath("$.result.tierColor").value("RED"))
                 .andExpect(jsonPath("$.result.tierLabel").value("개 발바닥 · 빨강"))
-                .andExpect(jsonPath("$.result.badges[0].code").value("FIRST_REVIEW"));
+                .andExpect(jsonPath("$.result.badges[0].code").value("REVIEW_BRONZE"));
     }
 
     @Test

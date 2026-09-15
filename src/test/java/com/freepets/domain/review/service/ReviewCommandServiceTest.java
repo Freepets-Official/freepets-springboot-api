@@ -497,12 +497,16 @@ class ReviewCommandServiceTest {
                 .thenReturn(Optional.of(refreshed));
         when(reviewHelpfulRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(false);
         when(userRepository.findById(1L)).thenReturn(Optional.of(marker));
+        // 이 유저(작성자 100L)의 리뷰 전체가 받은 도움됐어요 총합 — "구원자" 배지 평가에 넘어간다.
+        when(reviewRepository.sumHelpfulCountByUserId(100L)).thenReturn(7L);
 
         ReviewResponseDTO.HelpfulResult result = reviewCommandService.markHelpful(1L, 7001L);
 
         assertThat(result.helpfulCount()).isEqualTo(1L);
         verify(reviewHelpfulRecorder).record(review, marker);
         verify(reviewRepository).incrementHelpfulCount(7001L);
+        // 도움됐어요 표시 자체는 작성자(리뷰 주인)에게 평가되는 배지다 — 누른 사람(marker)이 아니다.
+        verify(gamificationService).evaluateHelpfulSaviorBadge(review.getUser(), 7L);
     }
 
     @Test
@@ -528,6 +532,7 @@ class ReviewCommandServiceTest {
         verify(reviewHelpfulRecorder, never()).record(any(), any());
         verify(reviewRepository, never()).incrementHelpfulCount(any());
         verify(userRepository, never()).findById(any());
+        verify(gamificationService, never()).evaluateHelpfulSaviorBadge(any(), anyLong());
     }
 
     @Test
@@ -564,6 +569,7 @@ class ReviewCommandServiceTest {
 
         assertThat(result.helpfulCount()).isEqualTo(0L);
         verify(reviewRepository, never()).incrementHelpfulCount(any());
+        verify(gamificationService, never()).evaluateHelpfulSaviorBadge(any(), anyLong());
     }
 
     @Test

@@ -61,6 +61,16 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     void incrementHelpfulCount(@Param("reviewId") Long reviewId);
 
     /**
+     * 이 유저가 쓴 리뷰 전체가 지금까지 받은 "도움됐어요" 총합(게이미피케이션 "구원자" 배지,
+     * {@link com.freepets.domain.gamification.entity.Badge#HELPFUL_GOLD} 참고). 삭제된 리뷰도
+     * 포함한다 — 이미 받은 도움됐어요는 실제 있었던 실적이라, 나중에 그 리뷰를 지웠다고 배지
+     * 산정에서 빼는 게 맞지 않다. {@code coalesce}가 없으면 리뷰가 하나도 없는 유저는 결과가
+     * {@code null}이라 원시 타입 언박싱에서 터진다.
+     */
+    @Query("select coalesce(sum(review.helpfulCount), 0) from Review review where review.user.id = :userId")
+    long sumHelpfulCountByUserId(@Param("userId") Long userId);
+
+    /**
      * 시설별 리뷰 수를 한 번에 센다.
      *
      * <p>목록 조회에서 시설마다 count를 날리면 페이지당 쿼리가 시설 수만큼 늘어나므로 묶어서 센다.

@@ -293,19 +293,27 @@ public class ReviewCommandService {
      */
     private void recordHelpfulIfAbsent(
             Review review,
-            User user
+            User marker
     ) {
+        User author = review.getUser();
+
         try {
-            reviewHelpfulRecorder.record(review, user);
+            reviewHelpfulRecorder.record(review, marker);
         } catch (DataIntegrityViolationException exception) {
             if (!isUniqueConstraintViolation(exception, REVIEW_HELPFUL_UNIQUE_CONSTRAINT)) {
                 throw exception;
             }
-            log.warn("이미 표시된 도움됐어요입니다 — reviewId={}, userId={}", review.getReviewId(), user.getId());
+            log.warn("이미 표시된 도움됐어요입니다 — reviewId={}, userId={}", review.getReviewId(), marker.getId());
             return;
         }
 
         reviewRepository.incrementHelpfulCount(review.getReviewId());
+
+        // "구원자" 배지 — 도움됐어요는 작성자 본인의 행동이 아니라 남이 눌러주는 게 트리거라
+        // GamificationService.grantXp의 XpEvent 경로를 안 탄다(그 클래스 참고). 총합은 이 도메인이
+        // 이미 들고 있는 개념이라 여기서 계산해서 넘긴다.
+        long totalHelpfulReceived = reviewRepository.sumHelpfulCountByUserId(author.getId());
+        gamificationService.evaluateHelpfulSaviorBadge(author, totalHelpfulReceived);
     }
 
     // 반려동물 단위가 아니라 시설 단위로 확인한다 — 새·토끼처럼 개별 판별 자체가 없는 종도

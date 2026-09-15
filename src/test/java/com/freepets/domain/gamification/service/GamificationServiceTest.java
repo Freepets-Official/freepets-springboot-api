@@ -201,4 +201,14 @@ class GamificationServiceTest {
         assertThatThrownBy(() -> gamificationService.updateLevelUpNotification(1L, false))
                 .isInstanceOf(GeneralException.class);
     }
+
+    @Test
+    void 구원자_배지_평가는_badgeEvaluationService에_그대로_위임한다() {
+        setUpService();
+        User author = newUser();
+
+        gamificationService.evaluateHelpfulSaviorBadge(author, 10L);
+
+        verify(badgeEvaluationService).evaluateHelpfulSaviorBadge(author, 10L);
+    }
 }

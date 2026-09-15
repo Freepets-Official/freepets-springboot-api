@@ -53,15 +53,16 @@ public class BadgeEvaluationService {
     }
 
     /**
-     * "구원자" 계열(HELPFUL_10/50/100) 평가 — 본인 행동(XpEvent)이 아니라 남이 내 리뷰를
+     * "구원자" 계열(HELPFUL_BRONZE~DIAMOND) 평가 — 본인 행동(XpEvent)이 아니라 남이 내 리뷰를
      * "도움됐어요"로 표시하는 게 트리거라 {@link #evaluateAfterXpEvent}의 XpEvent 카운트
      * 방식을 못 쓴다. 리뷰 도메인이 이미 계산해 온 총합(review 도메인 소유 개념 — 이 서비스가
      * ReviewRepository를 직접 참조하지 않는다)을 그대로 받아 임계값만 비교한다.
      *
      * <p>{@code relatedSourceType}이 {@code null}인 배지 전부를 훑는다 — 지금은 HELPFUL 계열
-     * 3개뿐이지만, XpEvent 기반이 아닌 배지가 늘어나도 이 메소드를 다시 고칠 필요가 없다.
-     * 한 번 호출로 여러 단계(예: 총합이 한 번에 60이 되면 HELPFUL_10과 HELPFUL_50 둘 다)가
-     * 동시에 부여될 수 있다 — 이미 보유한 낮은 단계가 있어도 더 높은 단계 확인을 막지 않는다.
+     * 6개(동/은/금/루비/크리스탈/다이아)뿐이지만, XpEvent 기반이 아닌 배지가 늘어나도 이 메소드를
+     * 다시 고칠 필요가 없다. 한 번 호출로 여러 단계(예: 총합이 한 번에 60이 되면 HELPFUL_GOLD와
+     * HELPFUL_RUBY 둘 다)가 동시에 부여될 수 있다 — 이미 보유한 낮은 단계가 있어도 더 높은 단계
+     * 확인을 막지 않는다.
      */
     public void evaluateHelpfulSaviorBadge(
             User reviewAuthor,

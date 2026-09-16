@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.freepets.domain.gamification.dto.GamificationResponseDTO;
 import com.freepets.domain.gamification.entity.PawAnimal;
 import com.freepets.domain.gamification.entity.PawColor;
+import com.freepets.domain.gamification.entity.PawFinish;
 import com.freepets.domain.gamification.service.GamificationQueryService;
 import com.freepets.domain.gamification.service.GamificationService;
 
@@ -43,7 +44,7 @@ class GamificationControllerTest {
     void 내_게이미피케이션_상태_조회에_성공하면_200을_반환한다() throws Exception {
         when(gamificationQueryService.getMyStatus(isNull())).thenReturn(
                 new GamificationResponseDTO.MyStatus(
-                        2, 150L, 200L, PawAnimal.DOG, PawColor.RED, "개 발바닥 · 빨강", null, true,
+                        2, 150L, 200L, PawAnimal.DOG, PawFinish.DIM, PawColor.RED, "개 발바닥 · 흐릿함 · 빨강", null, true,
                         List.of(new GamificationResponseDTO.BadgeSummary("REVIEW_BRONZE", "리뷰 동", "리뷰를 1개 작성했어요", null)),
                         List.of(new GamificationResponseDTO.BadgeProgress(
                                 "REVIEW", "리뷰", 12L,
@@ -58,8 +59,9 @@ class GamificationControllerTest {
                 .andExpect(jsonPath("$.result.totalXp").value(150))
                 .andExpect(jsonPath("$.result.xpToNextLevel").value(200))
                 .andExpect(jsonPath("$.result.tierAnimal").value("DOG"))
+                .andExpect(jsonPath("$.result.tierFinish").value("DIM"))
                 .andExpect(jsonPath("$.result.tierColor").value("RED"))
-                .andExpect(jsonPath("$.result.tierLabel").value("개 발바닥 · 빨강"))
+                .andExpect(jsonPath("$.result.tierLabel").value("개 발바닥 · 흐릿함 · 빨강"))
                 .andExpect(jsonPath("$.result.badges[0].code").value("REVIEW_BRONZE"))
                 .andExpect(jsonPath("$.result.progress[0].family").value("REVIEW"))
                 .andExpect(jsonPath("$.result.progress[0].count").value(12))
@@ -71,7 +73,8 @@ class GamificationControllerTest {
     void 최대_레벨이면_xpToNextLevel_키가_응답에서_빠진다() throws Exception {
         when(gamificationQueryService.getMyStatus(isNull())).thenReturn(
                 new GamificationResponseDTO.MyStatus(
-                        70, 999999L, null, PawAnimal.CAT, PawColor.VIOLET, "고양이 발바닥 · 보라", null, true, List.of(), List.of()
+                        70, 999999L, null, PawAnimal.CAT, PawFinish.HOLOGRAPHIC, PawColor.VIOLET,
+                        "고양이 발바닥 · 홀로그램 · 보라", null, true, List.of(), List.of()
                 )
         );
 

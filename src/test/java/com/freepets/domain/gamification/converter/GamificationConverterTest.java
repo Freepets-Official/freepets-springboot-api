@@ -13,6 +13,7 @@ import com.freepets.domain.gamification.entity.Badge;
 import com.freepets.domain.gamification.entity.BadgeFamily;
 import com.freepets.domain.gamification.entity.PawAnimal;
 import com.freepets.domain.gamification.entity.PawColor;
+import com.freepets.domain.gamification.entity.PawFinish;
 import com.freepets.domain.gamification.entity.UserBadge;
 import com.freepets.domain.gamification.service.LevelCurve;
 import com.freepets.domain.user.entity.Provider;
@@ -43,10 +44,11 @@ class GamificationConverterTest {
         GamificationResponseDTO.MyStatus status = GamificationConverter.toMyStatus(user, List.of(), Map.of());
 
         assertThat(status.xpToNextLevel()).isEqualTo(LevelCurve.xpToReachLevel(3) - 150);
-        // 레벨 1=개·빨강, 레벨 2=개·주황(레벨마다 한 칸씩 색이 바뀐다).
+        // 레벨 1=개·흐릿함·빨강, 레벨 2=개·흐릿함·주황(레벨마다 한 칸씩 색이 바뀐다).
         assertThat(status.tierAnimal()).isEqualTo(PawAnimal.DOG);
+        assertThat(status.tierFinish()).isEqualTo(PawFinish.DIM);
         assertThat(status.tierColor()).isEqualTo(PawColor.ORANGE);
-        assertThat(status.tierLabel()).isEqualTo("개 발바닥 · 주황");
+        assertThat(status.tierLabel()).isEqualTo("개 발바닥 · 흐릿함 · 주황");
     }
 
     @Test
@@ -56,10 +58,12 @@ class GamificationConverterTest {
         GamificationResponseDTO.MyStatus status = GamificationConverter.toMyStatus(user, List.of(), Map.of());
 
         assertThat(status.xpToNextLevel()).isNull();
-        // 레벨 70 = 10번째 동물(도마뱀)의 7번째 색(보라) — 10종×7색이 정확히 70에서 끝난다.
-        assertThat(status.tierAnimal()).isEqualTo(PawAnimal.LIZARD);
+        // 레벨 70 = 두 번째 동물(고양이)의 마지막 단계(홀로그램)·마지막 색(보라) —
+        // 2종×5단계×7색이 정확히 70에서 끝난다.
+        assertThat(status.tierAnimal()).isEqualTo(PawAnimal.CAT);
+        assertThat(status.tierFinish()).isEqualTo(PawFinish.HOLOGRAPHIC);
         assertThat(status.tierColor()).isEqualTo(PawColor.VIOLET);
-        assertThat(status.tierLabel()).isEqualTo("도마뱀 발바닥 · 보라");
+        assertThat(status.tierLabel()).isEqualTo("고양이 발바닥 · 홀로그램 · 보라");
     }
 
     @Test

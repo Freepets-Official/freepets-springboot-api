@@ -42,6 +42,7 @@ public class GamificationConverter {
                 user.getTotalXp(),
                 xpToNextLevel,
                 tier.animal(),
+                tier.finish(),
                 tier.color(),
                 tier.label(),
                 tier.badgeImageUrl(),

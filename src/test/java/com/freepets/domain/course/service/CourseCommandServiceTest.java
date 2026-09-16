@@ -28,6 +28,7 @@ import com.freepets.domain.course.entity.CourseSource;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
@@ -136,6 +137,28 @@ class CourseCommandServiceTest {
     }
 
     @Test
+    void 동반_불가_시설을_담으면_COURSE4046() {
+        User user = user(1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(facilityRepository.findAllById(List.of(1L)))
+                .thenReturn(List.of(deniedFacility(1L, "동반불가 매장")));
+
+        assertThatThrownBy(() -> courseCommandService.createCourse(1L, request("강릉 코스", List.of(1L))))
+                .isInstanceOf(GeneralException.class);
+        verify(courseRepository, never()).save(any());
+    }
+
+    @Test
+    void 스톱_교체로도_동반_불가_시설은_담을_수_없다() {
+        Course course = ownedCourseWithStops(1L, 2L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(3L)).thenReturn(Optional.of(deniedFacility(3L, "동반불가 매장")));
+
+        assertThatThrownBy(() -> courseCommandService.replaceStop(1L, 10L, 0, 3L))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
     void 본인_코스가_아니면_수정시_COURSE4042() {
         Course course = Course.builder()
                 .user(user(1L))
@@ -186,6 +209,34 @@ class CourseCommandServiceTest {
         courseCommandService.updateCourse(1L, 10L, request);
 
         verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void 이름_변경으로도_스톱_전체_없이_이름만_바뀐다() {
+        Course course = ownedCourseWithStops(1L, 2L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.updateName(1L, 10L, "새 이름");
+
+        assertThat(result.name()).isEqualTo("새 이름");
+        assertThat(result.stopIds()).containsExactly(1L, 2L);
+    }
+
+    @Test
+    void 본인_코스가_아니면_이름_변경시_COURSE4042() {
+        Course course = ownedCourseWithStops(1L);
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+
+        assertThatThrownBy(() -> courseCommandService.updateName(2L, 10L, "남이 바꾸려는 이름"))
+                .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 존재하지_않는_코스_이름_변경시_COURSE4041() {
+        when(courseRepository.findById(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> courseCommandService.updateName(1L, 10L, "새 이름"))
+                .isInstanceOf(GeneralException.class);
     }
 
     @Test
@@ -275,6 +326,20 @@ class CourseCommandServiceTest {
 
         assertThatThrownBy(() -> courseCommandService.optimizeOrder(List.of(1L, 999L)))
                 .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 경로_최적화는_저장하지_않으므로_동반_불가_시설이_있어도_막지_않는다() {
+        // optimizeOrder는 미리보기일 뿐 저장하지 않는다 — 이미 코스에 담겨있는(이 게이트가
+        // 생기기 전에 담겼거나, 이후 petAllowed가 바뀐) 동반 불가 시설이 있어도 재정렬 미리보기
+        // 자체는 계속 동작해야 한다. 실제 저장(createCourse/updateCourse)에서 막힌다.
+        Facility denied = deniedFacility(1L, "동반불가 매장");
+        when(facilityRepository.findAllById(List.of(1L))).thenReturn(List.of(denied));
+        when(courseAssemblyService.reorderForCustomEdit(List.of(denied))).thenReturn(List.of(denied));
+
+        CourseResponseDTO.OrderResult result = courseCommandService.optimizeOrder(List.of(1L));
+
+        assertThat(result.stopIds()).containsExactly(1L);
     }
 
     @Test
@@ -436,6 +501,27 @@ class CourseCommandServiceTest {
     }
 
     @Test
+    void 원본에_동반_불가_시설이_있으면_복사가_거부된다() {
+        // 이 게이트가 생기기 전에 만들어졌거나, 저장 이후 petAllowed가 DENIED로 바뀐 원본을
+        // 복사하려는 경우 — 복사도 새 CUSTOM 코스를 만드는 경로라 같은 검증을 거쳐야 한다.
+        Course original = Course.builder()
+                .user(user(1L))
+                .name("몽이 코스")
+                .source(CourseSource.CUSTOM)
+                .build();
+        original.replaceStops(List.of(deniedFacility(1L, "동반불가 매장")));
+        ReflectionTestUtils.setField(original, "courseId", 10L);
+        ReflectionTestUtils.setField(original, "shareCode", "CRS-DENIED001");
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user(2L)));
+        when(courseRepository.findByShareCode("CRS-DENIED001")).thenReturn(Optional.of(original));
+
+        assertThatThrownBy(() -> courseCommandService.copySharedCourse(2L, "CRS-DENIED001"))
+                .isInstanceOf(GeneralException.class);
+        verify(courseRepository, never()).save(any());
+    }
+
+    @Test
     void 자기_코스를_자기_공유_코드로_복사하면_경험치가_지급되지_않는다() {
         // 원 소유자(1L)와 복사한 사람(1L)이 같으면 courseId가 매번 새로 생겨 평생 1회 검사를
         // 통과해버리므로, 실제 참여 없이 반복 복사로 XP를 파밍할 수 있었다 — 자기 복사는 막는다.
@@ -530,6 +616,21 @@ class CourseCommandServiceTest {
         Facility facility = Facility.builder()
                 .name(name)
                 .category(FacilityCategory.CAFE)
+                .lat(new BigDecimal("37.0"))
+                .lng(new BigDecimal("128.0"))
+                .build();
+        ReflectionTestUtils.setField(facility, "facilityId", facilityId);
+        return facility;
+    }
+
+    private Facility deniedFacility(
+            Long facilityId,
+            String name
+    ) {
+        Facility facility = Facility.builder()
+                .name(name)
+                .category(FacilityCategory.CAFE)
+                .petAllowed(PetAllowed.DENIED)
                 .lat(new BigDecimal("37.0"))
                 .lng(new BigDecimal("128.0"))
                 .build();

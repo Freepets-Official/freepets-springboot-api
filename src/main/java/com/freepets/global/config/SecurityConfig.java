@@ -42,6 +42,9 @@ public class SecurityConfig {
             // stopId 순서만 재배열하는 순수 계산이라 userId 자체를 안 쓴다(CourseController 참고)
             // — 로그인 여부와 무관하게 열려있어야 한다.
             "/api/v1/courses/optimize-order",
+            // 1.0 앱이 로그인 여부와 무관하게 항상 보여주던 하드코딩 공지를 대체하는 API라
+            // 마찬가지로 로그인 전에도 열려있어야 한다(Notice 엔티티 참고).
+            "/api/v1/notices",
             // 소셜 로그인. 아직 우리 토큰이 없는 상태로 들어오므로 인증을 요구할 수 없다.
             "/api/v1/auth/social/*",
             // 액세스 토큰이 만료된 상태로 들어오는 요청이라 인증을 요구할 수 없다.

@@ -47,6 +47,7 @@ import com.freepets.domain.review.entity.ReviewReport;
 import com.freepets.domain.review.entity.ReviewReportReason;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.Tag;
+import com.freepets.domain.review.repository.ReviewHelpfulRepository;
 import com.freepets.domain.review.repository.ReviewReportRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.Provider;
@@ -63,6 +64,12 @@ class ReviewCommandServiceTest {
 
     @Mock
     private ReviewReportRepository reviewReportRepository;
+
+    @Mock
+    private ReviewHelpfulRepository reviewHelpfulRepository;
+
+    @Mock
+    private ReviewHelpfulRecorder reviewHelpfulRecorder;
 
     @Mock
     private FacilityRepository facilityRepository;
@@ -380,6 +387,226 @@ class ReviewCommandServiceTest {
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.PET4002);
         verify(reviewRepository, never()).save(any());
+    }
+
+    @Test
+    void updateReview_reviewId로_직접_수정하면_방문일은_유지된채_나머지가_바뀐다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet oldPet = createPet(1L, user);
+        Pet newPet = createPet(2L, user);
+
+        Review review = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .build();
+        review.replacePets(List.of(oldPet));
+        review.replaceTags(List.of(Tag.QUIET));
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(2L));
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(newPet));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.updateReview(1L, 7001L, request);
+
+        assertThat(result.reviewId()).isEqualTo(7001L);
+        assertThat(result.petIds()).containsExactly(2L);
+        assertThat(result.ratingSpace()).isEqualTo(5);
+        assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
+        verify(facilityGradeCacheService).refresh(7L);
+        // 새 리뷰가 아니라 경험치는 지급되지 않는다.
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void updateReview_본인_리뷰가_아니면_예외를_던진다() {
+        Facility facility = createFacility(7L);
+        Review review = Review.builder()
+                .facility(facility)
+                .user(createUser(1L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.updateReview(2L, 7001L, createUpsertRequest(List.of(1L)))
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4002);
+    }
+
+    @Test
+    void updateReview_존재하지_않으면_예외를_던진다() {
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.empty());
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.updateReview(1L, 7001L, createUpsertRequest(List.of(1L)))
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4041);
+    }
+
+    @Test
+    void markHelpful_처음_표시하면_카운트가_1_증가한다() {
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+        // incrementHelpfulCount는 영속성 컨텍스트를 안 거치는 벌크 업데이트라, 최신 값은 재조회로만
+        // 얻는다 — 재조회 시점에 DB가 이미 반영된 걸 흉내내려고 별도 인스턴스를 하나 더 둔다.
+        Review refreshed = Review.builder()
+                .facility(review.getFacility())
+                .user(review.getUser())
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(refreshed, "reviewId", 7001L);
+        ReflectionTestUtils.setField(refreshed, "helpfulCount", 1L);
+        User marker = createUser(1L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L))
+                .thenReturn(Optional.of(review))
+                .thenReturn(Optional.of(refreshed));
+        when(reviewHelpfulRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(marker));
+        // 이 유저(작성자 100L)의 리뷰 전체가 받은 도움됐어요 총합 — "구원자" 배지 평가에 넘어간다.
+        when(reviewRepository.sumHelpfulCountByUserId(100L)).thenReturn(7L);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.markHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(1L);
+        verify(reviewHelpfulRecorder).record(review, marker);
+        verify(reviewRepository).incrementHelpfulCount(7001L);
+        // 도움됐어요 표시 자체는 작성자(리뷰 주인)에게 평가되는 배지다 — 누른 사람(marker)이 아니다.
+        verify(gamificationService).evaluateHelpfulSaviorBadge(review.getUser(), 7L);
+    }
+
+    @Test
+    void markHelpful_이미_표시했으면_중복으로_늘지_않는다() {
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(reviewHelpfulRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(true);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.markHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(0L);
+        verify(reviewHelpfulRecorder, never()).record(any(), any());
+        verify(reviewRepository, never()).incrementHelpfulCount(any());
+        verify(userRepository, never()).findById(any());
+        verify(gamificationService, never()).evaluateHelpfulSaviorBadge(any(), anyLong());
+    }
+
+    @Test
+    void markHelpful_이미_표시된_경우_저장_시점에_유니크_제약_위반이_나도_조용히_넘어간다() {
+        // exists 확인과 저장 사이에 거의 동시에 두 번 눌린 race — DB 유니크 제약이 뒤늦은 쪽을
+        // 막아준다. ReviewHelpfulRecorder는 별도 트랜잭션이라 이 예외를 여기서 잡아도 호출부의
+        // 트랜잭션(review 조회 등)에는 영향이 없다.
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+        User marker = createUser(1L);
+
+        ConstraintViolationException uniqueConstraintViolation = new ConstraintViolationException(
+                "duplicate key value violates unique constraint",
+                new SQLException("duplicate key"),
+                "uk_review_helpfuls_review_user"
+        );
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(reviewHelpfulRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(marker));
+        org.mockito.Mockito.doThrow(new DataIntegrityViolationException("duplicate key", uniqueConstraintViolation))
+                .when(reviewHelpfulRecorder).record(review, marker);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.markHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(0L);
+        verify(reviewRepository, never()).incrementHelpfulCount(any());
+        verify(gamificationService, never()).evaluateHelpfulSaviorBadge(any(), anyLong());
+    }
+
+    @Test
+    void markHelpful_본인_리뷰는_표시할_수_없다() {
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(1L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.markHelpful(1L, 7001L)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4005);
+        verify(reviewHelpfulRecorder, never()).record(any(), any());
+    }
+
+    @Test
+    void markHelpful_존재하지_않는_리뷰면_예외를_던진다() {
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.empty());
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.markHelpful(1L, 7001L)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4041);
     }
 
     @Test

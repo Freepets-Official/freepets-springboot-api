@@ -83,6 +83,21 @@ public class CourseController {
     }
 
     /**
+     * 이름만 바꾼다 — updateCourse(PUT)와 달리 stopIds 없이 name만 보내면 된다. 본인 코스만
+     * 가능하다(남이 만든 코스는 courseCommandService가 COURSE4042로 막는다).
+     */
+    @PatchMapping("/{courseId}/name")
+    public ApiResponse<CourseResponseDTO.MyCourse> updateName(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long courseId,
+            @Valid @RequestBody CourseRequestDTO.NameRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                courseCommandService.updateName(userId, courseId, request.getName())
+        );
+    }
+
+    /**
      * 공개 여부만 바꾼다 — updateCourse(PUT)와 달리 name·stopIds 없이 isPublic만 보내면 된다.
      * "공개" 토글 버튼처럼 가볍게 켜고 끄는 용도.
      */

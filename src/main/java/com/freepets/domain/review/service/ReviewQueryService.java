@@ -18,6 +18,7 @@ import com.freepets.domain.review.entity.Review;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.ReviewTag;
 import com.freepets.domain.review.entity.Tag;
+import com.freepets.domain.review.repository.ReviewHelpfulRepository;
 import com.freepets.domain.review.repository.ReviewReportRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -42,6 +43,7 @@ public class ReviewQueryService {
     private final FacilityRepository facilityRepository;
     private final ReviewRepository reviewRepository;
     private final ReviewReportRepository reviewReportRepository;
+    private final ReviewHelpfulRepository reviewHelpfulRepository;
 
     public ReviewResponseDTO.ReviewListResult getReviews(
             Long facilityId,
@@ -73,6 +75,11 @@ public class ReviewQueryService {
                 .stream()
                 .map(reviewReport -> reviewReport.getReview().getReviewId())
                 .collect(Collectors.toSet());
+        Set<Long> helpfulByMeReviewIds = reviewHelpfulRepository
+                .findAllByUserIdAndReviewReviewIdIn(userId, reviewIds)
+                .stream()
+                .map(reviewHelpful -> reviewHelpful.getReview().getReviewId())
+                .collect(Collectors.toSet());
 
         List<Review> eligibleReviews = reviews.stream()
                 .filter(review -> !excludedReviewIds.contains(review.getReviewId()))
@@ -84,7 +91,11 @@ public class ReviewQueryService {
 
         List<Review> pageContent = paginate(reviews, safePage, safeSize);
         List<ReviewResponseDTO.ReviewDetail> reviewDetails = pageContent.stream()
-                .map(review -> ReviewConverter.toReviewDetail(review, reportedByMeReviewIds.contains(review.getReviewId())))
+                .map(review -> ReviewConverter.toReviewDetail(
+                        review,
+                        reportedByMeReviewIds.contains(review.getReviewId()),
+                        helpfulByMeReviewIds.contains(review.getReviewId())
+                ))
                 .toList();
 
         boolean hasNext = (long) (safePage + 1) * safeSize < reviews.size();

@@ -55,7 +55,12 @@ public class ReviewResponseDTO {
             String content,
             List<Tag> tags,
             LocalDate visitedAt,
-            boolean reportedByMe
+            boolean reportedByMe,
+            long helpfulCount,
+
+            // record 접근자가 isHelpfulByMe()이므로 JSON 프로퍼티명을 helpfulByMe로 명시 고정
+            @JsonProperty("helpfulByMe")
+            boolean isHelpfulByMe
     ) {}
 
     public record PageInfo(
@@ -94,5 +99,10 @@ public class ReviewResponseDTO {
 
     public record ReportResult(
             Long reviewId
+    ) {}
+
+    public record HelpfulResult(
+            Long reviewId,
+            long helpfulCount
     ) {}
 }

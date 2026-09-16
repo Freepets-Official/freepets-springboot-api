@@ -53,9 +53,10 @@ public enum ErrorStatus implements BaseErrorCode {
 
     // 리뷰 에러
     REVIEW4001(BAD_REQUEST, "REVIEW4001", "이 시설에서 반려동물 판별 이력이 없어 리뷰를 작성할 수 없습니다."),
-    REVIEW4002(FORBIDDEN, "REVIEW4002", "본인 리뷰만 삭제할 수 있습니다."),
+    REVIEW4002(FORBIDDEN, "REVIEW4002", "본인 리뷰만 수정·삭제할 수 있습니다."),
     REVIEW4003(CONFLICT, "REVIEW4003", "이미 신고한 리뷰입니다."),
     REVIEW4004(CONFLICT, "REVIEW4004", "리뷰 저장 중 충돌이 발생했습니다. 다시 시도해주세요."),
+    REVIEW4005(FORBIDDEN, "REVIEW4005", "본인 리뷰는 도움돼요로 표시할 수 없습니다."),
     REVIEW4041(NOT_FOUND, "REVIEW4041", "존재하지 않는 리뷰입니다."),
 
     // 반려동물 만족도 에러
@@ -70,6 +71,7 @@ public enum ErrorStatus implements BaseErrorCode {
     COURSE4043(NOT_FOUND, "COURSE4043", "존재하지 않는 스톱 순서입니다."),
     COURSE4044(NOT_FOUND, "COURSE4044", "존재하지 않는 공유 코드입니다."),
     COURSE4045(BAD_REQUEST, "COURSE4045", "공개하려면 코스에 담긴 모든 시설에 판별 기록과 리뷰가 있어야 합니다."),
+    COURSE4046(BAD_REQUEST, "COURSE4046", "반려동물 동반이 불가능한 시설은 코스에 담을 수 없습니다."),
 
     // 제보 에러
     REPORT4001(CONFLICT, "REPORT4001", "24시간 내 이미 제보한 시설입니다."),

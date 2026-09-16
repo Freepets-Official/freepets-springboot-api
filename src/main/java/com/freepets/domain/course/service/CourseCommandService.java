@@ -18,6 +18,7 @@ import com.freepets.domain.course.entity.CourseSource;
 import com.freepets.domain.course.entity.CourseStop;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
@@ -61,6 +62,7 @@ public class CourseCommandService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
         List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
+        validateStopsPetAllowed(stops);
 
         if (request.isPublic()) {
             validateStopsEligibleForPublish(userId, stops);
@@ -91,6 +93,7 @@ public class CourseCommandService {
     ) {
         Course course = findOwnedCourse(userId, courseId);
         List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
+        validateStopsPetAllowed(stops);
         boolean isPublicBeforeUpdate = course.isPublic();
 
         if (request.isPublic()) {
@@ -103,6 +106,21 @@ public class CourseCommandService {
         if (!isPublicBeforeUpdate && course.isPublic()) {
             gamificationService.grantXp(userId, XpSourceType.COURSE_PUBLISHED, course.getCourseId(), coursePublishedXp(stops.size()));
         }
+
+        return CourseConverter.toMyCourse(course);
+    }
+
+    /**
+     * PATCH /api/v1/courses/{courseId}/name — 이름만 바꾼다. 남이 만든 코스는(본인 소유가
+     * 아니면) findOwnedCourse가 COURSE4042로 막는다 — 자기 코스만 바꿀 수 있다.
+     */
+    public CourseResponseDTO.MyCourse updateName(
+            Long userId,
+            Long courseId,
+            String name
+    ) {
+        Course course = findOwnedCourse(userId, courseId);
+        course.rename(name);
 
         return CourseConverter.toMyCourse(course);
     }
@@ -177,6 +195,7 @@ public class CourseCommandService {
 
         Facility newFacility = facilityRepository.findById(newFacilityId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.FACILITY4001));
+        validateStopsPetAllowed(List.of(newFacility));
 
         facilitiesInOrder.set(stopOrder, newFacility);
 
@@ -228,6 +247,10 @@ public class CourseCommandService {
                 .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
                 .map(CourseStop::getFacility)
                 .toList();
+        // 원본이 이 게이트가 생기기 전에 만들어졌거나, 저장 이후 시설의 petAllowed가 DENIED로
+        // 바뀌었을 수 있다 — 복사도 결국 새 CUSTOM 코스를 만드는 경로라 createCourse/updateCourse와
+        // 같은 검증을 거쳐야 한다.
+        validateStopsPetAllowed(stops);
 
         Course copy = Course.builder()
                 .user(user)
@@ -325,6 +348,22 @@ public class CourseCommandService {
             ordered.add(facility);
         }
         return ordered;
+    }
+
+    /**
+     * 반려동물 동반이 애초에 불가능한(PetAllowed.DENIED) 시설은 코스에 담을 수 없다 —
+     * preset/liked/similar 추천은 이미 후보 단계에서 DENIED를 걸러내지만(FacilityRepository의
+     * findPresetCandidates 등), CUSTOM 코스는 직접 검색해서 담는 방식이라 이 게이트가 없으면
+     * 프론트가 검색 필터를 깜빡했을 때 그대로 저장돼버린다. validateStopsEligibleForPublish(공개
+     * 게이트, "방문한 적 있는지")와는 별개 검사다 — 이건 비공개 코스를 만들 때도 항상 적용된다.
+     * PENDING(아직 파싱 안 됨)은 "불가로 확인된 것"이 아니므로 통과시킨다 — 다른 곳의 필터
+     * (petAllowed <> DENIED)와 기준을 맞춘다.
+     */
+    private void validateStopsPetAllowed(List<Facility> stops) {
+        boolean isAnyDenied = stops.stream().anyMatch(facility -> facility.getPetAllowed() == PetAllowed.DENIED);
+        if (isAnyDenied) {
+            throw new GeneralException(ErrorStatus.COURSE4046);
+        }
     }
 
 }

@@ -215,3 +215,57 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_facility_owner_claims_approved_facility
 -- 같은 사람이 같은 매장에 대기 신청을 중복으로 넣지 못하게
 CREATE UNIQUE INDEX IF NOT EXISTS uk_facility_owner_claims_pending_user_facility
     ON freepets.facility_owner_claims (facility_id, user_id) WHERE status = 'PENDING';
+-- 2026-09-15 — 리뷰 "도움됐어요" 카운트 추가 (feat/review-edit-and-helpful-count)
+-- ============================================================
+-- 리뷰에 "도움됐어요"를 표시하는 기능. 누가 표시했는지는 신규 테이블(review_helpfuls)에,
+-- 누적 카운트는 매번 COUNT하지 않도록 reviews에 캐시 컬럼(helpful_count)을 둔다.
+--
+-- 둘 다 ddl-auto=update가 자동 처리한다 — helpful_count는 @ColumnDefault("0")가 있어
+-- 기존 라이브 리뷰에도 NOT NULL 위반 없이 붙고, review_helpfuls는 신규 테이블이라 컬럼·
+-- 유니크 제약을 전부 자동 생성한다. 수동 조치는 없다 — 아래는 ddl-auto를 끈 환경을 위한 참고용이다.
+--
+-- 상태: ✅ 조치 불필요 (참고용 기록)
+-- ALTER TABLE freepets.reviews ADD COLUMN helpful_count BIGINT NOT NULL DEFAULT 0;
+-- CREATE TABLE freepets.review_helpfuls (
+--     review_helpful_id BIGSERIAL PRIMARY KEY,
+--     review_id         BIGINT    NOT NULL REFERENCES freepets.reviews (review_id),
+--     user_id           BIGINT    NOT NULL REFERENCES freepets.users (id),
+--     created_at        TIMESTAMP NOT NULL,
+--     updated_at        TIMESTAMP NOT NULL,
+--     CONSTRAINT uk_review_helpfuls_review_user UNIQUE (review_id, user_id)
+-- );
+
+-- ============================================================
+-- 2026-09-16 — Badge 카탈로그 확장(5개 → 42개) + user_badges.badge CHECK 제약조건 완전 제거
+-- ============================================================
+-- Badge enum이 도전과제형으로 대폭 늘어났다(도메인마다 동일한 6단계: 동/은/금/루비/크리스탈/
+-- 다이아). user_badges 테이블은 게이미피케이션 기능이 처음 만들어질 때 그 시점의 Badge 값
+-- 5개만으로 Hibernate가 CHECK 제약조건을 자동 생성해뒀다 — courses.distance_option·
+-- facility_reports.denial_reason·report_type·status와 완전히 같은 패턴이다(테이블 생성
+-- 시점 enum 값으로 굳어지고, ddl-auto=update는 이후 값 추가를 반영하지 않는다). 이걸 안
+-- 고치면 새 배지를 부여하려는 순간 ConstraintViolationException → COMMON500이 난다.
+--
+-- 이번엔 값 목록을 갱신하는 대신 제약 자체를 아예 없앤다 — 배지 카탈로그가 앞으로도 계속
+-- 늘어날 걸로 보이는데, 늘어날 때마다 이 파일에 수동 조치를 또 남기고 실행하는 부담을
+-- 여기서 끝내기로 했다. badge 컬럼은 어차피 애플리케이션(Badge enum)이 값을 통제하고,
+-- 잘못된 문자열이 들어갈 경로 자체가 없다(Enumerated(STRING)으로만 쓰임) — DB CHECK가
+-- 막아주는 이득보다 이 배포 마찰이 더 크다고 판단했다.
+--
+-- 이번엔 제약 제거뿐 아니라 값 이름 자체도 바뀌었다(예: FIRST_REVIEW → REVIEW_BRONZE) —
+-- 기능이 9/10에 이미 배포돼 그 사이 이 5개 값으로 배지를 딴 실사용자가 있을 수 있다. 아래
+-- UPDATE 없이 코드만 배포하면, 그 유저가 배지 목록을 조회하는 순간 Enum.valueOf가
+-- "FIRST_REVIEW"를 못 찾아 IllegalArgumentException → 500이 난다. 그래서 DROP CONSTRAINT →
+-- UPDATE(구→신 이름 매핑) 순서로 묶었다 — 반드시 이 배포 전에, 순서 그대로 실행할 것.
+--
+-- 실행 전 SQL Editor로 기존 제약조건이 실제로 있는지, 정확한 이름을 먼저 확인할 것 —
+-- 위 사례들처럼 이름이 다를 수 있다. 아래는 Postgres 기본 명명 규칙 기준 추정이다.
+--
+-- 상태: ⬜ 미적용
+ALTER TABLE freepets.user_badges DROP CONSTRAINT IF EXISTS user_badges_badge_check;
+
+UPDATE freepets.user_badges SET badge = 'PETCHECK_BRONZE' WHERE badge = 'FIRST_PETCHECK';
+UPDATE freepets.user_badges SET badge = 'REVIEW_BRONZE' WHERE badge = 'FIRST_REVIEW';
+UPDATE freepets.user_badges SET badge = 'REVIEW_GOLD' WHERE badge = 'REVIEWS_10';
+UPDATE freepets.user_badges SET badge = 'COURSE_PUBLISHED_BRONZE' WHERE badge = 'FIRST_COURSE_PUBLISHED';
+-- COURSE_SHARED_5는 threshold가 5였다(BRONZE가 아니라 SILVER와 같은 기준).
+UPDATE freepets.user_badges SET badge = 'COURSE_SHARED_SILVER' WHERE badge = 'COURSE_SHARED_5';

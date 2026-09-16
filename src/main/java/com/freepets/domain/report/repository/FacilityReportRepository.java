@@ -41,6 +41,66 @@ public interface FacilityReportRepository extends JpaRepository<FacilityReport, 
             Long userId
     );
 
+    /*
+     * 아래 두 쿼리는 "지금 신뢰도를 내리고 있는 실시간 거부 제보"라는 같은 조건을 쓴다. 사업자 대시보드
+     * 홈이 매장마다 제보 건수와 최신 제보 한 줄을 함께 그리는데, 건수만 필요한 자리에서 제보 행을 전부
+     * 메모리로 올리지 않으려고 집계와 최신 1건을 나눴다.
+     *
+     * 고르는 기준은 FacilityQueryService.denialReportSince와 같은 max(confirmedAt, since)다 —
+     * since(최근 7일)보다 뒤이면서, 사업자가 조건을 확정했다면 그 시각보다도 뒤인 제보만 본다. 확정 이전
+     * 제보는 사장님이 조건을 바로잡으면서 해소된 것으로 본다. 확정한 적이 없는 시설(confirmedAt IS NULL)은
+     * since만 본다 — null 비교는 참이 되지 않아 조건을 따로 적어주지 않으면 그 시설이 통째로 빠진다.
+     *
+     * 이 기준은 배지 계산(Confidence.of)이 쓰는 것과 같아야 한다. 어긋나면 사장님 화면에는 제보가 없는데
+     * 배지만 내려가 있는 상태가 생긴다. 두 쿼리의 WHERE가 갈라지면 건수와 최신 제보도 서로 어긋나므로,
+     * 한쪽을 고치면 반드시 다른 쪽도 같이 고쳐야 한다.
+     */
+
+    /** 시설별 제보 수. 시설당 한 행만 나오므로 제보가 아무리 쌓여도 읽는 양이 늘지 않는다. */
+    @Query("""
+            SELECT new com.freepets.domain.report.repository.FacilityDenialReportCount(
+                       r.facility.facilityId, COUNT(r))
+            FROM FacilityReport r
+            WHERE r.facility.facilityId IN :facilityIds
+              AND r.isRealtime = true
+              AND r.createdAt > :since
+              AND (r.facility.confirmedAt IS NULL OR r.createdAt > r.facility.confirmedAt)
+            GROUP BY r.facility.facilityId
+            """)
+    List<FacilityDenialReportCount> countDowngradingByFacilityIds(
+            @Param("facilityIds") List<Long> facilityIds,
+            @Param("since") LocalDateTime since
+    );
+
+    /**
+     * 시설별 <b>가장 최근</b> 제보 한 건. 경고 카드의 "현장 거부 · 실내 불가 · 23분 전" 한 줄에 쓴다.
+     *
+     * <p>같은 조건을 서브쿼리에 한 번 더 적는 것은 JPQL에서 피할 수 없다 — 시설별 최댓값을 먼저 구해야
+     * 그 행을 고를 수 있다. 같은 시설에 제보 시각이 완전히 같은 두 건이 있으면 두 행이 나오므로, 호출부는
+     * 중복 키를 견디게 모아야 한다.
+     */
+    @Query("""
+            SELECT new com.freepets.domain.report.repository.DowngradingDenialReport(
+                       r.facility.facilityId, r.denialReason, r.createdAt)
+            FROM FacilityReport r
+            WHERE r.facility.facilityId IN :facilityIds
+              AND r.isRealtime = true
+              AND r.createdAt > :since
+              AND (r.facility.confirmedAt IS NULL OR r.createdAt > r.facility.confirmedAt)
+              AND r.createdAt = (
+                  SELECT MAX(latest.createdAt) FROM FacilityReport latest
+                  WHERE latest.facility.facilityId = r.facility.facilityId
+                    AND latest.isRealtime = true
+                    AND latest.createdAt > :since
+                    AND (latest.facility.confirmedAt IS NULL
+                         OR latest.createdAt > latest.facility.confirmedAt)
+              )
+            """)
+    List<DowngradingDenialReport> findLatestDowngradingByFacilityIds(
+            @Param("facilityIds") List<Long> facilityIds,
+            @Param("since") LocalDateTime since
+    );
+
     // GET /me/denial-alerts — 여러 시설을 한 번에 훑어야 해서 IN절로 조회한다. 응답이
     // facility.name을 그대로 쓰는데(DenialReportConverter.toDenialAlert), facility가 지연
     // 로딩이라 JOIN FETCH 없이 쓰면 시설 수만큼 추가 쿼리가 나간다 — 미리 함께 가져온다.

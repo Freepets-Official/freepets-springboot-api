@@ -1,5 +1,6 @@
 package com.freepets.domain.petcheck.repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -69,4 +70,24 @@ public interface PetCheckRepository extends JpaRepository<PetCheck, Long> {
             @Param("excludeUserId") Long excludeUserId,
             Pageable pageable
     );
+
+    /**
+     * 시설별 판별 수를 기간 안에서 한 번에 센다. 사업자 대시보드 홈의 "이번 주 판별" 지표가 쓴다 —
+     * 매장마다 count를 날리면 매장 수만큼 쿼리가 늘어난다.
+     *
+     * <p>{@code since}는 경계를 포함한다(주 시작 00:00에 한 판별도 이번 주다). 주의 시작을 언제로
+     * 볼지는 호출부가 정한다 — 서버 프로세스는 UTC인데 "이번 주"의 경계는 사용자가 있는 KST 기준이라
+     * 리포지토리가 알 수 있는 값이 아니다.
+     */
+    @Query("select new com.freepets.domain.petcheck.repository.FacilityPetCheckCount("
+            + "petCheck.facility.facilityId, count(petCheck)) "
+            + "from PetCheck petCheck "
+            + "where petCheck.facility.facilityId in :facilityIds "
+            + "and petCheck.createdAt >= :since "
+            + "group by petCheck.facility.facilityId")
+    List<FacilityPetCheckCount> countByFacilityIdsSince(
+            @Param("facilityIds") List<Long> facilityIds,
+            @Param("since") LocalDateTime since
+    );
+
 }

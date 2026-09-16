@@ -96,7 +96,7 @@ class SecurityFilterChainTest {
     @Test
     void 유효한_토큰으로_보호된_경로_요청시_200을_반환한다() throws Exception {
         String token = jwtProvider.createAccessToken(1L);
-        when(userRepository.findActiveRoleById(1L)).thenReturn(Optional.of(Role.USER));
+        when(userRepository.existsByIdAndDeletedAtIsNull(1L)).thenReturn(true);
 
         mockMvc.perform(get("/api/v1/security-test/ping")
                         .header("Authorization", "Bearer " + token))
@@ -109,7 +109,7 @@ class SecurityFilterChainTest {
     @Test
     void 탈퇴한_유저의_토큰으로_보호된_경로_요청시_401과_MEMBER4007을_반환한다() throws Exception {
         String token = jwtProvider.createAccessToken(1L);
-        when(userRepository.findActiveRoleById(1L)).thenReturn(Optional.empty());
+        when(userRepository.existsByIdAndDeletedAtIsNull(1L)).thenReturn(false);
 
         mockMvc.perform(get("/api/v1/security-test/ping")
                         .header("Authorization", "Bearer " + token))
@@ -129,6 +129,7 @@ class SecurityFilterChainTest {
     @Test
     void 일반_사용자_토큰으로_관리자_경로_요청시_403과_COMMON403을_반환한다() throws Exception {
         String token = jwtProvider.createAccessToken(1L);
+        when(userRepository.existsByIdAndDeletedAtIsNull(1L)).thenReturn(true);
         when(userRepository.findActiveRoleById(1L)).thenReturn(Optional.of(Role.USER));
 
         mockMvc.perform(get("/api/v1/admin/security-test/ping")
@@ -141,6 +142,7 @@ class SecurityFilterChainTest {
     @Test
     void 관리자_토큰으로_관리자_경로_요청시_200을_반환한다() throws Exception {
         String token = jwtProvider.createAccessToken(2L);
+        when(userRepository.existsByIdAndDeletedAtIsNull(2L)).thenReturn(true);
         when(userRepository.findActiveRoleById(2L)).thenReturn(Optional.of(Role.ADMIN));
 
         mockMvc.perform(get("/api/v1/admin/security-test/ping")
@@ -150,10 +152,11 @@ class SecurityFilterChainTest {
     }
 
     // 관리자 역할은 일반 경로 접근을 막지 않아야 한다 — 운영자도 자기 앱 계정으로 앱 기능을 쓴다.
+    // 일반 경로는 관리자 판정을 아예 거치지 않으므로 findActiveRoleById는 부르지 않는다.
     @Test
     void 관리자_토큰으로_일반_보호_경로_요청시_200을_반환한다() throws Exception {
         String token = jwtProvider.createAccessToken(2L);
-        when(userRepository.findActiveRoleById(2L)).thenReturn(Optional.of(Role.ADMIN));
+        when(userRepository.existsByIdAndDeletedAtIsNull(2L)).thenReturn(true);
 
         mockMvc.perform(get("/api/v1/security-test/ping")
                         .header("Authorization", "Bearer " + token))

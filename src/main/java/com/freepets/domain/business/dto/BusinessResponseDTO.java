@@ -1,5 +1,8 @@
 package com.freepets.domain.business.dto;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import com.freepets.domain.business.entity.ClaimStatus;
 
 public class BusinessResponseDTO {
@@ -27,5 +30,24 @@ public class BusinessResponseDTO {
             Long claimId,
             Long facilityId,
             ClaimStatus status
+    ) {}
+
+    /**
+     * 내 매장 등록 신청 목록. 상태와 무관하게 전부 최신순으로 내려간다 — 지난 반려 이력도 화면에서 보여줄 수 있다.
+     */
+    public record MyClaimList(
+            List<MyClaim> claims
+    ) {}
+
+    /**
+     * @param appliedAt 신청을 접수한 시각
+     */
+    public record MyClaim(
+            Long claimId,
+            Long facilityId,
+            String facilityName,
+            String facilityAddress,
+            ClaimStatus status,
+            LocalDateTime appliedAt
     ) {}
 }

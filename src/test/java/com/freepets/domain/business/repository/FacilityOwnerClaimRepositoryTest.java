@@ -253,4 +253,42 @@ class FacilityOwnerClaimRepositoryTest {
         assertThat(facilityOwnerClaimRepository.findApprovedByFacilityId(pendingOnlyFacility.getFacilityId()))
                 .isEmpty();
     }
+
+    @Test
+    void findAllWithFacilityByUserIdOrderByCreatedAtDesc_상태와_무관하게_전부_최신순으로_반환한다() {
+        // 지난 반려 이력도 화면에서 보여줄 수 있어야 하므로 상태로 거르지 않는다.
+        FacilityOwnerClaim firstApplied = facilityOwnerClaimRepository.saveAndFlush(
+                createClaim(owner, createFacility("카페 파도살롱"), ClaimStatus.REJECTED)
+        );
+        FacilityOwnerClaim secondApplied = facilityOwnerClaimRepository.saveAndFlush(
+                createClaim(owner, createFacility("강릉 중앙시장"), ClaimStatus.PENDING)
+        );
+        FacilityOwnerClaim thirdApplied = facilityOwnerClaimRepository.saveAndFlush(
+                createClaim(owner, createFacility("옆 가게"), ClaimStatus.APPROVED)
+        );
+        entityManager.clear();
+
+        assertThat(facilityOwnerClaimRepository.findAllWithFacilityByUserIdOrderByCreatedAtDesc(owner.getId()))
+                .extracting(FacilityOwnerClaim::getClaimId)
+                .containsExactly(thirdApplied.getClaimId(), secondApplied.getClaimId(), firstApplied.getClaimId());
+    }
+
+    @Test
+    void findAllWithFacilityByUserIdOrderByCreatedAtDesc_다른_사용자의_신청은_섞이지_않는다() {
+        User otherApplicant = createUser("other@test.com");
+        entityManager.persist(createClaim(owner, createFacility("카페 파도살롱"), ClaimStatus.PENDING));
+        entityManager.persist(createClaim(otherApplicant, createFacility("옆 가게"), ClaimStatus.PENDING));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(facilityOwnerClaimRepository.findAllWithFacilityByUserIdOrderByCreatedAtDesc(otherApplicant.getId()))
+                .extracting(claim -> claim.getFacility().getName())
+                .containsExactly("옆 가게");
+    }
+
+    @Test
+    void findAllWithFacilityByUserIdOrderByCreatedAtDesc_신청이_없으면_빈_목록을_반환한다() {
+        assertThat(facilityOwnerClaimRepository.findAllWithFacilityByUserIdOrderByCreatedAtDesc(owner.getId()))
+                .isEmpty();
+    }
 }

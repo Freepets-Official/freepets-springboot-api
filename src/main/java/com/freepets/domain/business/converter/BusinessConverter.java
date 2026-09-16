@@ -1,7 +1,10 @@
 package com.freepets.domain.business.converter;
 
+import java.util.List;
+
 import com.freepets.domain.business.dto.BusinessResponseDTO;
 import com.freepets.domain.business.entity.FacilityOwnerClaim;
+import com.freepets.domain.facility.entity.Facility;
 import com.freepets.infra.nts.NtsValidationResult;
 
 public class BusinessConverter {
@@ -21,6 +24,24 @@ public class BusinessConverter {
                 claim.getClaimId(),
                 claim.getFacility().getFacilityId(),
                 claim.getStatus()
+        );
+    }
+
+    public static BusinessResponseDTO.MyClaimList toMyClaimList(List<FacilityOwnerClaim> claims) {
+        return new BusinessResponseDTO.MyClaimList(
+                claims.stream().map(BusinessConverter::toMyClaim).toList()
+        );
+    }
+
+    private static BusinessResponseDTO.MyClaim toMyClaim(FacilityOwnerClaim claim) {
+        Facility facility = claim.getFacility();
+        return new BusinessResponseDTO.MyClaim(
+                claim.getClaimId(),
+                facility.getFacilityId(),
+                facility.getName(),
+                facility.getAddress(),
+                claim.getStatus(),
+                claim.getCreatedAt()
         );
     }
 }

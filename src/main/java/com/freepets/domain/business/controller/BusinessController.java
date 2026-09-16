@@ -2,6 +2,7 @@ package com.freepets.domain.business.controller;
 
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -13,6 +14,7 @@ import com.freepets.domain.business.dto.BusinessRequestDTO;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
 import com.freepets.domain.business.service.BusinessCommandService;
 import com.freepets.domain.business.service.BusinessQueryService;
+import com.freepets.domain.business.service.FacilityOwnerClaimQueryService;
 import com.freepets.global.apiPayload.ApiResponse;
 
 import jakarta.validation.Valid;
@@ -25,6 +27,7 @@ public class BusinessController {
 
     private final BusinessQueryService businessQueryService;
     private final BusinessCommandService businessCommandService;
+    private final FacilityOwnerClaimQueryService facilityOwnerClaimQueryService;
 
     /**
      * 사업자 인증. 국세청 진위확인 결과만 돌려주고 <b>아무것도 저장하지 않는다</b> —
@@ -56,6 +59,18 @@ public class BusinessController {
     ) {
         return ApiResponse.onSuccess(
                 businessCommandService.claim(userId, facilityId, request)
+        );
+    }
+
+    /**
+     * 내 매장 등록 신청 목록. 앱의 "심사 중" 화면이 이 API로 상태를 보여준다.
+     */
+    @GetMapping("/claims")
+    public ApiResponse<BusinessResponseDTO.MyClaimList> myClaims(
+            @AuthenticationPrincipal Long userId
+    ) {
+        return ApiResponse.onSuccess(
+                facilityOwnerClaimQueryService.getMyClaims(userId)
         );
     }
 }

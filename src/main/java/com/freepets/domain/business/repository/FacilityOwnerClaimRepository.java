@@ -48,6 +48,20 @@ public interface FacilityOwnerClaimRepository extends JpaRepository<FacilityOwne
     );
 
     /**
+     * 요청자의 모든 신청을 최신순으로, 시설과 함께 가져온다. 상태로 거르지 않는다 — 지난 반려 이력도
+     * 화면에서 보여줄 수 있어야 한다. 응답이 시설명·주소를 그대로 쓰는데 facility가 지연 로딩이라
+     * JOIN FETCH 없이 쓰면 신청 수만큼 추가 쿼리가 나간다(FacilityReportRepository의
+     * findAllByFacility_FacilityIdIn...과 같은 이유).
+     */
+    @Query("""
+            SELECT claim FROM FacilityOwnerClaim claim
+            JOIN FETCH claim.facility
+            WHERE claim.user.id = :userId
+            ORDER BY claim.createdAt DESC
+            """)
+    List<FacilityOwnerClaim> findAllWithFacilityByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId);
+
+    /**
      * 탈퇴 시 소유 기록을 지운다. 탈퇴는 소프트 삭제라 사용자 행이 남아 외래 키 CASCADE가 동작하지
      * 않는다. 그대로 두면 탈퇴한 계정이 매장을 붙잡고 있어 진짜 사장이 등록하지 못한다.
      */

@@ -5,10 +5,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,6 +30,7 @@ import com.freepets.domain.business.dto.BusinessResponseDTO;
 import com.freepets.domain.business.entity.ClaimStatus;
 import com.freepets.domain.business.service.BusinessCommandService;
 import com.freepets.domain.business.service.BusinessQueryService;
+import com.freepets.domain.business.service.FacilityOwnerClaimQueryService;
 import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
@@ -46,6 +51,9 @@ class BusinessControllerTest {
 
     @MockitoBean
     private BusinessCommandService businessCommandService;
+
+    @MockitoBean
+    private FacilityOwnerClaimQueryService facilityOwnerClaimQueryService;
 
     @Test
     void verify_성공하면_200과_사업_상태를_반환한다() throws Exception {
@@ -217,5 +225,36 @@ class BusinessControllerTest {
         mockMvc.perform(claimRequest(certificate()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("BUSINESS4005"));
+    }
+
+    @Test
+    void myClaims_성공하면_200과_신청_목록을_반환한다() throws Exception {
+        LocalDateTime appliedAt = LocalDateTime.of(2026, 9, 16, 10, 0);
+        when(facilityOwnerClaimQueryService.getMyClaims(any())).thenReturn(
+                new BusinessResponseDTO.MyClaimList(List.of(
+                        new BusinessResponseDTO.MyClaim(
+                                11L, 6L, "카페 파도살롱", "강원 강릉시 창해로 17", ClaimStatus.PENDING, appliedAt
+                        )
+                ))
+        );
+
+        mockMvc.perform(get("/api/v1/business/claims"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.claims[0].claimId").value(11))
+                .andExpect(jsonPath("$.result.claims[0].facilityId").value(6))
+                .andExpect(jsonPath("$.result.claims[0].facilityName").value("카페 파도살롱"))
+                .andExpect(jsonPath("$.result.claims[0].facilityAddress").value("강원 강릉시 창해로 17"))
+                .andExpect(jsonPath("$.result.claims[0].status").value("PENDING"));
+    }
+
+    @Test
+    void myClaims_신청이_없으면_빈_목록을_반환한다() throws Exception {
+        when(facilityOwnerClaimQueryService.getMyClaims(any()))
+                .thenReturn(new BusinessResponseDTO.MyClaimList(List.of()));
+
+        mockMvc.perform(get("/api/v1/business/claims"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.claims").isEmpty());
     }
 }

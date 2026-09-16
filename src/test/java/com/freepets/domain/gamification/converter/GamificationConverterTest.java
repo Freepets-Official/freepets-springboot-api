@@ -63,12 +63,12 @@ class GamificationConverterTest {
     @Test
     void 보유한_배지_목록이_그대로_담긴다() {
         User user = user(0, 1);
-        UserBadge userBadge = UserBadge.builder().user(user).badge(Badge.FIRST_REVIEW).build();
+        UserBadge userBadge = UserBadge.builder().user(user).badge(Badge.REVIEW_BRONZE).build();
 
         GamificationResponseDTO.MyStatus status = GamificationConverter.toMyStatus(user, List.of(userBadge));
 
         assertThat(status.badges()).hasSize(1);
-        assertThat(status.badges().get(0).code()).isEqualTo("FIRST_REVIEW");
-        assertThat(status.badges().get(0).label()).isEqualTo(Badge.FIRST_REVIEW.getLabel());
+        assertThat(status.badges().get(0).code()).isEqualTo("REVIEW_BRONZE");
+        assertThat(status.badges().get(0).label()).isEqualTo(Badge.REVIEW_BRONZE.getLabel());
     }
 }

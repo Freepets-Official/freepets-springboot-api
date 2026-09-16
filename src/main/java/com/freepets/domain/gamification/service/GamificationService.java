@@ -121,6 +121,19 @@ public class GamificationService {
     }
 
     /**
+     * "구원자" 배지 평가 — 리뷰 도메인(ReviewCommandService)이 "도움됐어요" 표시
+     * 성공 뒤에 부른다. grantXp와 달리 XP 지급이나 하루 상한이 없다 — 남이 눌러주는 게
+     * 트리거라 본인 행동 기반 상한 개념이 안 맞고, 기획 결정으로 이 배지는 XP도 안 준다.
+     * 총합 계산은 리뷰 도메인이 소유한 개념이라 호출부가 이미 계산해서 넘긴다.
+     */
+    public void evaluateHelpfulSaviorBadge(
+            User reviewAuthor,
+            long totalHelpfulReceived
+    ) {
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(reviewAuthor, totalHelpfulReceived);
+    }
+
+    /**
      * PATCH /api/v1/me/gamification/notification — 레벨업(및 배지) 알림 on/off. 다른 도메인
      * 처럼 "본인 것만" 걱정할 필요가 없다 — 대상이 항상 인증된 본인(userId)뿐이라 소유권 검증이
      * 따로 필요 없다.

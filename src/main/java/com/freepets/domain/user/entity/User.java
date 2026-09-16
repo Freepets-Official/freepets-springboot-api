@@ -100,6 +100,13 @@ public class User extends BaseEntity {
     @Column(name = "level_up_notification_enabled", nullable = false)
     private boolean levelUpNotificationEnabled;
 
+    // 관리자 구분(Role 참고). 라이브 유저가 이미 있어 NOT NULL 컬럼 추가가 깨지지 않도록 기본값을 둔다.
+    // 빌더로 받지 않는다 — 가입 경로로 관리자가 만들어지면 안 되고, 지정은 운영자가 DB에서 직접 한다.
+    @Enumerated(EnumType.STRING)
+    @ColumnDefault("'USER'")
+    @Column(nullable = false, length = 20)
+    private Role role;
+
     // 탈퇴 시점. null이면 활성 계정이다. Pet·Review처럼 소프트 삭제 — 탈퇴해도 이 유저가 쓴
     // 리뷰·공개 코스·거부 제보 등 남에게도 보이는 콘텐츠 행 자체는 지우지 않는다(작성자 표시는
     // withdraw()가 닉네임을 "탈퇴한 계정"으로 바꿔서 처리한다).
@@ -124,6 +131,7 @@ public class User extends BaseEntity {
         this.totalXp = 0;
         this.level = 1;
         this.levelUpNotificationEnabled = true;
+        this.role = Role.USER;
     }
 
     public void update(

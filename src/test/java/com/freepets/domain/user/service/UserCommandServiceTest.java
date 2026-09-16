@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,6 +24,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
+import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.domain.facility.entity.FacilitySource;
+import com.freepets.domain.facility.entity.PetAllowed;
+import com.freepets.domain.facility.entity.Requirement;
+import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.entity.Profile;
@@ -44,6 +51,9 @@ class UserCommandServiceTest {
 
     @Mock
     private FacilityOwnerClaimRepository facilityOwnerClaimRepository;
+
+    @Mock
+    private FacilityRepository facilityRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -292,6 +302,60 @@ class UserCommandServiceTest {
         assertThat(eventCaptor.getValue().userId()).isEqualTo(1L);
     }
 
+    private Facility createFacility() {
+        return Facility.builder()
+                .name("카페 파도살롱")
+                .category(FacilityCategory.CAFE)
+                .address("강원 강릉시 창해로 17")
+                .lat(new BigDecimal("37.8000000"))
+                .lng(new BigDecimal("128.9000000"))
+                .petAllowed(PetAllowed.PENDING)
+                .source(FacilitySource.TOUR_API)
+                .isActive(true)
+                .petTourListed(true)
+                .build();
+    }
+
+    // 소유 기록을 지우기 전에 승인된 매장을 확정 해제하지 않으면, 주인 없는 매장이 계속 CONFIRMED
+    // 배지를 달고 있게 된다.
+    @Test
+    void withdraw_승인된_매장이_있으면_탈퇴_시_그_시설의_확정을_해제한다() {
+        User user = createUser();
+        UserRequestDTO.WithdrawRequest request = new UserRequestDTO.WithdrawRequest();
+        request.setPassword("rawPassword");
+
+        Facility approvedFacility = createFacility();
+        approvedFacility.confirmByOwner(
+                PetAllowed.ALLOWED, new BigDecimal("10.00"), true, List.of(Requirement.LEASH), "동반 가능"
+        );
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("rawPassword", "encodedPassword")).thenReturn(true);
+        when(facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(1L)).thenReturn(List.of(6L));
+        when(facilityRepository.findAllById(List.of(6L))).thenReturn(List.of(approvedFacility));
+
+        userCommandService.withdraw(1L, request);
+
+        assertThat(approvedFacility.getConfirmedAt()).isNull();
+        // 확정만 풀 뿐, 동기화 전까지 조건 값 자체는 남아 있다.
+        assertThat(approvedFacility.getPetAllowed()).isEqualTo(PetAllowed.ALLOWED);
+    }
+
+    @Test
+    void withdraw_승인된_매장이_없으면_시설_조회를_하지_않는다() {
+        User user = createUser();
+        UserRequestDTO.WithdrawRequest request = new UserRequestDTO.WithdrawRequest();
+        request.setPassword("rawPassword");
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("rawPassword", "encodedPassword")).thenReturn(true);
+        when(facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(1L)).thenReturn(List.of());
+
+        userCommandService.withdraw(1L, request);
+
+        verify(facilityRepository, never()).findAllById(any());
+    }
+
     // 탈퇴가 실패했는데 후처리가 돌면 멀쩡한 계정의 애플 연결이 끊긴다.
     @Test
     void withdraw_비밀번호가_틀리면_탈퇴_이벤트를_발행하지_않는다() {
@@ -389,7 +453,7 @@ class UserCommandServiceTest {
         request.setNickname("newNickname");
 
         when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
-        when(facilityOwnerClaimRepository.findFacilityIdsByUserId(1L)).thenReturn(List.of(6L));
+        when(facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(1L)).thenReturn(List.of(6L));
 
         UserResponseDTO.AccountResult result = userCommandService.updateAccount(1L, request);
 

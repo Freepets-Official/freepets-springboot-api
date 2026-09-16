@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
+import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.user.converter.UserConverter;
 import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
@@ -31,6 +33,7 @@ public class UserCommandService {
 
     private final UserRepository userRepository;
     private final FacilityOwnerClaimRepository facilityOwnerClaimRepository;
+    private final FacilityRepository facilityRepository;
     private final PasswordEncoder passwordEncoder;
     private final S3ImageService s3ImageService;
     private final UserDeviceTokenRepository userDeviceTokenRepository;
@@ -110,7 +113,7 @@ public class UserCommandService {
         }
 
         // 계정 조회와 같은 응답이라 프로필도 함께 채운다. 빠뜨리면 수정 직후 앱이 사업자 프로필을 잃는다.
-        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findFacilityIdsByUserId(userId);
+        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(userId);
         return UserConverter.toAccountResult(user, ownedFacilityIds);
     }
 
@@ -177,6 +180,15 @@ public class UserCommandService {
         String avatarUri = user.getAvatarUri();
         user.withdraw();
         userDeviceTokenRepository.deleteAllByUser_Id(userId);
+
+        // 소유 기록을 지우기 전에 승인된 매장을 먼저 알아둔다 — 지운 뒤에는 어떤 시설이 이 계정의
+        // 승인 기록이었는지 알 수 없다. 확정을 풀지 않으면 주인 없는 매장이 계속 CONFIRMED 배지를
+        // 달고 있게 된다(Facility.releaseOwnerConfirmation 참고).
+        List<Long> approvedFacilityIds = facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(userId);
+        if (!approvedFacilityIds.isEmpty()) {
+            facilityRepository.findAllById(approvedFacilityIds).forEach(Facility::releaseOwnerConfirmation);
+        }
+
         // 탈퇴는 소프트 삭제라 사용자 행이 남아 외래 키 CASCADE가 동작하지 않는다. 소유 기록을
         // 남겨두면 탈퇴한 계정이 매장을 붙잡고 있어 진짜 사장이 그 매장을 영영 등록하지 못한다.
         facilityOwnerClaimRepository.deleteAllByUser_Id(userId);

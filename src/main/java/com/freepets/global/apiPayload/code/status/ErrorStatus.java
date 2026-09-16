@@ -45,6 +45,7 @@ public enum ErrorStatus implements BaseErrorCode {
     IMAGE4001(BAD_REQUEST, "IMAGE4001", "이미지 파일이 비어있습니다."),
     IMAGE4002(BAD_REQUEST, "IMAGE4002", "파일 확장자가 없습니다."),
     IMAGE4003(BAD_REQUEST, "IMAGE4003", "지원하지 않는 이미지 확장자입니다. (jpg, jpeg, png, gif만 가능)"),
+    IMAGE4004(BAD_REQUEST, "IMAGE4004", "지원하지 않는 파일 형식입니다. (jpg, jpeg, png, pdf만 가능)"),
     IMAGE5001(INTERNAL_SERVER_ERROR, "IMAGE5001", "이미지 업로드 중 오류가 발생했습니다."),
 
     // 시설 에러
@@ -89,6 +90,10 @@ public enum ErrorStatus implements BaseErrorCode {
     BUSINESS4001(BAD_REQUEST, "BUSINESS4001", "사업자등록정보가 일치하지 않습니다."),
     BUSINESS4002(BAD_REQUEST, "BUSINESS4002", "휴업 또는 폐업한 사업자입니다."),
     BUSINESS4003(CONFLICT, "BUSINESS4003", "이미 다른 사업자가 등록한 매장입니다."),
+    BUSINESS4004(CONFLICT, "BUSINESS4004", "이미 심사 중인 신청이 있습니다."),
+    BUSINESS4005(CONFLICT, "BUSINESS4005", "이미 등록된 내 매장입니다."),
+    BUSINESS4006(NOT_FOUND, "BUSINESS4006", "존재하지 않는 신청입니다."),
+    BUSINESS4007(CONFLICT, "BUSINESS4007", "처리할 수 없는 신청 상태입니다."),
     BUSINESS5001(BAD_GATEWAY, "BUSINESS5001", "국세청 사업자등록정보 서비스와의 통신에 실패했습니다.");
 
     private final HttpStatus httpStatus;

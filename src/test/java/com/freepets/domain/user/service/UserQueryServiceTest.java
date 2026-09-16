@@ -144,7 +144,7 @@ class UserQueryServiceTest {
         User user = createUser();
 
         when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
-        when(facilityOwnerClaimRepository.findFacilityIdsByUserId(1L)).thenReturn(List.of());
+        when(facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(1L)).thenReturn(List.of());
 
         UserResponseDTO.AccountResult result = userQueryService.getAccount(1L);
 
@@ -160,7 +160,7 @@ class UserQueryServiceTest {
         User user = createUser();
 
         when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
-        when(facilityOwnerClaimRepository.findFacilityIdsByUserId(1L)).thenReturn(List.of(6L, 9L));
+        when(facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(1L)).thenReturn(List.of(6L, 9L));
 
         UserResponseDTO.AccountResult result = userQueryService.getAccount(1L);
 

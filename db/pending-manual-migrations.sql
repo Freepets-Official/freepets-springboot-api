@@ -162,6 +162,59 @@ ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
 -- );
 
 -- ============================================================
+-- 2026-09-15 — 관리자 구분용 사용자 역할 컬럼 추가 (#83, feat/#83-business-claim-approval)
+-- ============================================================
+-- 매장 등록 운영자 승인(#83)은 관리자만 신청을 승인·반려할 수 있어야 하는데, 지금까지는 역할 개념이
+-- 없어 모든 사용자가 같은 권한이었다. users.role(USER/ADMIN)을 두고 /api/v1/admin/** 는 ADMIN만
+-- 통과시킨다. 역할은 토큰에 넣지 않고 요청마다 DB에서 읽으므로, 아래 UPDATE는 재로그인 없이 바로 반영된다.
+--
+-- 컬럼은 ddl-auto=update가 기본값 'USER'와 함께 자동으로 추가한다 — 기존 사용자는 전부 USER가 된다.
+-- 수동 조치는 없다.
+--
+-- 주의: Hibernate가 이 컬럼에 CHECK (role IN ('USER', 'ADMIN')) 제약을 함께 만들 수 있다. 나중에
+-- Role에 값을 추가하면 위 courses_distance_option_check 사례처럼 제약을 직접 DROP/ADD 해야 한다.
+--
+-- 상태: ✅ 조치 불필요 (컬럼 자동 추가)
+
+-- 관리자 지정 — 관리자로 만들 계정의 userId를 확인한 뒤 직접 실행한다. 관리자 지정 API는 두지 않는다.
+-- UPDATE freepets.users SET role = 'ADMIN' WHERE id = {관리자 userId} AND deleted_at IS NULL;
+
+-- 관리자 회수
+-- UPDATE freepets.users SET role = 'USER' WHERE id = {관리자 userId};
+
+-- ============================================================
+-- 2026-09-15 — 매장 소유 기록 심사 상태와 "승인된 소유자만 하나" 제약 (#83, feat/#83-business-claim-approval)
+-- ============================================================
+-- 매장 등록에 운영자 승인이 붙으면서 소유 기록에 심사 상태(PENDING/APPROVED/REJECTED/REVOKED)가 생겼다.
+-- 소유권·사업자 프로필은 APPROVED만 인정한다.
+--
+-- status 컬럼은 ddl-auto=update가 기본값 'APPROVED'로 자동 추가한다 — 기존 기록은 승인 절차 이전에 곧바로
+-- 소유권을 준 것이라 전부 APPROVED가 된다. 컬럼 자체는 수동 조치가 필요 없다. Hibernate가 CHECK 제약을 함께
+-- 만들 수 있지만 네 상태를 처음부터 모두 넣어 두었으므로, 상태 값을 추가하지 않는 한 손댈 일은 없다.
+--
+-- 기존 "시설당 한 행" 유니크 제약은 대기 중인 신청이 하나만 있어도 다른 사람이 신청조차 못 하게 막는다(선점).
+-- "시설당 승인된 소유자 하나"는 조건부 유니크 인덱스라 JPA로 표현할 수 없어, 엔티티에서 제약을 빼고 여기서 직접 건다.
+-- ddl-auto=update는 기존 제약을 지우지도, 조건부 인덱스를 만들지도 않는다.
+--
+-- 적용 순서 주의:
+--   - 기존 제약을 지우기 전에는 대기 신청이 들어갈 수 없다 → 신청 접수(대기 상태) 기능 배포 전에 반드시 실행한다.
+--   - 새 인덱스를 만들기 전에는 DB 차원의 중복 방어가 없고 시설 행 잠금(findByIdForUpdate)만 막는다.
+--     그래서 DROP과 CREATE는 한 번에 이어서 실행한다.
+--
+-- 실행 전 기존 제약 이름을 SQL Editor로 확인할 것(이름이 다를 수 있다).
+--
+-- 상태: ⬜ 미적용
+ALTER TABLE freepets.facility_owner_claims
+    DROP CONSTRAINT IF EXISTS uk_facility_owner_claims_facility_id;
+
+-- 승인된 소유자는 시설당 하나. 이름은 FacilityOwnerClaimCommandService.APPROVED_FACILITY_UNIQUE_INDEX와 같아야 한다
+-- (위반 시 409로 바꾸는 판정에 쓴다). 적용 후에는 같은 클래스의 LEGACY_FACILITY_UNIQUE_CONSTRAINT(옛 제약 이름)를 지운다.
+CREATE UNIQUE INDEX IF NOT EXISTS uk_facility_owner_claims_approved_facility
+    ON freepets.facility_owner_claims (facility_id) WHERE status = 'APPROVED';
+
+-- 같은 사람이 같은 매장에 대기 신청을 중복으로 넣지 못하게
+CREATE UNIQUE INDEX IF NOT EXISTS uk_facility_owner_claims_pending_user_facility
+    ON freepets.facility_owner_claims (facility_id, user_id) WHERE status = 'PENDING';
 -- 2026-09-15 — 리뷰 "도움됐어요" 카운트 추가 (feat/review-edit-and-helpful-count)
 -- ============================================================
 -- 리뷰에 "도움됐어요"를 표시하는 기능. 누가 표시했는지는 신규 테이블(review_helpfuls)에,

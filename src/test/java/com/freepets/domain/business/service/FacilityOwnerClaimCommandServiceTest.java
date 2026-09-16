@@ -26,10 +26,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.business.dto.BusinessRequestDTO;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
+import com.freepets.domain.business.entity.ClaimStatus;
 import com.freepets.domain.business.entity.FacilityOwnerClaim;
 import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
-import com.freepets.domain.facility.entity.Confidence;
-import com.freepets.domain.facility.entity.ConfidenceSource;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.FacilitySource;
@@ -49,6 +48,7 @@ class FacilityOwnerClaimCommandServiceTest {
     private static final long OWNER_ID = 1L;
     private static final long OTHER_USER_ID = 2L;
     private static final String MASKED_BUSINESS_NUMBER = "123-45-*****";
+    private static final String CERTIFICATE_URL = "https://bucket.s3.ap-northeast-2.amazonaws.com/certificate.pdf";
     private static final LocalDateTime VERIFIED_AT = LocalDateTime.of(2026, 9, 12, 14, 0);
 
     @Mock
@@ -103,81 +103,111 @@ class FacilityOwnerClaimCommandServiceTest {
         return request;
     }
 
-    private FacilityOwnerClaim createClaim(
+    private FacilityOwnerClaim createApprovedClaim(
             User user,
             Facility facility
     ) {
-        return FacilityOwnerClaim.builder()
+        FacilityOwnerClaim claim = FacilityOwnerClaim.builder()
                 .user(user)
                 .facility(facility)
                 .maskedBusinessNumber(MASKED_BUSINESS_NUMBER)
                 .verifiedAt(VERIFIED_AT)
                 .build();
+        ReflectionTestUtils.setField(claim, "status", ClaimStatus.APPROVED);
+        return claim;
     }
 
-    private BusinessResponseDTO.ClaimResult claim() {
-        return facilityOwnerClaimCommandService.claim(
-                OWNER_ID, FACILITY_ID, MASKED_BUSINESS_NUMBER, VERIFIED_AT, createRequest()
+    private BusinessResponseDTO.ClaimResult apply() {
+        return facilityOwnerClaimCommandService.apply(
+                OWNER_ID, FACILITY_ID, MASKED_BUSINESS_NUMBER, VERIFIED_AT, CERTIFICATE_URL, createRequest()
         );
     }
 
-    @Test
-    void 주인이_없는_매장이면_소유_기록을_만들고_조건을_확정한다() {
-        Facility facility = createFacility();
-        User owner = createUser(OWNER_ID);
-
+    private void givenLockedFacility(Facility facility) {
         when(facilityRepository.findByIdForUpdate(FACILITY_ID)).thenReturn(Optional.of(facility));
-        when(facilityOwnerClaimRepository.findByFacility_FacilityId(FACILITY_ID)).thenReturn(Optional.empty());
-        when(userRepository.findById(OWNER_ID)).thenReturn(Optional.of(owner));
+    }
 
-        BusinessResponseDTO.ClaimResult result = claim();
-
-        assertThat(result.facilityId()).isEqualTo(FACILITY_ID);
-        assertThat(result.confidence()).isEqualTo(Confidence.CONFIRMED);
-        assertThat(result.confidenceSource()).isEqualTo(ConfidenceSource.OWNER);
-        assertThat(result.confirmedAt()).isNotNull();
-
-        assertThat(facility.getPetAllowed()).isEqualTo(PetAllowed.ALLOWED);
-        assertThat(facility.getPetConditionRaw()).isEqualTo("리드줄 착용 시 실내 동반 가능");
-        // 같은 조건이 여러 번 와도 체크리스트에 중복으로 쌓이지 않는다.
-        assertThat(facility.getCheckLists()).hasSize(1);
-
-        ArgumentCaptor<FacilityOwnerClaim> claimCaptor = ArgumentCaptor.forClass(FacilityOwnerClaim.class);
-        verify(facilityOwnerClaimRepository).save(claimCaptor.capture());
-        assertThat(claimCaptor.getValue().getMaskedBusinessNumber()).isEqualTo(MASKED_BUSINESS_NUMBER);
-        assertThat(claimCaptor.getValue().getVerifiedAt()).isEqualTo(VERIFIED_AT);
-        assertThat(claimCaptor.getValue().getUser()).isEqualTo(owner);
+    private void givenNoApprovedOwner() {
+        when(facilityOwnerClaimRepository.findApprovedByFacilityId(FACILITY_ID)).thenReturn(Optional.empty());
     }
 
     @Test
-    void 다른_사업자가_이미_등록한_매장이면_BUSINESS4003() {
+    void 신청하면_대기_기록에_조건과_등록증을_담고_시설은_건드리지_않는다() {
+        Facility facility = createFacility();
+        User owner = createUser(OWNER_ID);
+
+        givenLockedFacility(facility);
+        givenNoApprovedOwner();
+        when(userRepository.findById(OWNER_ID)).thenReturn(Optional.of(owner));
+        when(facilityOwnerClaimRepository.save(any(FacilityOwnerClaim.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        BusinessResponseDTO.ClaimResult result = apply();
+
+        assertThat(result.facilityId()).isEqualTo(FACILITY_ID);
+        assertThat(result.status()).isEqualTo(ClaimStatus.PENDING);
+
+        // 승인 전에는 시설 정보가 바뀌면 안 된다 — 승인 절차를 둔 이유가 사라진다.
+        assertThat(facility.getConfirmedAt()).isNull();
+        assertThat(facility.getPetAllowed()).isEqualTo(PetAllowed.PENDING);
+        assertThat(facility.getCheckLists()).isEmpty();
+
+        ArgumentCaptor<FacilityOwnerClaim> claimCaptor = ArgumentCaptor.forClass(FacilityOwnerClaim.class);
+        verify(facilityOwnerClaimRepository).save(claimCaptor.capture());
+        FacilityOwnerClaim savedClaim = claimCaptor.getValue();
+        assertThat(savedClaim.getStatus()).isEqualTo(ClaimStatus.PENDING);
+        assertThat(savedClaim.getMaskedBusinessNumber()).isEqualTo(MASKED_BUSINESS_NUMBER);
+        assertThat(savedClaim.getVerifiedAt()).isEqualTo(VERIFIED_AT);
+        assertThat(savedClaim.getUser()).isEqualTo(owner);
+        assertThat(savedClaim.getRegistrationCertificateUrl()).isEqualTo(CERTIFICATE_URL);
+        assertThat(savedClaim.getRequestedCondition().getPetAllowed()).isEqualTo(PetAllowed.ALLOWED);
+        assertThat(savedClaim.getRequestedCondition().getMaxWeight()).isEqualTo(new BigDecimal("10.00"));
+        assertThat(savedClaim.getRequestedCondition().getMaxWeightInclusive()).isTrue();
+        assertThat(savedClaim.getRequestedCondition().getConditionRaw()).isEqualTo("리드줄 착용 시 실내 동반 가능");
+        // 같은 조건이 여러 번 와도 승인 시 체크리스트에 중복으로 쌓이지 않게 걸러둔다.
+        assertThat(savedClaim.getRequestedCondition().getRequirements()).containsExactly(Requirement.LEASH);
+    }
+
+    @Test
+    void 남이_이미_승인받은_매장이면_BUSINESS4003() {
         Facility facility = createFacility();
 
-        when(facilityRepository.findByIdForUpdate(FACILITY_ID)).thenReturn(Optional.of(facility));
-        when(facilityOwnerClaimRepository.findByFacility_FacilityId(FACILITY_ID))
-                .thenReturn(Optional.of(createClaim(createUser(OTHER_USER_ID), facility)));
+        givenLockedFacility(facility);
+        when(facilityOwnerClaimRepository.findApprovedByFacilityId(FACILITY_ID))
+                .thenReturn(Optional.of(createApprovedClaim(createUser(OTHER_USER_ID), facility)));
 
-        GeneralException exception = assertThrows(GeneralException.class, this::claim);
+        GeneralException exception = assertThrows(GeneralException.class, this::apply);
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4003);
-        // 남의 매장 조건을 건드리면 안 된다.
+        verify(facilityOwnerClaimRepository, never()).save(any());
+    }
+
+    @Test
+    void 내가_이미_등록을_마친_매장이면_BUSINESS4005() {
+        // 신청할 이유가 없다. 승인된 매장의 조건 수정은 사업자 대시보드의 조건 수정 API가 맡는다.
+        Facility facility = createFacility();
+
+        givenLockedFacility(facility);
+        when(facilityOwnerClaimRepository.findApprovedByFacilityId(FACILITY_ID))
+                .thenReturn(Optional.of(createApprovedClaim(createUser(OWNER_ID), facility)));
+
+        GeneralException exception = assertThrows(GeneralException.class, this::apply);
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4005);
         assertThat(facility.getConfirmedAt()).isNull();
         verify(facilityOwnerClaimRepository, never()).save(any());
     }
 
     @Test
-    void 본인이_이미_등록한_매장이면_조건만_갱신한다() {
-        // 뒤로 갔다 다시 제출하거나 네트워크 재시도로 같은 요청이 두 번 와도 에러를 보여줄 이유가 없다.
-        Facility facility = createFacility();
+    void 본인의_대기_신청이_이미_있으면_BUSINESS4004() {
+        givenLockedFacility(createFacility());
+        givenNoApprovedOwner();
+        when(facilityOwnerClaimRepository.existsPendingByFacilityIdAndUserId(FACILITY_ID, OWNER_ID))
+                .thenReturn(true);
 
-        when(facilityRepository.findByIdForUpdate(FACILITY_ID)).thenReturn(Optional.of(facility));
-        when(facilityOwnerClaimRepository.findByFacility_FacilityId(FACILITY_ID))
-                .thenReturn(Optional.of(createClaim(createUser(OWNER_ID), facility)));
+        GeneralException exception = assertThrows(GeneralException.class, this::apply);
 
-        BusinessResponseDTO.ClaimResult result = claim();
-
-        assertThat(result.confidence()).isEqualTo(Confidence.CONFIRMED);
-        assertThat(facility.getPetAllowed()).isEqualTo(PetAllowed.ALLOWED);
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4004);
         verify(facilityOwnerClaimRepository, never()).save(any());
         verifyNoInteractions(userRepository);
     }
@@ -186,28 +216,95 @@ class FacilityOwnerClaimCommandServiceTest {
     void 존재하지_않는_시설이면_FACILITY4001() {
         when(facilityRepository.findByIdForUpdate(FACILITY_ID)).thenReturn(Optional.empty());
 
-        GeneralException exception = assertThrows(GeneralException.class, this::claim);
+        GeneralException exception = assertThrows(GeneralException.class, this::apply);
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.FACILITY4001);
         verifyNoInteractions(facilityOwnerClaimRepository, userRepository);
     }
 
     @Test
-    void 유니크_제약에_걸리면_BUSINESS4003() {
-        // 행 잠금을 타지 않는 경로가 생겨도 DB 제약이 마지막 방어선으로 남는지 고정한다.
+    void validateApplicable_신청할_수_있으면_통과한다() {
+        when(facilityRepository.existsById(FACILITY_ID)).thenReturn(true);
+        givenNoApprovedOwner();
+        when(facilityOwnerClaimRepository.existsPendingByFacilityIdAndUserId(FACILITY_ID, OWNER_ID))
+                .thenReturn(false);
+
+        facilityOwnerClaimCommandService.validateApplicable(OWNER_ID, FACILITY_ID);
+
+        // 사전 확인은 아무것도 저장하지 않는다.
+        verify(facilityOwnerClaimRepository, never()).save(any());
+    }
+
+    @Test
+    void validateApplicable_승인된_주인이_있으면_apply와_같은_코드로_막는다() {
         Facility facility = createFacility();
 
-        when(facilityRepository.findByIdForUpdate(FACILITY_ID)).thenReturn(Optional.of(facility));
-        when(facilityOwnerClaimRepository.findByFacility_FacilityId(FACILITY_ID)).thenReturn(Optional.empty());
-        when(userRepository.findById(OWNER_ID)).thenReturn(Optional.of(createUser(OWNER_ID)));
-        when(facilityOwnerClaimRepository.save(any(FacilityOwnerClaim.class)))
-                .thenThrow(new DataIntegrityViolationException("duplicate key", new ConstraintViolationException(
-                        "duplicate key value violates unique constraint",
-                        new SQLException("duplicate key"),
-                        "uk_facility_owner_claims_facility_id"
-                )));
+        when(facilityRepository.existsById(FACILITY_ID)).thenReturn(true);
+        when(facilityOwnerClaimRepository.findApprovedByFacilityId(FACILITY_ID))
+                .thenReturn(Optional.of(createApprovedClaim(createUser(OTHER_USER_ID), facility)));
 
-        GeneralException exception = assertThrows(GeneralException.class, this::claim);
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> facilityOwnerClaimCommandService.validateApplicable(OWNER_ID, FACILITY_ID)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4003);
+    }
+
+    @Test
+    void validateApplicable_존재하지_않는_시설이면_FACILITY4001() {
+        when(facilityRepository.existsById(FACILITY_ID)).thenReturn(false);
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> facilityOwnerClaimCommandService.validateApplicable(OWNER_ID, FACILITY_ID)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.FACILITY4001);
+        verifyNoInteractions(facilityOwnerClaimRepository);
+    }
+
+    /** 주인이 없는 매장에 신청하다 저장 단계에서 주어진 무결성 위반이 나는 상황을 만든다. */
+    private void givenSaveFailsWith(DataIntegrityViolationException violation) {
+        givenLockedFacility(createFacility());
+        givenNoApprovedOwner();
+        when(userRepository.findById(OWNER_ID)).thenReturn(Optional.of(createUser(OWNER_ID)));
+        when(facilityOwnerClaimRepository.save(any(FacilityOwnerClaim.class))).thenThrow(violation);
+    }
+
+    private DataIntegrityViolationException constraintViolation(String constraintName) {
+        return new DataIntegrityViolationException("duplicate key", new ConstraintViolationException(
+                "duplicate key value violates unique constraint",
+                new SQLException("duplicate key"),
+                constraintName
+        ));
+    }
+
+    @Test
+    void 승인된_소유자_유니크_인덱스에_걸리면_BUSINESS4003() {
+        // 행 잠금을 타지 않는 경로가 생겨도 DB 제약이 마지막 방어선으로 남는지 고정한다.
+        givenSaveFailsWith(constraintViolation("uk_facility_owner_claims_approved_facility"));
+
+        GeneralException exception = assertThrows(GeneralException.class, this::apply);
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4003);
+    }
+
+    @Test
+    void 대기_신청_유니크_인덱스에_걸리면_BUSINESS4004() {
+        givenSaveFailsWith(constraintViolation("uk_facility_owner_claims_pending_user_facility"));
+
+        GeneralException exception = assertThrows(GeneralException.class, this::apply);
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4004);
+    }
+
+    @Test
+    void 마이그레이션_전_옛_유니크_제약에_걸려도_BUSINESS4003() {
+        // 수동 마이그레이션 전까지 DB에는 옛 "시설당 한 행" 제약이 남아 그 이름으로 충돌이 올라온다.
+        givenSaveFailsWith(constraintViolation("uk_facility_owner_claims_facility_id"));
+
+        GeneralException exception = assertThrows(GeneralException.class, this::apply);
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4003);
     }
@@ -215,23 +312,32 @@ class FacilityOwnerClaimCommandServiceTest {
     @Test
     void 다른_원인의_무결성_위반이면_변환하지_않고_그대로_던진다() {
         // FK·not-null 위반까지 409로 뭉뚱그리면 진짜 원인이 가려진다.
-        Facility facility = createFacility();
         DataIntegrityViolationException otherViolation = new DataIntegrityViolationException(
                 "null value in column", new ConstraintViolationException(
                         "not-null constraint", new SQLException("not null"), "some_other_constraint"
                 )
         );
-
-        when(facilityRepository.findByIdForUpdate(FACILITY_ID)).thenReturn(Optional.of(facility));
-        when(facilityOwnerClaimRepository.findByFacility_FacilityId(FACILITY_ID)).thenReturn(Optional.empty());
-        when(userRepository.findById(OWNER_ID)).thenReturn(Optional.of(createUser(OWNER_ID)));
-        when(facilityOwnerClaimRepository.save(any(FacilityOwnerClaim.class))).thenThrow(otherViolation);
+        givenSaveFailsWith(otherViolation);
 
         DataIntegrityViolationException exception = assertThrows(
                 DataIntegrityViolationException.class,
-                this::claim
+                this::apply
         );
 
         assertThat(exception).isSameAs(otherViolation);
+    }
+
+    @Test
+    void 제약_이름을_알_수_없는_무결성_위반이면_변환하지_않고_그대로_던진다() {
+        // 드라이버가 제약 이름을 못 알려주는 경우에도 판정 중에 터지지 않고 원래 예외를 올려야 한다.
+        DataIntegrityViolationException unnamedViolation = constraintViolation(null);
+        givenSaveFailsWith(unnamedViolation);
+
+        DataIntegrityViolationException exception = assertThrows(
+                DataIntegrityViolationException.class,
+                this::apply
+        );
+
+        assertThat(exception).isSameAs(unnamedViolation);
     }
 }

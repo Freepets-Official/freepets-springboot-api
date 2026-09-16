@@ -104,4 +104,20 @@ class FacilityTest {
         assertThat(facility.getMaxWeight()).isEqualByComparingTo("5.00");
         assertThat(facility.getMaxWeightInclusive()).isFalse();
     }
+
+    @Test
+    void releaseOwnerConfirmation_확정_시각만_비우고_조건은_그대로_둔다() {
+        // 다음 관광공사 동기화가 confirmedAt이 없는 시설의 조건을 원래대로 되돌린다 — 여기서 조건까지
+        // 미리 지우면 그 사이(동기화 전까지) 시설에 아무 조건도 없는 상태가 된다.
+        Facility facility = createFacility();
+        confirm(facility);
+
+        facility.releaseOwnerConfirmation();
+
+        assertThat(facility.getConfirmedAt()).isNull();
+        assertThat(facility.getPetAllowed()).isEqualTo(PetAllowed.ALLOWED);
+        assertThat(facility.getMaxWeight()).isEqualByComparingTo("10.00");
+        assertThat(facility.getPetConditionRaw()).isEqualTo("리드줄 착용 시 실내 동반 가능");
+        assertThat(facility.getCheckLists()).hasSize(1);
+    }
 }

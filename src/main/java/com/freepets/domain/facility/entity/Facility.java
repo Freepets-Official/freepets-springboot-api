@@ -485,6 +485,16 @@ public class Facility extends BaseEntity {
     }
 
     /**
+     * 사업자 확정을 해제한다(관리자의 이의 제기 처리, 소유자 탈퇴). {@code confirmedAt}만 비운다 — 동반
+     * 여부·체중 등 확정했던 값은 그대로 둔다. 다음 관광공사 동기화({@link #updateFromTourApi})가
+     * {@code confirmedAt}이 없는 시설의 조건을 원래대로 되돌린다. 조회 시점 신뢰도({@code Confidence.of})도
+     * {@code confirmedAt}만 보므로 {@code CONFIRMED} 배지는 바로 사라진다.
+     */
+    public void releaseOwnerConfirmation() {
+        this.confirmedAt = null;
+    }
+
+    /**
      * {@code FacilityConditionLlmParser}(LLM 조건 파싱)의 결과를 반영한다. 언제 호출할지(신규 시설
      * lazy-sync 등)는 이 엔티티 범위 밖 — 서비스 레이어에서 결정한다.
      */

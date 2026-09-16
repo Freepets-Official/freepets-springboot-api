@@ -3,6 +3,8 @@ package com.freepets.domain.business.dto;
 import java.math.BigDecimal;
 import java.util.List;
 
+import org.springframework.web.multipart.MultipartFile;
+
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
 
@@ -42,11 +44,14 @@ public class BusinessRequestDTO {
     }
 
     /**
-     * 매장 등록 요청. 사업자 정보와 출입 조건을 함께 받는다.
+     * 매장 등록 신청. 사업자 정보와 출입 조건, 사업자등록증 파일을 함께 받는다.
      *
      * <p>사업자 정보를 다시 받는 이유는 {@code verify}가 서버에 아무 기록도 남기지 않기 때문이다.
      * 등록 요청만 직접 호출해 인증을 건너뛰는 것을 막으려면 이 시점에 한 번 더 확인해야 한다.
      * 사용자가 다시 입력하지는 않는다 — 앞 화면 입력값을 그대로 실어 보낸다.
+     *
+     * <p>파일이 있어 {@code multipart/form-data}로 받는다. {@code requirements}처럼 목록인 값은 같은 이름을
+     * 여러 번 실어 보낸다({@code requirements=LEASH&requirements=MUZZLE}).
      */
     @Getter
     @Setter
@@ -79,5 +84,29 @@ public class BusinessRequestDTO {
 
         /** 화면에 그대로 보여줄 조건 안내문. */
         private String conditionRaw;
+
+        /** 사업자등록증 사진 또는 PDF. 운영자가 상호·소재지를 신청한 매장과 대조한다. */
+        @NotNull(message = "사업자등록증 파일은 필수입니다.")
+        private MultipartFile registrationCertificate;
+    }
+
+    /** 관리자 반려. 사유는 신청자에게 보여줄 수 있어야 하므로 필수로 받는다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class RejectClaimRequest {
+
+        @NotBlank(message = "반려 사유는 필수입니다.")
+        private String reason;
+    }
+
+    /** 관리자의 승인 해제(이의 제기 처리). 사유는 신청자에게 보여줄 수 있어야 하므로 필수로 받는다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class RevokeClaimRequest {
+
+        @NotBlank(message = "해제 사유는 필수입니다.")
+        private String reason;
     }
 }

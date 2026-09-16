@@ -2,15 +2,19 @@ package com.freepets.global.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer.FrameOptionsConfig;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+import com.freepets.domain.user.entity.Role;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.security.JwtAccessDeniedHandler;
 import com.freepets.global.security.JwtAuthenticationEntryPoint;
@@ -54,6 +58,10 @@ public class SecurityConfig {
             "/h2-console/**"
     };
 
+    // 운영자 전용 API. 관리자 판정은 이 규칙 한 곳에만 둔다 — 나중에 관리자 계정을 분리하더라도
+    // 여기만 바꾸면 된다.
+    private static final String ADMIN_PATTERN = "/api/v1/admin/**";
+
     private final JwtProvider jwtProvider;
     private final UserRepository userRepository;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
@@ -69,6 +77,7 @@ public class SecurityConfig {
                 .headers(headers -> headers.frameOptions(FrameOptionsConfig::sameOrigin))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(PERMIT_ALL_PATTERNS).permitAll()
+                        .requestMatchers(ADMIN_PATTERN).access(requireAdminRole())
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(jwtAuthenticationEntryPoint)
@@ -76,5 +85,24 @@ public class SecurityConfig {
                 .addFilterBefore(new JwtAuthenticationFilter(jwtProvider, userRepository), UsernamePasswordAuthenticationFilter.class);
 
         return httpSecurity.build();
+    }
+
+    /**
+     * 관리자 전용 경로에서만 역할을 DB로 확인한다. {@code JwtAuthenticationFilter}는 역할을 싣지
+     * 않으므로(그 필터는 모든 인증 요청에서 돈다 — 역할 조회에 문제가 생기면 앱 전체가 영향을
+     * 받는다), 여기서 인증된 사용자의 userId로 직접 조회한다.
+     *
+     * <p>익명 요청(토큰 없음)에 대한 거부는 {@code ExceptionTranslationFilter}가 401로,
+     * 인증됐지만 관리자가 아닌 거부는 403으로 갈린다 — 이 판단은 인증 객체가 익명인지 여부로만
+     * 갈리므로 {@code hasRole(...)}을 쓸 때와 동일하게 동작한다.
+     */
+    private AuthorizationManager<RequestAuthorizationContext> requireAdminRole() {
+        return (authentication, context) -> {
+            boolean isAdmin = authentication.get().getPrincipal() instanceof Long userId
+                    && userRepository.findActiveRoleById(userId)
+                            .map(role -> role == Role.ADMIN)
+                            .orElse(false);
+            return new AuthorizationDecision(isAdmin);
+        };
     }
 }

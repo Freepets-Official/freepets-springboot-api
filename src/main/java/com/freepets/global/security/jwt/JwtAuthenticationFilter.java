@@ -45,6 +45,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 // 리포는 로그아웃 때도 서버 쪽 토큰 무효화가 없어서(순수 서명 검증), 여기서
                 // 막지 않으면 탈퇴 후에도 토큰이 자연 만료될 때까지 다른 모든 도메인 API를
                 // 계속 호출할 수 있다.
+                //
+                // 역할은 여기서 조회하지 않는다 — 이 필터는 로그인이 필요한 모든 요청에서 돈다.
+                // 역할 컬럼이나 그 쿼리에 문제가 생기면 앱 전체가 500이 된다. 관리자 판정은
+                // /api/v1/admin/** 요청에서만 SecurityConfig가 따로 DB를 조회해서 하므로,
+                // 문제가 생겨도 관리자 API만 영향을 받는다.
                 if (!userRepository.existsByIdAndDeletedAtIsNull(userId)) {
                     throw new GeneralException(ErrorStatus.MEMBER4007);
                 }

@@ -1,27 +1,17 @@
 package com.freepets.domain.gamification.entity;
 
 /**
- * 레벨 배지의 발바닥 모양. {@link LevelTier}가 {@link PawColor} 7색을 한 동물로 한 바퀴 돌면
- * 다음 동물로 넘어간다 — 10종 × 7색 = 70단계로, {@link com.freepets.domain.gamification.service.LevelCurve#MAX_LEVEL}
- * (70)과 정확히 맞아떨어진다(레벨 하나마다 배지가 전부 다르다).
+ * 레벨 배지의 발바닥 동물. 이 앱이 실제 지원하는 반려동물({@code Pet.Kind})은 개·고양이·앵무새·
+ * 토끼·파충류·소동물 6개 큰 분류인데, 그중에서도 실제 등록되는 압도적 다수가 개·고양이라 이
+ * 둘로만 구성한다 — 도마뱀·페럿 같은 종이 레벨 배지에 등장하면 "이 앱과 무슨 상관이지" 싶은
+ * 위화감이 있어서다.
  *
- * <p>이 앱이 실제로 지원하는 반려동물 종({@code Pet.Kind}: DOG/CAT/PARROT/RABBIT/REPTILE/
- * SMALL_ANIMAL)의 구체적인 예시 10종으로 채웠다 — 앱과 무관한 동물을 끌어오지 않기 위함이다.
- * 순서는 "동반 여행 반려동물로서 흔한 정도"로 앞에서 뒤로 갈수록 희귀해지게 배치했다(등급이
- * 오를수록 희귀해지는 흔한 게임 보상 구조와 같은 결).
+ * <p>{@link LevelTier}가 개(레벨 1~35) → 고양이(레벨 36~70) 순서로 딱 절반씩 나눠 쓴다.
  */
 public enum PawAnimal {
 
     DOG("개"),
-    CAT("고양이"),
-    RABBIT("토끼"),
-    HAMSTER("햄스터"),
-    GUINEA_PIG("기니피그"),
-    HEDGEHOG("고슴도치"),
-    FERRET("페럿"),
-    PARROT("앵무새"),
-    TURTLE("거북이"),
-    LIZARD("도마뱀");
+    CAT("고양이");
 
     private final String label;
 

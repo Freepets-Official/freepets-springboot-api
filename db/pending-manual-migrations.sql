@@ -207,7 +207,7 @@ ALTER TABLE freepets.courses ADD CONSTRAINT courses_distance_option_check
 -- 실행 전 SQL Editor로 기존 제약조건이 실제로 있는지, 정확한 이름을 먼저 확인할 것 —
 -- 위 사례들처럼 이름이 다를 수 있다. 아래는 Postgres 기본 명명 규칙 기준 추정이다.
 --
--- 상태: ⬜ 미적용
+-- 상태: ✅ 적용 (2026-09-16)
 ALTER TABLE freepets.user_badges DROP CONSTRAINT IF EXISTS user_badges_badge_check;
 
 UPDATE freepets.user_badges SET badge = 'PETCHECK_BRONZE' WHERE badge = 'FIRST_PETCHECK';

@@ -21,7 +21,7 @@ public class NoticeQueryService {
     private final NoticeRepository noticeRepository;
 
     public List<NoticeResponseDTO.NoticeItem> getNotices() {
-        return noticeRepository.findAllByOrderByPinnedDescCreatedAtDesc().stream()
+        return noticeRepository.findAllByOrderByIsPinnedDescCreatedAtDesc().stream()
                 .map(NoticeConverter::toNoticeItem)
                 .toList();
     }

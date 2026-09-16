@@ -37,18 +37,18 @@ public class Notice extends BaseEntity {
 
     // 목록 맨 위 고정 여부 — GET /api/v1/notices 정렬 기준(NoticeRepository 참고).
     @ColumnDefault("false")
-    @Column(nullable = false)
-    private boolean pinned;
+    @Column(name = "is_pinned", nullable = false)
+    private boolean isPinned;
 
     @Builder
     private Notice(
             String title,
             String body,
-            boolean pinned
+            boolean isPinned
     ) {
         this.title = title;
         this.body = body;
-        this.pinned = pinned;
+        this.isPinned = isPinned;
     }
 
 }

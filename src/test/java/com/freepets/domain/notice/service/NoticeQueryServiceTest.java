@@ -26,9 +26,9 @@ class NoticeQueryServiceTest {
 
     @Test
     void 고정_공지가_위로_최신순으로_내려온다() {
-        Notice pinned = Notice.builder().title("점검 안내").body("내용1").pinned(true).build();
-        Notice normal = Notice.builder().title("업데이트 소식").body("내용2").pinned(false).build();
-        when(noticeRepository.findAllByOrderByPinnedDescCreatedAtDesc())
+        Notice pinned = Notice.builder().title("점검 안내").body("내용1").isPinned(true).build();
+        Notice normal = Notice.builder().title("업데이트 소식").body("내용2").isPinned(false).build();
+        when(noticeRepository.findAllByOrderByIsPinnedDescCreatedAtDesc())
                 .thenReturn(List.of(pinned, normal));
 
         List<NoticeResponseDTO.NoticeItem> result = noticeQueryService.getNotices();
@@ -42,7 +42,7 @@ class NoticeQueryServiceTest {
 
     @Test
     void 공지가_없으면_빈_목록을_반환한다() {
-        when(noticeRepository.findAllByOrderByPinnedDescCreatedAtDesc()).thenReturn(List.of());
+        when(noticeRepository.findAllByOrderByIsPinnedDescCreatedAtDesc()).thenReturn(List.of());
 
         List<NoticeResponseDTO.NoticeItem> result = noticeQueryService.getNotices();
 

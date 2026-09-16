@@ -48,6 +48,7 @@ public class OwnerFacilityQueryService {
     private final FacilityOwnerClaimRepository facilityOwnerClaimRepository;
     private final FacilityReportRepository facilityReportRepository;
     private final PetCheckRepository petCheckRepository;
+    private final FacilityOwnershipValidator facilityOwnershipValidator;
 
     /**
      * 내 매장 목록. 대시보드 홈이 이 응답 하나로 매장 카드와 거부 제보 경고를 모두 그린다.
@@ -74,6 +75,21 @@ public class OwnerFacilityQueryService {
                 findLatestDenialAlerts(facilityIds, denialReportSince),
                 countWeeklyPetChecks(facilityIds)
         );
+    }
+
+    /**
+     * 거부 제보 전체 조회. 홈의 경고 카드를 탭했을 때 들어가는 화면이라, 확정 이후 실시간 거부 제보를
+     * 최신순으로 전부 보여준다. {@code countDenialAlerts}/{@code findLatestDenialAlerts}와 같은
+     * 기준선({@link #denialReportSince()})을 써야 홈의 건수와 이 목록이 어긋나지 않는다.
+     */
+    public BusinessResponseDTO.DenialAlertList getDenialAlerts(Long userId, Long facilityId) {
+        facilityOwnershipValidator.requireOwner(userId, facilityId);
+
+        List<FacilityReport> reports = facilityReportRepository.findDowngradingByFacilityId(
+                facilityId,
+                denialReportSince()
+        );
+        return BusinessConverter.toDenialAlertList(reports);
     }
 
     private Map<Long, Long> countDenialAlerts(

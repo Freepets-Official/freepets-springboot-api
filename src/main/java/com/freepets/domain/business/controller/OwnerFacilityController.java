@@ -2,6 +2,7 @@ package com.freepets.domain.business.controller;
 
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -40,6 +41,20 @@ public class OwnerFacilityController {
     ) {
         return ApiResponse.onSuccess(
                 ownerFacilityQueryService.getMyFacilities(userId)
+        );
+    }
+
+    /**
+     * 거부 제보 전체 조회. 홈의 경고 카드를 탭했을 때 들어가는 화면으로, 확정 이후 실시간 거부
+     * 제보를 최신순으로 전부 보여준다.
+     */
+    @GetMapping("/facilities/{facilityId}/denial-alerts")
+    public ApiResponse<BusinessResponseDTO.DenialAlertList> getDenialAlerts(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long facilityId
+    ) {
+        return ApiResponse.onSuccess(
+                ownerFacilityQueryService.getDenialAlerts(userId, facilityId)
         );
     }
 }

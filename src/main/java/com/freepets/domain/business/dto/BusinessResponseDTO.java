@@ -192,6 +192,25 @@ public class BusinessResponseDTO {
             LocalDateTime reportedAt
     ) {}
 
+    /**
+     * 거부 제보 전체 조회 화면 — 홈의 경고 카드를 탭했을 때 들어간다. 확정 이후 실시간 거부 제보를
+     * 최신순으로 전부 보여준다.
+     */
+    public record DenialAlertList(
+            List<DenialAlertDetail> alerts
+    ) {}
+
+    /**
+     * 거부 제보 전체 조회 화면의 제보 한 줄. 제보자를 특정할 수 있는 값(사진, 제보자 정보)은 담지
+     * 않는다 — 사장님이 제보자를 알아낼 수 있으면 거부 제보 자체가 위축된다.
+     */
+    public record DenialAlertDetail(
+            Long reportId,
+            DenialReason reason,
+            String content,
+            LocalDateTime reportedAt
+    ) {}
+
     public record PageInfo(
             int page,
             int size,

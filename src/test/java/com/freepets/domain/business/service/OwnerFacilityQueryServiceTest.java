@@ -1,9 +1,12 @@
 package com.freepets.domain.business.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,11 +42,15 @@ import com.freepets.domain.petcheck.repository.FacilityPetCheckCount;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.report.entity.DenialReason;
 import com.freepets.domain.report.entity.FacilityReport;
+import com.freepets.domain.report.entity.ReportStatus;
+import com.freepets.domain.report.entity.ReportType;
 import com.freepets.domain.report.repository.DowngradingDenialReport;
 import com.freepets.domain.report.repository.FacilityDenialReportCount;
 import com.freepets.domain.report.repository.FacilityReportRepository;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
+import com.freepets.global.apiPayload.code.status.ErrorStatus;
+import com.freepets.global.apiPayload.exception.GeneralException;
 
 @ExtendWith(MockitoExtension.class)
 class OwnerFacilityQueryServiceTest {
@@ -60,6 +67,9 @@ class OwnerFacilityQueryServiceTest {
 
     @Mock
     private PetCheckRepository petCheckRepository;
+
+    @Mock
+    private FacilityOwnershipValidator facilityOwnershipValidator;
 
     @InjectMocks
     private OwnerFacilityQueryService ownerFacilityQueryService;
@@ -200,6 +210,77 @@ class OwnerFacilityQueryServiceTest {
                 LocalDateTime.now().minusDays(FacilityReport.RECENT_WINDOW_DAYS),
                 within(10, ChronoUnit.SECONDS)
         );
+    }
+
+    @Test
+    void getDenialAlerts_소유자가_아니면_403으로_막고_제보를_조회하지_않는다() {
+        doThrow(new GeneralException(ErrorStatus.BUSINESS4008))
+                .when(facilityOwnershipValidator).requireOwner(USER_ID, FACILITY_ID);
+
+        GeneralException exception = catchThrowableOfType(
+                () -> ownerFacilityQueryService.getDenialAlerts(USER_ID, FACILITY_ID),
+                GeneralException.class
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4008);
+        verify(facilityReportRepository, never()).findDowngradingByFacilityId(any(), any());
+    }
+
+    /** 응답에는 사유·원문·시각만 담긴다 — 사진과 제보자 정보는 DTO에 애초에 자리가 없다. */
+    @Test
+    void getDenialAlerts_사유_원문_시각만_최신순으로_내려준다() {
+        LocalDateTime older = LocalDateTime.of(2026, 9, 15, 10, 0);
+        LocalDateTime newer = LocalDateTime.of(2026, 9, 16, 13, 13);
+        when(facilityReportRepository.findDowngradingByFacilityId(eq(FACILITY_ID), any())).thenReturn(List.of(
+                denialReport(2L, DenialReason.INDOOR, "실내는 안 된다고 했어요", newer),
+                denialReport(1L, DenialReason.WEIGHT, "체중 초과라고 거부당했습니다", older)
+        ));
+
+        BusinessResponseDTO.DenialAlertList result =
+                ownerFacilityQueryService.getDenialAlerts(USER_ID, FACILITY_ID);
+
+        assertThat(result.alerts()).hasSize(2);
+        BusinessResponseDTO.DenialAlertDetail first = result.alerts().get(0);
+        assertThat(first.reportId()).isEqualTo(2L);
+        assertThat(first.reason()).isEqualTo(DenialReason.INDOOR);
+        assertThat(first.content()).isEqualTo("실내는 안 된다고 했어요");
+        assertThat(first.reportedAt()).isEqualTo(newer);
+    }
+
+    /**
+     * 홈(내 매장 목록)의 건수와 이 목록이 어긋나지 않으려면 같은 기준선({@code denialReportSince})을
+     * 써야 한다.
+     */
+    @Test
+    void getDenialAlerts_홈과_같은_기준선을_쓴다() {
+        when(facilityReportRepository.findDowngradingByFacilityId(eq(FACILITY_ID), any())).thenReturn(List.of());
+
+        ownerFacilityQueryService.getDenialAlerts(USER_ID, FACILITY_ID);
+
+        ArgumentCaptor<LocalDateTime> since = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(facilityReportRepository).findDowngradingByFacilityId(eq(FACILITY_ID), since.capture());
+        assertThat(since.getValue()).isCloseTo(
+                LocalDateTime.now().minusDays(FacilityReport.RECENT_WINDOW_DAYS),
+                within(10, ChronoUnit.SECONDS)
+        );
+    }
+
+    private FacilityReport denialReport(
+            long reportId,
+            DenialReason reason,
+            String content,
+            LocalDateTime createdAt
+    ) {
+        FacilityReport report = FacilityReport.builder()
+                .content(content)
+                .reportType(ReportType.DENIED)
+                .denialReason(reason)
+                .status(ReportStatus.APPLIED)
+                .isRealtime(true)
+                .build();
+        ReflectionTestUtils.setField(report, "reportId", reportId);
+        ReflectionTestUtils.setField(report, "createdAt", createdAt);
+        return report;
     }
 
     private BusinessResponseDTO.OwnerFacility firstFacility() {

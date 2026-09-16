@@ -13,6 +13,7 @@ import com.freepets.domain.facility.entity.CheckList;
 import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.Requirement;
+import com.freepets.domain.report.entity.FacilityReport;
 import com.freepets.domain.report.repository.DowngradingDenialReport;
 import com.freepets.infra.nts.NtsValidationResult;
 
@@ -193,6 +194,21 @@ public class BusinessConverter {
                 claim.getReviewedAt(),
                 claim.getReviewReason(),
                 approvedFacilityIds.contains(facility.getFacilityId())
+        );
+    }
+
+    public static BusinessResponseDTO.DenialAlertList toDenialAlertList(List<FacilityReport> reports) {
+        return new BusinessResponseDTO.DenialAlertList(
+                reports.stream().map(BusinessConverter::toDenialAlertDetail).toList()
+        );
+    }
+
+    private static BusinessResponseDTO.DenialAlertDetail toDenialAlertDetail(FacilityReport report) {
+        return new BusinessResponseDTO.DenialAlertDetail(
+                report.getReportId(),
+                report.getDenialReason(),
+                report.getContent(),
+                report.getCreatedAt()
         );
     }
 

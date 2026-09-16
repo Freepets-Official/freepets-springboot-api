@@ -118,4 +118,21 @@ public interface FacilityReportRepository extends JpaRepository<FacilityReport, 
             @Param("userId") Long userId,
             @Param("after") LocalDateTime after
     );
+
+    // GET /api/v1/owner/facilities/{facilityId}/denial-alerts — 거부 제보 전체 조회.
+    // countDowngradingByFacilityIds / findLatestDowngradingByFacilityIds와 같은 기준
+    // (isRealtime=true, since 이후, confirmedAt 이후)을 쓴다. 어긋나면 홈의 건수와 이 화면의
+    // 목록이 맞지 않는다. content를 내려야 해서 프로젝션이 아니라 엔티티를 그대로 셀렉트한다.
+    @Query("""
+            SELECT r FROM FacilityReport r
+            WHERE r.facility.facilityId = :facilityId
+              AND r.isRealtime = true
+              AND r.createdAt > :since
+              AND (r.facility.confirmedAt IS NULL OR r.createdAt > r.facility.confirmedAt)
+            ORDER BY r.createdAt DESC
+            """)
+    List<FacilityReport> findDowngradingByFacilityId(
+            @Param("facilityId") Long facilityId,
+            @Param("since") LocalDateTime since
+    );
 }

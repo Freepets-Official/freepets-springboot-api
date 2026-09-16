@@ -9,6 +9,8 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
@@ -290,5 +292,62 @@ class FacilityOwnerClaimRepositoryTest {
     void findAllWithFacilityByUserIdOrderByCreatedAtDesc_신청이_없으면_빈_목록을_반환한다() {
         assertThat(facilityOwnerClaimRepository.findAllWithFacilityByUserIdOrderByCreatedAtDesc(owner.getId()))
                 .isEmpty();
+    }
+
+    @Test
+    void findByStatus_같은_상태만_오래된_순으로_페이지네이션해서_반환한다() {
+        // 관리자 큐는 오래된 신청부터 처리하도록 오름차순이다 — 최신순인 내 신청 목록과 반대다.
+        FacilityOwnerClaim first = facilityOwnerClaimRepository.saveAndFlush(
+                createClaim(owner, createFacility("카페 파도살롱"), ClaimStatus.PENDING)
+        );
+        FacilityOwnerClaim second = facilityOwnerClaimRepository.saveAndFlush(
+                createClaim(owner, createFacility("강릉 중앙시장"), ClaimStatus.PENDING)
+        );
+        // 다른 상태는 섞이지 않아야 한다.
+        entityManager.persist(createClaim(owner, createFacility("이미 승인된 매장"), ClaimStatus.APPROVED));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<FacilityOwnerClaim> page = facilityOwnerClaimRepository.findByStatus(
+                ClaimStatus.PENDING, PageRequest.of(0, 1)
+        );
+
+        assertThat(page.getTotalElements()).isEqualTo(2);
+        assertThat(page.hasNext()).isTrue();
+        assertThat(page.getContent()).extracting(FacilityOwnerClaim::getClaimId).containsExactly(first.getClaimId());
+        assertThat(page.getContent().get(0).getFacility().getName()).isEqualTo("카페 파도살롱");
+
+        Page<FacilityOwnerClaim> secondPage = facilityOwnerClaimRepository.findByStatus(
+                ClaimStatus.PENDING, PageRequest.of(1, 1)
+        );
+        assertThat(secondPage.getContent()).extracting(FacilityOwnerClaim::getClaimId)
+                .containsExactly(second.getClaimId());
+        assertThat(secondPage.hasNext()).isFalse();
+    }
+
+    @Test
+    void findApprovedFacilityIdsIn_주어진_시설_중_승인된_것만_골라낸다() {
+        Facility approvedFacility = createFacility("카페 파도살롱");
+        Facility pendingFacility = createFacility("대기 매장");
+        Facility unrelatedFacility = createFacility("관계없는 매장");
+        entityManager.persist(createClaim(owner, approvedFacility, ClaimStatus.APPROVED));
+        entityManager.persist(createClaim(owner, pendingFacility, ClaimStatus.PENDING));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(facilityOwnerClaimRepository.findApprovedFacilityIdsIn(
+                List.of(approvedFacility.getFacilityId(), pendingFacility.getFacilityId(), unrelatedFacility.getFacilityId())
+        )).containsExactly(approvedFacility.getFacilityId());
+    }
+
+    @Test
+    void findByIdForUpdate_존재하는_신청을_찾는다() {
+        FacilityOwnerClaim saved = facilityOwnerClaimRepository.saveAndFlush(
+                createClaim(owner, createFacility("카페 파도살롱"), ClaimStatus.PENDING)
+        );
+        entityManager.clear();
+
+        assertThat(facilityOwnerClaimRepository.findByIdForUpdate(saved.getClaimId())).isPresent();
+        assertThat(facilityOwnerClaimRepository.findByIdForUpdate(-1L)).isEmpty();
     }
 }

@@ -89,4 +89,24 @@ public class BusinessRequestDTO {
         @NotNull(message = "사업자등록증 파일은 필수입니다.")
         private MultipartFile registrationCertificate;
     }
+
+    /** 관리자 반려. 사유는 신청자에게 보여줄 수 있어야 하므로 필수로 받는다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class RejectClaimRequest {
+
+        @NotBlank(message = "반려 사유는 필수입니다.")
+        private String reason;
+    }
+
+    /** 관리자의 승인 해제(이의 제기 처리). 사유는 신청자에게 보여줄 수 있어야 하므로 필수로 받는다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class RevokeClaimRequest {
+
+        @NotBlank(message = "해제 사유는 필수입니다.")
+        private String reason;
+    }
 }

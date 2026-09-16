@@ -3,11 +3,17 @@ package com.freepets.domain.business.repository;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import com.freepets.domain.business.entity.ClaimStatus;
 import com.freepets.domain.business.entity.FacilityOwnerClaim;
+
+import jakarta.persistence.LockModeType;
 
 public interface FacilityOwnerClaimRepository extends JpaRepository<FacilityOwnerClaim, Long> {
 
@@ -60,6 +66,42 @@ public interface FacilityOwnerClaimRepository extends JpaRepository<FacilityOwne
             ORDER BY claim.createdAt DESC
             """)
     List<FacilityOwnerClaim> findAllWithFacilityByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId);
+
+    /**
+     * 관리자 승인·반려·해제 전용 — 한 신청에 동시에 들어온 두 관리자 조작(예: 승인과 반려를 동시에 누름)을
+     * 직렬화한다. {@code FacilityOwnerClaimCommandService.apply}가 시설 행을 잠그는 것과 같은 이유다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT claim FROM FacilityOwnerClaim claim WHERE claim.claimId = :claimId")
+    Optional<FacilityOwnerClaim> findByIdForUpdate(@Param("claimId") Long claimId);
+
+    /**
+     * 관리자 심사 목록 — 신청자와 시설을 함께 가져온다(응답이 둘 다 쓴다). 오래된 신청부터 처리하도록
+     * 오름차순이다 — 최신순으로 내려주는 내 신청 목록({@link #findAllWithFacilityByUserIdOrderByCreatedAtDesc})과는
+     * 반대다.
+     */
+    @Query(value = """
+            SELECT claim FROM FacilityOwnerClaim claim
+            JOIN FETCH claim.facility
+            JOIN FETCH claim.user
+            WHERE claim.status = :status
+            ORDER BY claim.createdAt ASC
+            """,
+            countQuery = "SELECT COUNT(claim) FROM FacilityOwnerClaim claim WHERE claim.status = :status")
+    Page<FacilityOwnerClaim> findByStatus(
+            @Param("status") ClaimStatus status,
+            Pageable pageable
+    );
+
+    /**
+     * 주어진 시설들 중 이미 승인된 소유자가 있는 시설 ID만 골라낸다. 같은 매장의 다른 대기 신청을
+     * 자동 반려하지 않기로 해서, 관리자 목록이 "이미 주인이 있는 신청"을 알아볼 수 있어야 한다.
+     * 목록 페이지 크기만큼 한 번에 조회해 신청 건수만큼 쿼리가 나가는 걸 피한다.
+     */
+    @Query("SELECT claim.facility.facilityId FROM FacilityOwnerClaim claim"
+            + " WHERE claim.facility.facilityId IN :facilityIds"
+            + " AND claim.status = com.freepets.domain.business.entity.ClaimStatus.APPROVED")
+    List<Long> findApprovedFacilityIdsIn(@Param("facilityIds") List<Long> facilityIds);
 
     /**
      * 탈퇴 시 소유 기록을 지운다. 탈퇴는 소프트 삭제라 사용자 행이 남아 외래 키 CASCADE가 동작하지

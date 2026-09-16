@@ -95,6 +95,17 @@ public class FacilityOwnerClaim extends BaseEntity {
     @Column(name = "registration_certificate_url", columnDefinition = "TEXT")
     private String registrationCertificateUrl;
 
+    /** 반려·해제 사유. 승인에는 쓰지 않는다. */
+    @Column(name = "review_reason", columnDefinition = "TEXT")
+    private String reviewReason;
+
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
+    /** 심사한 관리자 userId. User 연관관계는 두지 않는다 — 이 값을 화면에서 관리자 정보로 역참조할 일이 없다. */
+    @Column(name = "reviewed_by_user_id")
+    private Long reviewedByUserId;
+
     @Builder
     private FacilityOwnerClaim(
             User user,
@@ -120,6 +131,37 @@ public class FacilityOwnerClaim extends BaseEntity {
      */
     public boolean isRequestedBy(Long userId) {
         return user.getId().equals(userId);
+    }
+
+    /**
+     * 신청을 승인한다. 전이 가능 여부(대기 상태인지)는 서비스 레이어가 조회 직후에 판단하고 여기서는
+     * 다시 확인하지 않는다 — 이 코드베이스의 다른 엔티티도 같은 방식이다.
+     */
+    public void approve(Long adminUserId) {
+        this.status = ClaimStatus.APPROVED;
+        this.reviewedAt = LocalDateTime.now();
+        this.reviewedByUserId = adminUserId;
+    }
+
+    public void reject(
+            String reason,
+            Long adminUserId
+    ) {
+        this.status = ClaimStatus.REJECTED;
+        this.reviewReason = reason;
+        this.reviewedAt = LocalDateTime.now();
+        this.reviewedByUserId = adminUserId;
+    }
+
+    /** 승인된 소유권을 해제한다(이의 제기 처리). 행을 지우지 않고 상태만 바꿔 이력을 남긴다. */
+    public void revoke(
+            String reason,
+            Long adminUserId
+    ) {
+        this.status = ClaimStatus.REVOKED;
+        this.reviewReason = reason;
+        this.reviewedAt = LocalDateTime.now();
+        this.reviewedByUserId = adminUserId;
     }
 
 }

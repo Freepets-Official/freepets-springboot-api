@@ -25,31 +25,27 @@ public class BadgeEvaluationService {
     private final XpEventRepository xpEventRepository;
     private final GamificationNotificationService gamificationNotificationService;
 
+    // 이미 보유 중이면 개수 조회 자체를 안 하도록, exists 확인을 count 쿼리보다 먼저 한다 —
+    // XpEvent 개수 집계가 매번 값싼 연산은 아니라서다. 같은 sourceType 안에서 6단계(동~다이아)를
+    // 전부 확인하지만, achievedCount는 한 sourceType당 한 번만 구해서 재사용한다 — 단계마다
+    // 매번 다시 세면 리뷰 작성 1건에 동일한 count 쿼리가 최대 6번 나간다.
     public void evaluateAfterXpEvent(
             User user,
             XpSourceType sourceType
     ) {
+        Long achievedCount = null;
         for (Badge badge : Badge.values()) {
             if (badge.getRelatedSourceType() != sourceType) {
                 continue;
             }
-            evaluateXpBadge(user, badge, sourceType);
+            if (userBadgeRepository.existsByUser_IdAndBadge(user.getId(), badge)) {
+                continue;
+            }
+            if (achievedCount == null) {
+                achievedCount = xpEventRepository.countByUser_IdAndSourceType(user.getId(), sourceType);
+            }
+            award(user, badge, achievedCount);
         }
-    }
-
-    // 이미 보유 중이면 개수 조회 자체를 안 하도록, exists 확인을 count 쿼리보다 먼저 한다 —
-    // XpEvent 개수 집계가 매번 값싼 연산은 아니라서다.
-    private void evaluateXpBadge(
-            User user,
-            Badge badge,
-            XpSourceType sourceType
-    ) {
-        if (userBadgeRepository.existsByUser_IdAndBadge(user.getId(), badge)) {
-            return;
-        }
-
-        long achievedCount = xpEventRepository.countByUser_IdAndSourceType(user.getId(), sourceType);
-        award(user, badge, achievedCount);
     }
 
     /**

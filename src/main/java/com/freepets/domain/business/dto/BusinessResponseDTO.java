@@ -43,7 +43,9 @@ public class BusinessResponseDTO {
     ) {}
 
     /**
-     * @param appliedAt 신청을 접수한 시각
+     * @param appliedAt    신청을 접수한 시각
+     * @param reviewReason 반려·해제 사유. 승인됐거나 아직 대기 중이면 {@code null} — 반려된 신청을
+     *                     사장님 화면에서 보여줄 수 있도록 {@link AdminClaim}에만 있던 값을 그대로 노출한다.
      */
     public record MyClaim(
             Long claimId,
@@ -51,7 +53,8 @@ public class BusinessResponseDTO {
             String facilityName,
             String facilityAddress,
             ClaimStatus status,
-            LocalDateTime appliedAt
+            LocalDateTime appliedAt,
+            String reviewReason
     ) {}
 
     /**

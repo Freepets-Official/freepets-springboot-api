@@ -64,7 +64,7 @@ public class ReviewResponseDTO {
             @JsonProperty("helpfulByMe")
             boolean isHelpfulByMe,
 
-            // 방문 인증샷(선택). 없으면 null.
+            // 방문 인증샷(선택). 없으면 @JsonInclude(NON_NULL)로 응답 JSON에서 키 자체가 빠진다.
             String photoUrl
     ) {}
 

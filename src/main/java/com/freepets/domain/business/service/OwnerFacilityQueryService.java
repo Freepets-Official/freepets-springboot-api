@@ -17,6 +17,8 @@ import com.freepets.domain.business.converter.BusinessConverter;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
 import com.freepets.domain.business.entity.FacilityOwnerClaim;
 import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
+import com.freepets.domain.facility.entity.FacilityBenefit;
+import com.freepets.domain.facility.repository.FacilityBenefitRepository;
 import com.freepets.domain.petcheck.repository.FacilityPetCheckCount;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.report.entity.FacilityReport;
@@ -48,6 +50,7 @@ public class OwnerFacilityQueryService {
     private final FacilityOwnerClaimRepository facilityOwnerClaimRepository;
     private final FacilityReportRepository facilityReportRepository;
     private final PetCheckRepository petCheckRepository;
+    private final FacilityBenefitRepository facilityBenefitRepository;
     private final FacilityOwnershipValidator facilityOwnershipValidator;
 
     /**
@@ -90,6 +93,18 @@ public class OwnerFacilityQueryService {
                 denialReportSince()
         );
         return BusinessConverter.toDenialAlertList(reports);
+    }
+
+    /**
+     * 방문 혜택 관리 화면 목록. on/off 상관없이 등록순으로 전부 보여준다 — 켜진 것만 보이는
+     * 손님 노출({@code FacilityQueryService.getFacilityDetail})과는 다른 조회다.
+     */
+    public BusinessResponseDTO.VisitBenefitList getBenefits(Long userId, Long facilityId) {
+        facilityOwnershipValidator.requireOwner(userId, facilityId);
+
+        List<FacilityBenefit> benefits = facilityBenefitRepository
+                .findAllByFacility_FacilityIdOrderByCreatedAtAsc(facilityId);
+        return BusinessConverter.toVisitBenefitList(benefits);
     }
 
     private Map<Long, Long> countDenialAlerts(

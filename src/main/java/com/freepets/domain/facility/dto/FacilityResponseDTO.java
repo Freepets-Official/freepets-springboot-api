@@ -163,7 +163,10 @@ public class FacilityResponseDTO {
 
             // 사장님이 전하는 우리 매장. 소개글도 없고 편의시설 태그도 비어 있으면 null이라, 화면이
             // 이 블록 자체를 숨긴다.
-            OwnerIntroduction ownerIntroduction
+            OwnerIntroduction ownerIntroduction,
+
+            // 방문 혜택. 켜진 것만, 등록순. 없으면 빈 목록이라 화면이 섹션을 숨긴다.
+            List<VisitBenefit> visitBenefits
     ) {}
 
     /**
@@ -174,5 +177,15 @@ public class FacilityResponseDTO {
     public record OwnerIntroduction(
             String introduction,
             List<FacilityAmenity> amenityTags
+    ) {}
+
+    /**
+     * 방문 혜택 한 건. 사업자 대시보드 DTO({@code BusinessResponseDTO.VisitBenefit})와 모양은 비슷하지만
+     * {@code benefitId}·{@code isEnabled}는 손님에게 줄 이유가 없어 뺀다 — 켜진 것만 내려가므로 손님
+     * 쪽에서는 토글 상태를 알 필요가 없다.
+     */
+    public record VisitBenefit(
+            String title,
+            String description
     ) {}
 }

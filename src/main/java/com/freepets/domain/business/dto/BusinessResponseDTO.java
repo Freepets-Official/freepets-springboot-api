@@ -222,6 +222,28 @@ public class BusinessResponseDTO {
             LocalDateTime reportedAt
     ) {}
 
+    /**
+     * 방문 혜택 관리 화면 — 소유 매장에 등록된 혜택을 켜짐/꺼짐 상관없이 등록순으로 전부 보여준다.
+     */
+    public record VisitBenefitList(
+            List<VisitBenefit> benefits
+    ) {}
+
+    /**
+     * 방문 혜택 한 건. {@code isEnabled}가 꺼져 있으면 손님에게는 보이지 않지만 이 관리 화면에는
+     * 계속 남아 있다 — 삭제와는 별개 동작이다.
+     */
+    public record VisitBenefit(
+            Long benefitId,
+            String title,
+            String description,
+            boolean isEnabled
+    ) {}
+
+    public record VisitBenefitDeleteResult(
+            Long benefitId
+    ) {}
+
     public record PageInfo(
             int page,
             int size,

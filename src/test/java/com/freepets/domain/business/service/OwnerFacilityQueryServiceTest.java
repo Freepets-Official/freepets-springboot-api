@@ -35,9 +35,11 @@ import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
 import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.ConfidenceSource;
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.FacilityBenefit;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
+import com.freepets.domain.facility.repository.FacilityBenefitRepository;
 import com.freepets.domain.petcheck.repository.FacilityPetCheckCount;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.report.entity.DenialReason;
@@ -67,6 +69,9 @@ class OwnerFacilityQueryServiceTest {
 
     @Mock
     private PetCheckRepository petCheckRepository;
+
+    @Mock
+    private FacilityBenefitRepository facilityBenefitRepository;
 
     @Mock
     private FacilityOwnershipValidator facilityOwnershipValidator;
@@ -263,6 +268,46 @@ class OwnerFacilityQueryServiceTest {
                 LocalDateTime.now().minusDays(FacilityReport.RECENT_WINDOW_DAYS),
                 within(10, ChronoUnit.SECONDS)
         );
+    }
+
+    @Test
+    void getBenefits_소유자가_아니면_403으로_막고_혜택을_조회하지_않는다() {
+        doThrow(new GeneralException(ErrorStatus.BUSINESS4008))
+                .when(facilityOwnershipValidator).requireOwner(USER_ID, FACILITY_ID);
+
+        GeneralException exception = catchThrowableOfType(
+                () -> ownerFacilityQueryService.getBenefits(USER_ID, FACILITY_ID),
+                GeneralException.class
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4008);
+        verify(facilityBenefitRepository, never()).findAllByFacility_FacilityIdOrderByCreatedAtAsc(any());
+    }
+
+    /** 관리 화면은 on/off 상관없이 전부 보여준다 — 손님 노출용(켜진 것만)과는 다른 조회다. */
+    @Test
+    void getBenefits_on_off_상관없이_등록순으로_전부_내려준다() {
+        Facility facility = confirmedFacility();
+        FacilityBenefit enabled = FacilityBenefit.builder()
+                .facility(facility)
+                .title("출입증 제시 시 음료 10% 할인")
+                .description("프리펫츠 동반 출입증을 보여주세요")
+                .build();
+        FacilityBenefit disabled = FacilityBenefit.builder()
+                .facility(facility)
+                .title("여름 시즌 아이스크림 증정")
+                .build();
+        disabled.disable();
+        when(facilityBenefitRepository.findAllByFacility_FacilityIdOrderByCreatedAtAsc(FACILITY_ID))
+                .thenReturn(List.of(enabled, disabled));
+
+        BusinessResponseDTO.VisitBenefitList result = ownerFacilityQueryService.getBenefits(USER_ID, FACILITY_ID);
+
+        assertThat(result.benefits()).hasSize(2);
+        assertThat(result.benefits().get(0).title()).isEqualTo("출입증 제시 시 음료 10% 할인");
+        assertThat(result.benefits().get(0).isEnabled()).isTrue();
+        assertThat(result.benefits().get(1).title()).isEqualTo("여름 시즌 아이스크림 증정");
+        assertThat(result.benefits().get(1).isEnabled()).isFalse();
     }
 
     private FacilityReport denialReport(

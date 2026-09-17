@@ -1,8 +1,11 @@
 package com.freepets.domain.business.controller;
 
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -10,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.freepets.domain.business.dto.BusinessRequestDTO;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
+import com.freepets.domain.business.service.OwnerFacilityBenefitCommandService;
 import com.freepets.domain.business.service.OwnerFacilityConditionCommandService;
 import com.freepets.domain.business.service.OwnerFacilityProfileCommandService;
 import com.freepets.domain.business.service.OwnerFacilityQueryService;
@@ -38,6 +42,7 @@ public class OwnerFacilityController {
     private final OwnerFacilityQueryService ownerFacilityQueryService;
     private final OwnerFacilityConditionCommandService ownerFacilityConditionCommandService;
     private final OwnerFacilityProfileCommandService ownerFacilityProfileCommandService;
+    private final OwnerFacilityBenefitCommandService ownerFacilityBenefitCommandService;
 
     /**
      * 내 매장 목록. 대시보드 첫 화면이 이 API로 매장 카드를 그리고, 사장님이 카드를 골라 관리 대상을 정한다.
@@ -91,6 +96,62 @@ public class OwnerFacilityController {
     ) {
         return ApiResponse.onSuccess(
                 ownerFacilityProfileCommandService.updateProfile(userId, facilityId, request)
+        );
+    }
+
+    /**
+     * 방문 혜택 관리 화면 목록. on/off 상관없이 등록순으로 전부 보여준다.
+     */
+    @GetMapping("/facilities/{facilityId}/benefits")
+    public ApiResponse<BusinessResponseDTO.VisitBenefitList> getBenefits(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long facilityId
+    ) {
+        return ApiResponse.onSuccess(
+                ownerFacilityQueryService.getBenefits(userId, facilityId)
+        );
+    }
+
+    /**
+     * 방문 혜택 추가.
+     */
+    @PostMapping("/facilities/{facilityId}/benefits")
+    public ApiResponse<BusinessResponseDTO.VisitBenefit> createBenefit(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long facilityId,
+            @Valid @RequestBody BusinessRequestDTO.VisitBenefitCreateRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                ownerFacilityBenefitCommandService.createBenefit(userId, facilityId, request)
+        );
+    }
+
+    /**
+     * 방문 혜택 삭제. 노출 끄기(on/off 토글)와 달리 되돌릴 수 없는 하드 삭제다.
+     */
+    @DeleteMapping("/facilities/{facilityId}/benefits/{benefitId}")
+    public ApiResponse<BusinessResponseDTO.VisitBenefitDeleteResult> deleteBenefit(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long facilityId,
+            @PathVariable Long benefitId
+    ) {
+        return ApiResponse.onSuccess(
+                ownerFacilityBenefitCommandService.deleteBenefit(userId, facilityId, benefitId)
+        );
+    }
+
+    /**
+     * 방문 혜택 노출 on/off. 끄면 손님에게 안 보이지만 삭제되지는 않는다(계절 혜택 재사용).
+     */
+    @PatchMapping("/facilities/{facilityId}/benefits/{benefitId}/enabled")
+    public ApiResponse<BusinessResponseDTO.VisitBenefit> updateBenefitEnabled(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long facilityId,
+            @PathVariable Long benefitId,
+            @Valid @RequestBody BusinessRequestDTO.VisitBenefitEnabledUpdateRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                ownerFacilityBenefitCommandService.updateEnabled(userId, facilityId, benefitId, request)
         );
     }
 }

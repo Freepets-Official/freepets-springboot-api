@@ -8,6 +8,7 @@ import java.util.Locale;
 
 import org.springframework.web.util.HtmlUtils;
 
+import com.freepets.domain.petcheck.dto.PetCheckResponseDTO.VerifyBenefit;
 import com.freepets.domain.petcheck.dto.PetCheckResponseDTO.VerifyPage;
 import com.freepets.domain.petcheck.dto.PetCheckResponseDTO.VerifyPetInfo;
 import com.freepets.domain.petcheck.entity.PetCheckResult;
@@ -43,6 +44,7 @@ final class VerifyPageHtmlRenderer {
 
         String conditionsSection = renderConditions(page.conditions());
         String rawSection = renderRawCondition(page.petConditionRaw(), page.confirmedAt());
+        String benefitsSection = renderBenefits(page.benefits());
 
         String body = """
                 <div class="page">
@@ -59,6 +61,8 @@ final class VerifyPageHtmlRenderer {
                       </div>
                       <div class="result-chip" style="background:%s">%s</div>
                     </div>
+
+                    %s
 
                     %s
 
@@ -83,6 +87,7 @@ final class VerifyPageHtmlRenderer {
                 petSection,
                 conditionsSection,
                 rawSection,
+                benefitsSection,
                 escape(page.reason()),
                 formatIssuedAt(page.issuedAt())
         );
@@ -186,6 +191,34 @@ final class VerifyPageHtmlRenderer {
                   <div class="raw-source">%s</div>
                 </div>
                 """.formatted(escape(petConditionRaw), escape(source));
+    }
+
+    // 혜택 문구가 "출입증 제시 시"라 이 페이지에서 바로 보여야 손님이 앱을 따로 열 필요가 없다.
+    // 켜진 혜택이 없으면 섹션 자체를 그리지 않는다.
+    private static String renderBenefits(List<VerifyBenefit> benefits) {
+        if (benefits == null || benefits.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder items = new StringBuilder();
+        for (VerifyBenefit benefit : benefits) {
+            String description = benefit.description() == null || benefit.description().isBlank()
+                    ? ""
+                    : "<div class=\"benefit-desc\">" + escape(benefit.description()) + "</div>";
+            items.append("""
+                    <div class="benefit-row">
+                      <div class="benefit-title">%s</div>
+                      %s
+                    </div>
+                    """.formatted(escape(benefit.title()), description));
+        }
+
+        return """
+                <div class="box">
+                  <div class="box-label">방문 혜택</div>
+                  %s
+                </div>
+                """.formatted(items);
     }
 
     // result 하나당 화면에 필요한 문구·색을 한곳에 묶는다 — result별 스위치가 4개로 흩어져
@@ -306,6 +339,10 @@ final class VerifyPageHtmlRenderer {
             .conditions { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
             .raw-text { font-size: 12.5px; line-height: 1.55; margin-top: 5px; }
             .raw-source { font-size: 10.5px; color: #8A8578; margin-top: 6px; }
+            .benefit-row { margin-top: 8px; }
+            .benefit-row:first-of-type { margin-top: 6px; }
+            .benefit-title { font-size: 13px; font-weight: 800; }
+            .benefit-desc { font-size: 12px; color: #6B6759; margin-top: 2px; line-height: 1.5; }
             .reason { font-size: 12.5px; line-height: 1.5; color: #45423B; padding: 0 2px; }
             .muted { color: #6B6759; font-size: 13px; }
             .issued {

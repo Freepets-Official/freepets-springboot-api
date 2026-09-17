@@ -136,6 +136,30 @@ public class BusinessRequestDTO {
         private List<FacilityAmenity> amenityTags;
     }
 
+    /** 방문 혜택 추가. 상세 안내는 선택이다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class VisitBenefitCreateRequest {
+
+        @NotBlank(message = "제목은 필수입니다.")
+        @Size(max = 50, message = "제목은 50자 이내로 입력해주세요.")
+        private String title;
+
+        @Size(max = 300, message = "상세 안내는 300자 이내로 입력해주세요.")
+        private String description;
+    }
+
+    /** 방문 혜택 노출 on/off. 목표 상태를 명시적으로 받는다 — blind toggle은 중복 호출에 취약하다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class VisitBenefitEnabledUpdateRequest {
+
+        @NotNull(message = "노출 여부는 필수입니다.")
+        private Boolean isEnabled;
+    }
+
     /** 관리자 반려. 사유는 신청자에게 보여줄 수 있어야 하므로 필수로 받는다. */
     @Getter
     @Setter

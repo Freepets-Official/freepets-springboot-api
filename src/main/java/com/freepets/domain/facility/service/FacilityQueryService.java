@@ -14,6 +14,8 @@ import com.freepets.domain.facility.converter.FacilityConverter;
 import com.freepets.domain.facility.dto.FacilityRequestDTO;
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.FacilityBenefit;
+import com.freepets.domain.facility.repository.FacilityBenefitRepository;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.facility.repository.FacilityWithDistance;
 import com.freepets.domain.facility.repository.RegionRepository;
@@ -43,6 +45,7 @@ public class FacilityQueryService {
     private final PetRepository petRepository;
     private final RegionRepository regionRepository;
     private final FacilityReportRepository facilityReportRepository;
+    private final FacilityBenefitRepository facilityBenefitRepository;
 
     public FacilityResponseDTO.FacilitySearchResult searchFacilities(FacilityRequestDTO.SearchRequest request) {
         double userLatitudeRadian = Math.toRadians(request.getLatitude());
@@ -310,7 +313,10 @@ public class FacilityQueryService {
                 denialReportSince(facility)
         );
 
-        return FacilityConverter.toFacilityDetail(facility, distanceM, aggregate, myPets, recentDenialReportCount);
+        List<FacilityBenefit> benefits = facilityBenefitRepository
+                .findAllByFacility_FacilityIdAndIsEnabledTrueOrderByCreatedAtAsc(facilityId);
+
+        return FacilityConverter.toFacilityDetail(facility, distanceM, aggregate, myPets, recentDenialReportCount, benefits);
     }
 
     /**

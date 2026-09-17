@@ -3,6 +3,7 @@ package com.freepets.domain.petcheck.converter;
 import java.util.List;
 
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.FacilityBenefit;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.petcheck.dto.PetCheckResponseDTO;
 import com.freepets.domain.petcheck.entity.PetCheck;
@@ -72,7 +73,11 @@ public class PetCheckConverter {
     }
 
     // GET /verify/{code} — verdict 하나를 검증 페이지 렌더링용 데이터로 변환.
-    public static PetCheckResponseDTO.VerifyPage toVerifyPage(PetCheckVerdict verdict) {
+    // benefits는 verdict/petCheck에 저장돼 있지 않아(조회 시점의 시설 상태) 호출자가 따로 조회해 넘긴다.
+    public static PetCheckResponseDTO.VerifyPage toVerifyPage(
+            PetCheckVerdict verdict,
+            List<FacilityBenefit> benefits
+    ) {
         PetCheck petCheck = verdict.getPetCheck();
         Facility facility = petCheck.getFacility();
 
@@ -85,8 +90,15 @@ public class PetCheckConverter {
                 verdict.getReason(),
                 facility.getPetConditionRaw(),
                 facility.getConfirmedAt(),
-                petCheck.getCreatedAt()
+                petCheck.getCreatedAt(),
+                toVerifyBenefits(benefits)
         );
+    }
+
+    private static List<PetCheckResponseDTO.VerifyBenefit> toVerifyBenefits(List<FacilityBenefit> benefits) {
+        return benefits.stream()
+                .map(benefit -> new PetCheckResponseDTO.VerifyBenefit(benefit.getTitle(), benefit.getDescription()))
+                .toList();
     }
 
     // pet이 null이면(반려동물 삭제됨, ON DELETE SET NULL) 화면이 대체 문구를 쓰도록 null 그대로 넘긴다.

@@ -196,7 +196,8 @@ class FacilityControllerTest {
                 new FacilityResponseDTO.Ratings(88.4, 4.5, 4.8, 4.2),
                 List.of(new FacilityResponseDTO.OwnedPet(1L, "몽이", new BigDecimal("3.20"))),
                 false,
-                null
+                null,
+                List.of()
         );
     }
 

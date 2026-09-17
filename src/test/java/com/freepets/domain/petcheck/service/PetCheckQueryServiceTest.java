@@ -32,6 +32,7 @@ import com.freepets.domain.petcheck.dto.PetCheckResponseDTO;
 import com.freepets.domain.petcheck.entity.PetCheck;
 import com.freepets.domain.petcheck.entity.PetCheckResult;
 import com.freepets.domain.petcheck.entity.PetCheckVerdict;
+import com.freepets.domain.facility.repository.FacilityBenefitRepository;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.petcheck.repository.PetCheckVerdictRepository;
 import com.freepets.global.apiPayload.exception.GeneralException;
@@ -45,6 +46,9 @@ class PetCheckQueryServiceTest {
 
     @Mock
     private PetCheckVerdictRepository petCheckVerdictRepository;
+
+    @Mock
+    private FacilityBenefitRepository facilityBenefitRepository;
 
     @InjectMocks
     private PetCheckQueryService petCheckQueryService;

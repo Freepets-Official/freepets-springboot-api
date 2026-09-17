@@ -12,6 +12,7 @@ import com.freepets.domain.business.entity.RequestedCondition;
 import com.freepets.domain.facility.entity.CheckList;
 import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.FacilityBenefit;
 import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.domain.report.entity.FacilityReport;
 import com.freepets.domain.report.repository.DowngradingDenialReport;
@@ -217,6 +218,21 @@ public class BusinessConverter {
                 report.getDenialReason(),
                 report.getContent(),
                 report.getCreatedAt()
+        );
+    }
+
+    public static BusinessResponseDTO.VisitBenefitList toVisitBenefitList(List<FacilityBenefit> benefits) {
+        return new BusinessResponseDTO.VisitBenefitList(
+                benefits.stream().map(BusinessConverter::toVisitBenefit).toList()
+        );
+    }
+
+    public static BusinessResponseDTO.VisitBenefit toVisitBenefit(FacilityBenefit benefit) {
+        return new BusinessResponseDTO.VisitBenefit(
+                benefit.getFacilityBenefitId(),
+                benefit.getTitle(),
+                benefit.getDescription(),
+                benefit.isEnabled()
         );
     }
 

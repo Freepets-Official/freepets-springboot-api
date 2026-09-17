@@ -280,4 +280,16 @@ class SecurityFilterChainTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("COMMON401"));
     }
+
+    // "/api/v1/facilities/*/reviews"를 permitAll에 메소드 제한 없이 넣으면, 같은 경로의
+    // POST(리뷰 작성)까지 같이 열려버려서 익명 요청이 컨트롤러까지 들어가 버린다 — GET만 열려야
+    // 한다(SecurityConfig의 HttpMethod.GET 스코프 규칙 참고).
+    @Test
+    void 리뷰_작성은_토큰없이_401을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/facilities/1/reviews")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"petIds\":[1],\"ratingSpace\":5,\"ratingStaff\":5,\"ratingAmenity\":5,\"content\":\"좋았어요\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("COMMON401"));
+    }
 }

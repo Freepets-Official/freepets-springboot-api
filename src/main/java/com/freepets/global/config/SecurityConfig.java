@@ -2,6 +2,7 @@ package com.freepets.global.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -51,8 +52,15 @@ public class SecurityConfig {
             // 잡는다 — 대신 /facilities/regions는 이 목록에 없어야 계속 인증이 필요한데, 아래
             // securityFilterChain에서 이 permitAll보다 먼저 그 경로를 authenticated()로 명시해
             // 순서상 막아둔다(안 그러면 이 와일드카드에 걸려 같이 열려버린다).
+            //
+            // "/api/v1/facilities/*/reviews"는 여기 안 넣는다 — 이 패턴은 메소드를 안 가려서
+            // GET(목록 조회)뿐 아니라 같은 경로의 POST(리뷰 작성, ReviewController.upsertReview)까지
+            // permitAll로 열어버린다. 그 POST는 여전히 @AuthenticationPrincipal Long userId로
+            // 본인 확인을 하므로, 익명 요청이 그대로 들어오면 익명 principal("anonymousUser"
+            // 문자열)을 Long에 바인딩하려다 500이 난다 — 인증 경계가 뚫리는 게 아니라 깨지는
+            // 것뿐이지만 의도한 동작이 아니다. 그래서 GET만 메소드로 제한해서 아래
+            // securityFilterChain에 따로 등록한다.
             "/api/v1/facilities/*",
-            "/api/v1/facilities/*/reviews",
             "/api/v1/facilities/*/denial-reports/recent",
             // 소셜 로그인. 아직 우리 토큰이 없는 상태로 들어오므로 인증을 요구할 수 없다.
             "/api/v1/auth/social/*",
@@ -89,6 +97,9 @@ public class SecurityConfig {
                         // 먼저 매치되는 규칙이 이기므로, 이 줄이 없으면 regions도 그 와일드카드에
                         // 걸려 같이 열려버린다. regions는 이번 게스트 모드 요청 범위에 없다.
                         .requestMatchers("/api/v1/facilities/regions").authenticated()
+                        // GET만 연다 — 같은 경로의 POST(리뷰 작성)는 계속 인증이 필요하다
+                        // (PERMIT_ALL_PATTERNS의 "/api/v1/facilities/*/reviews" 주석 참고).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/facilities/*/reviews").permitAll()
                         .requestMatchers(PERMIT_ALL_PATTERNS).permitAll()
                         .requestMatchers(ADMIN_PATTERN).access(requireAdminRole())
                         .anyRequest().authenticated())

@@ -8,6 +8,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer.FrameOptionsConfig;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
@@ -58,10 +59,13 @@ public class SecurityConfig {
             //
             // {facilityId}는 숫자로 제한해서 연다 — "*"로 열면 같은 depth의 /facilities/regions
             // (인증 필요, 이번 범위 밖)까지 같이 열려버린다.
+            //
+            // "/api/v1/facilities/*/reviews"는 여기(문자열 패턴)에 안 둔다 — requestMatchers(String...)는
+            // HTTP 메소드를 가리지 않아서 같은 경로의 POST(리뷰 작성)까지 함께 열려버린다. 그래서
+            // GET만 허용하는 HttpMethod 오버로드로 아래 authorizeHttpRequests에서 따로 연다.
             "/api/v1/facilities/search",
             "/api/v1/facilities/ranking",
             "/api/v1/facilities/{facilityId:[0-9]+}",
-            "/api/v1/facilities/*/reviews",
             "/api/v1/facilities/*/denial-reports/recent",
             "/swagger-ui/**",
             "/swagger-ui.html",
@@ -87,6 +91,9 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(headers -> headers.frameOptions(FrameOptionsConfig::sameOrigin))
                 .authorizeHttpRequests(authorize -> authorize
+                        // 게스트 모드 대상이지만 GET만 열어야 하는 경로 — 같은 경로의 쓰기(POST 등)는
+                        // 아래 anyRequest().authenticated()에 그대로 걸려 인증이 필요하다.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/facilities/*/reviews").permitAll()
                         .requestMatchers(PERMIT_ALL_PATTERNS).permitAll()
                         .requestMatchers(ADMIN_PATTERN).access(requireAdminRole())
                         .anyRequest().authenticated())

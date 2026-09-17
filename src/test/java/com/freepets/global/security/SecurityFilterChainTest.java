@@ -310,4 +310,16 @@ class SecurityFilterChainTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("COMMON401"));
     }
+
+    // requestMatchers(String...)는 HTTP 메소드를 가리지 않아서, 리뷰 목록 조회(GET)만 게스트에게
+    // 열려고 "/api/v1/facilities/*/reviews"를 문자열 패턴에 두면 같은 경로의 리뷰 작성(POST)까지
+    // 같이 열려버린다. GET만 permitAll인지, POST는 여전히 인증이 필요한지 둘 다 확인한다.
+    @Test
+    void 리뷰_작성은_토큰없이_401을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/facilities/1/reviews")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("COMMON401"));
+    }
 }

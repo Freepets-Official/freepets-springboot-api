@@ -104,6 +104,17 @@ public class ReviewQueryService {
         return new ReviewResponseDTO.ReviewListResult(grade, categoryAverages, topTags, reviewDetails, pageInfo);
     }
 
+    /**
+     * 게이미피케이션 "구원자" 진행도(progress[])가 쓰는 값 — 이 유저가 쓴 리뷰 전체가 지금까지
+     * 받은 "도움됐어요" 총합. 리뷰 도메인이 소유한 집계를 그대로 노출하는 조회 전용 메소드다 —
+     * 게이미피케이션 쪽이 이 리포지토리를 직접 참조하지 않고 이 메소드를 통해서만 가져가게
+     * 해서, 의존 방향이 항상 "게이미피케이션 → 리뷰의 서비스"로만 흐르게 한다(리포지토리까지
+     * 뚫고 들어가지 않는다).
+     */
+    public long getTotalHelpfulReceived(Long userId) {
+        return reviewRepository.sumHelpfulCountByUserId(userId);
+    }
+
     // 등급 집계는 시설 전체 리뷰가 필요해서 페이지네이션 없이 다 불러온 뒤, 화면에 내려줄
     // 목록만 여기서 요청받은 size 단위로 잘라낸다. page가 범위를 벗어나면 빈 목록을 반환한다.
     private List<Review> paginate(

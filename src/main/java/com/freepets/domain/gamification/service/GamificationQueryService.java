@@ -14,7 +14,7 @@ import com.freepets.domain.gamification.entity.UserBadge;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.repository.UserBadgeRepository;
 import com.freepets.domain.gamification.repository.XpEventRepository;
-import com.freepets.domain.review.repository.ReviewRepository;
+import com.freepets.domain.review.service.ReviewQueryService;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -33,11 +33,11 @@ public class GamificationQueryService {
     private final XpEventRepository xpEventRepository;
 
     // HELPFUL 패밀리(도움됐어요 총합)만 XpEvent가 안 생기는 행동이라 리뷰 도메인의 합계를
-    // 그대로 읽어야 한다 — 리뷰 도메인이 소유한 값을 조회 전용으로 가져오는 것뿐이라(쓰기
-    // 로직은 여전히 GamificationService.evaluateHelpfulSaviorBadge처럼 호출부가 계산해서
-    // 넘기는 방향을 지킨다), 이 화면 전용 조회 하나를 위해 리뷰 도메인에 새 메소드를 얹기보다
-    // 이미 있는 집계 쿼리를 바로 재사용한다.
-    private final ReviewRepository reviewRepository;
+    // 그대로 읽어야 한다 — 리뷰 도메인의 리포지토리를 직접 참조하지 않고, 그 도메인이 소유한
+    // 조회 서비스(ReviewQueryService.getTotalHelpfulReceived)를 통해서만 가져온다. 의존
+    // 방향이 "게이미피케이션 → 리뷰의 서비스"로만 흐르게 해서, 리포지토리까지 두 도메인이
+    // 서로 직접 건드리는 걸 막는다.
+    private final ReviewQueryService reviewQueryService;
 
     public GamificationResponseDTO.MyStatus getMyStatus(Long userId) {
         User user = userRepository.findById(userId)
@@ -48,22 +48,24 @@ public class GamificationQueryService {
         return GamificationConverter.toMyStatus(user, badges, familyCounts);
     }
 
+    // sourceType이 있는 6개 패밀리는 그룹 쿼리 하나로 한 번에 가져온다 — 패밀리 수만큼
+    // countByUser_IdAndSourceType을 반복 호출하지 않는다(패밀리가 7개면 count 쿼리 6번이 매
+    // 조회마다 나가던 것 — 이 화면은 앱 진입 때마다 불릴 수 있는 곳이라 그 차이가 크다).
+    // HELPFUL은 XpEvent 기반이 아니라 이 그룹 쿼리에 안 잡히므로 별도로 채운다.
     private Map<BadgeFamily, Long> countByFamily(Long userId) {
+        Map<XpSourceType, Long> xpEventCounts = new EnumMap<>(XpSourceType.class);
+        for (XpEventRepository.SourceTypeCount row : xpEventRepository.countGroupedByUser_Id(userId)) {
+            xpEventCounts.put(row.getSourceType(), row.getCount());
+        }
+
         Map<BadgeFamily, Long> counts = new EnumMap<>(BadgeFamily.class);
         for (BadgeFamily family : BadgeFamily.values()) {
-            counts.put(family, countFor(family, userId));
+            XpSourceType sourceType = family.getRelatedSourceType();
+            long count = sourceType != null
+                    ? xpEventCounts.getOrDefault(sourceType, 0L)
+                    : reviewQueryService.getTotalHelpfulReceived(userId);
+            counts.put(family, count);
         }
         return counts;
-    }
-
-    private long countFor(
-            BadgeFamily family,
-            Long userId
-    ) {
-        XpSourceType sourceType = family.getRelatedSourceType();
-        if (sourceType != null) {
-            return xpEventRepository.countByUser_IdAndSourceType(userId, sourceType);
-        }
-        return reviewRepository.sumHelpfulCountByUserId(userId);
     }
 }

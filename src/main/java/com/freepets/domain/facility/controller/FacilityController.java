@@ -2,7 +2,6 @@ package com.freepets.domain.facility.controller;
 
 import java.util.List;
 
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -17,6 +16,7 @@ import com.freepets.domain.facility.dto.FacilityRequestDTO;
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
 import com.freepets.domain.facility.service.FacilityQueryService;
 import com.freepets.global.apiPayload.ApiResponse;
+import com.freepets.global.security.CurrentUserResolver;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
@@ -93,10 +93,14 @@ public class FacilityController {
      *
      * <p>좌표는 선택이다. 위치 권한을 거부했거나 딥링크로 바로 들어온 경우 거리를 낼 수 없으므로
      * {@code distanceM}만 비워서 내려준다. 다만 둘 중 하나만 보내는 것은 실수이므로 400으로 막는다.
+     *
+     * <p>로그인 불필요 — 게스트 모드(로그인 전 시설 탐색)로도 열려야 한다. 로그인 상태면
+     * {@code myOwnedPets}·{@code hasNonDogCatPet} 등 개인화 필드가 채워지고, 아니면 빈 값으로
+     * 내려간다({@code CurrentUserResolver} 참고 — permitAll 경로라 {@code @AuthenticationPrincipal}을
+     * 그대로 못 쓴다).
      */
     @GetMapping("/{facilityId}")
     public ApiResponse<FacilityResponseDTO.FacilityDetail> getFacilityDetail(
-            @AuthenticationPrincipal Long userId,
             @PathVariable("facilityId") Long facilityId,
             @RequestParam(name = "latitude", required = false)
             @DecimalMin(value = "-90.0", message = "위도는 -90 이상이어야 합니다.")
@@ -108,7 +112,7 @@ public class FacilityController {
             Double longitude
     ) {
         return ApiResponse.onSuccess(
-                facilityQueryService.getFacilityDetail(facilityId, userId, latitude, longitude)
+                facilityQueryService.getFacilityDetail(facilityId, CurrentUserResolver.resolveOptionalUserId(), latitude, longitude)
         );
     }
 }

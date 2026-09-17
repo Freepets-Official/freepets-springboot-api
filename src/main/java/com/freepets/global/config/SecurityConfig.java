@@ -45,6 +45,15 @@ public class SecurityConfig {
             // 1.0 앱이 로그인 여부와 무관하게 항상 보여주던 하드코딩 공지를 대체하는 API라
             // 마찬가지로 로그인 전에도 열려있어야 한다(Notice 엔티티 참고).
             "/api/v1/notices",
+            // 게스트 모드(로그인 없이 시설 탐색) — 애플 심사 요건. 토큰이 있으면 지금처럼
+            // 개인화되고(CurrentUserResolver), 없으면 공개 데이터만 내려간다.
+            // "/api/v1/facilities/*"는 한 세그먼트짜리 경로 전부(검색 아님·상세·랭킹)를 묶어서
+            // 잡는다 — 대신 /facilities/regions는 이 목록에 없어야 계속 인증이 필요한데, 아래
+            // securityFilterChain에서 이 permitAll보다 먼저 그 경로를 authenticated()로 명시해
+            // 순서상 막아둔다(안 그러면 이 와일드카드에 걸려 같이 열려버린다).
+            "/api/v1/facilities/*",
+            "/api/v1/facilities/*/reviews",
+            "/api/v1/facilities/*/denial-reports/recent",
             // 소셜 로그인. 아직 우리 토큰이 없는 상태로 들어오므로 인증을 요구할 수 없다.
             "/api/v1/auth/social/*",
             // 액세스 토큰이 만료된 상태로 들어오는 요청이라 인증을 요구할 수 없다.
@@ -76,6 +85,10 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(headers -> headers.frameOptions(FrameOptionsConfig::sameOrigin))
                 .authorizeHttpRequests(authorize -> authorize
+                        // "/api/v1/facilities/*"(permitAll)보다 먼저 선언해야 한다 — authorizeHttpRequests는
+                        // 먼저 매치되는 규칙이 이기므로, 이 줄이 없으면 regions도 그 와일드카드에
+                        // 걸려 같이 열려버린다. regions는 이번 게스트 모드 요청 범위에 없다.
+                        .requestMatchers("/api/v1/facilities/regions").authenticated()
                         .requestMatchers(PERMIT_ALL_PATTERNS).permitAll()
                         .requestMatchers(ADMIN_PATTERN).access(requireAdminRole())
                         .anyRequest().authenticated())

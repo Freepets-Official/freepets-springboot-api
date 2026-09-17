@@ -29,6 +29,14 @@ import com.freepets.domain.course.service.CourseLikedService;
 import com.freepets.domain.course.service.CoursePresetService;
 import com.freepets.domain.course.service.CourseQueryService;
 import com.freepets.domain.course.service.CourseSimilarService;
+import com.freepets.domain.facility.controller.FacilityController;
+import com.freepets.domain.facility.service.FacilityQueryService;
+import com.freepets.domain.report.controller.DenialReportController;
+import com.freepets.domain.report.service.DenialReportCommandService;
+import com.freepets.domain.report.service.DenialReportQueryService;
+import com.freepets.domain.review.controller.ReviewController;
+import com.freepets.domain.review.service.ReviewCommandService;
+import com.freepets.domain.review.service.ReviewQueryService;
 import com.freepets.domain.user.controller.UserController;
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.entity.Role;
@@ -39,7 +47,10 @@ import com.freepets.global.config.SecurityConfig;
 import com.freepets.global.config.JwtConfig;
 import com.freepets.global.security.jwt.JwtProvider;
 
-@WebMvcTest(controllers = {UserController.class, AuthController.class, CourseController.class, SecurityTestPingController.class})
+@WebMvcTest(controllers = {
+        UserController.class, AuthController.class, CourseController.class, SecurityTestPingController.class,
+        FacilityController.class, ReviewController.class, DenialReportController.class
+})
 @Import({SecurityConfig.class, JwtConfig.class, JwtProvider.class, JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
 class SecurityFilterChainTest {
 
@@ -75,6 +86,21 @@ class SecurityFilterChainTest {
 
     @MockitoBean
     private CourseCommandService courseCommandService;
+
+    @MockitoBean
+    private FacilityQueryService facilityQueryService;
+
+    @MockitoBean
+    private ReviewCommandService reviewCommandService;
+
+    @MockitoBean
+    private ReviewQueryService reviewQueryService;
+
+    @MockitoBean
+    private DenialReportCommandService denialReportCommandService;
+
+    @MockitoBean
+    private DenialReportQueryService denialReportQueryService;
 
     @Test
     void 토큰없이_보호된_경로_요청시_401과_COMMON401을_반환한다() throws Exception {
@@ -212,5 +238,46 @@ class SecurityFilterChainTest {
                         .content("{\"stopIds\":[2,1]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    // 게스트 모드(애플 심사 요건) — 로그인 없이도 시설을 탐색할 수 있어야 한다.
+    @Test
+    void 시설_검색은_토큰없이도_통과한다() throws Exception {
+        mockMvc.perform(post("/api/v1/facilities/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"latitude\":37.7519,\"longitude\":128.8761}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void 시설_상세_조회는_토큰없이도_통과한다() throws Exception {
+        mockMvc.perform(get("/api/v1/facilities/1"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void 발자국_랭킹_조회는_토큰없이도_통과한다() throws Exception {
+        mockMvc.perform(get("/api/v1/facilities/ranking"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void 시설_리뷰_목록_조회는_토큰없이도_통과한다() throws Exception {
+        mockMvc.perform(get("/api/v1/facilities/1/reviews"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void 최근_거부_제보_조회는_토큰없이도_통과한다() throws Exception {
+        mockMvc.perform(get("/api/v1/facilities/1/denial-reports/recent"))
+                .andExpect(status().isOk());
+    }
+
+    // 게스트 모드 와일드카드("/api/v1/facilities/*")에 딸려 같이 열리면 안 된다 — 요청 범위 밖.
+    @Test
+    void 시설_지역_목록_조회는_토큰없이_401을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/v1/facilities/regions"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("COMMON401"));
     }
 }

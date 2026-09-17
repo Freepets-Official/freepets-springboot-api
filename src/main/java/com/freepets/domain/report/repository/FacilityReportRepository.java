@@ -35,6 +35,15 @@ public interface FacilityReportRepository extends JpaRepository<FacilityReport, 
             Pageable pageable
     );
 
+    // 위와 같은 화면의 게스트(비로그인)용 — 제외할 "본인"이 없으니 전부 포함한다. user_id <>
+    // :userId에 null을 그대로 바인딩하면 SQL에서 그 비교가 unknown이 되어 결과가 통째로 비므로
+    // (DenialReportQueryService.getRecent 참고), 아예 그 조건이 없는 쿼리를 따로 둔다.
+    List<FacilityReport> findAllByFacility_FacilityIdAndIsRealtimeTrueAndCreatedAtAfterOrderByCreatedAtDesc(
+            Long facilityId,
+            LocalDateTime after,
+            Pageable pageable
+    );
+
     // GET .../denial-reports/mine — 내가 이 시설에 보낸 실시간 제보(만료 없이 항상 최신 1건).
     Optional<FacilityReport> findFirstByFacility_FacilityIdAndUser_IdAndIsRealtimeTrueOrderByCreatedAtDesc(
             Long facilityId,

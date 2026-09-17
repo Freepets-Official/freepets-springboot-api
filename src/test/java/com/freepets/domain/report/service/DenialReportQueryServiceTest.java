@@ -76,6 +76,24 @@ class DenialReportQueryServiceTest {
     }
 
     @Test
+    void recent은_게스트면_제외_없이_전부_조회한다() {
+        // userId가 null이면(게스트) 제외할 "본인"이 없으니, UserIdNot 쿼리가 아니라 그 조건이
+        // 없는 쿼리를 써야 한다 — 안 그러면 SQL에서 user_id <> NULL이 unknown이 되어 결과가
+        // 통째로 비어버린다(DenialReportQueryService.getRecent 주석 참고).
+        when(facilityRepository.existsById(7L)).thenReturn(true);
+        when(facilityReportRepository.findAllByFacility_FacilityIdAndIsRealtimeTrueAndCreatedAtAfterOrderByCreatedAtDesc(
+                eq(7L), any(), any()
+        )).thenReturn(List.of(denialReport(facility(7L), user(2L), DenialReason.INDOOR)));
+
+        List<DenialReportResponseDTO.Report> result = denialReportQueryService.getRecent(7L, null);
+
+        assertThat(result).hasSize(1);
+        verify(facilityReportRepository, org.mockito.Mockito.never())
+                .findAllByFacility_FacilityIdAndIsRealtimeTrueAndUser_IdNotAndCreatedAtAfterOrderByCreatedAtDesc(
+                        any(), any(), any(), any());
+    }
+
+    @Test
     void mine은_보낸_적_없으면_null을_반환한다() {
         when(facilityRepository.existsById(7L)).thenReturn(true);
         when(facilityReportRepository.findFirstByFacility_FacilityIdAndUser_IdAndIsRealtimeTrueOrderByCreatedAtDesc(7L, 1L))

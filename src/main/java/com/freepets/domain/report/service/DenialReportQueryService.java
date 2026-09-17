@@ -34,7 +34,7 @@ public class DenialReportQueryService {
     private final FacilityRepository facilityRepository;
     private final PetCheckRepository petCheckRepository;
 
-    // GET .../denial-reports/recent — 타인의 제보, 최신순 최대 3건.
+    // GET .../denial-reports/recent — 타인의 제보, 최신순 최대 3건. 로그인 불필요(게스트 모드).
     public List<DenialReportResponseDTO.Report> getRecent(
             Long facilityId,
             Long userId
@@ -43,12 +43,14 @@ public class DenialReportQueryService {
 
         LocalDateTime since = LocalDateTime.now().minusDays(FacilityReport.RECENT_WINDOW_DAYS);
         Pageable pageable = PageRequest.of(0, MAX_RECENT);
-        List<FacilityReport> reports = facilityReportRepository
-                .findAllByFacility_FacilityIdAndIsRealtimeTrueAndUser_IdNotAndCreatedAtAfterOrderByCreatedAtDesc(
-                        facilityId,
-                        userId,
-                        since,
-                        pageable
+        // 게스트(userId == null)는 제외할 "본인"이 없다 — Not 조건이 있는 쿼리에 null을 그대로
+        // 넘기면 SQL에서 결과가 통째로 비므로(FacilityReportRepository 참고) 아예 다른 쿼리를 쓴다.
+        List<FacilityReport> reports = userId == null
+                ? facilityReportRepository.findAllByFacility_FacilityIdAndIsRealtimeTrueAndCreatedAtAfterOrderByCreatedAtDesc(
+                        facilityId, since, pageable
+                )
+                : facilityReportRepository.findAllByFacility_FacilityIdAndIsRealtimeTrueAndUser_IdNotAndCreatedAtAfterOrderByCreatedAtDesc(
+                        facilityId, userId, since, pageable
                 );
 
         return DenialReportConverter.toReports(reports, userId);

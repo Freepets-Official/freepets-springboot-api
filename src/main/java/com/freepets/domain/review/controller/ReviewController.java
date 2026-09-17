@@ -16,6 +16,7 @@ import com.freepets.domain.review.dto.ReviewResponseDTO;
 import com.freepets.domain.review.service.ReviewCommandService;
 import com.freepets.domain.review.service.ReviewQueryService;
 import com.freepets.global.apiPayload.ApiResponse;
+import com.freepets.global.security.CurrentUserResolver;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,15 +29,17 @@ public class ReviewController {
     private final ReviewCommandService reviewCommandService;
     private final ReviewQueryService reviewQueryService;
 
+    // 로그인 불필요 — 게스트 모드로도 리뷰 목록을 볼 수 있어야 한다. 로그인 상태면
+    // reportedByMe/helpfulByMe가 채워지고, 아니면 전부 false로 내려간다(CurrentUserResolver 참고
+    // — permitAll 경로라 @AuthenticationPrincipal을 그대로 못 쓴다).
     @GetMapping("/facilities/{facilityId}/reviews")
     public ApiResponse<ReviewResponseDTO.ReviewListResult> getReviews(
-            @AuthenticationPrincipal Long userId,
             @PathVariable("facilityId") Long facilityId,
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "10") int size
     ) {
         return ApiResponse.onSuccess(
-                reviewQueryService.getReviews(facilityId, userId, page, size)
+                reviewQueryService.getReviews(facilityId, CurrentUserResolver.resolveOptionalUserId(), page, size)
         );
     }
 

@@ -635,6 +635,20 @@ class FacilityQueryServiceTest {
     }
 
     @Test
+    @DisplayName("게스트(userId 없음)는 반려동물 조회 없이 빈 개인화 필드로 내려준다")
+    void 게스트는_반려동물_조회_없이_빈_개인화_필드로_내려준다() {
+        givenFacilityAt(100.0);
+        givenNoReviews();
+
+        FacilityResponseDTO.FacilityDetail result = facilityQueryService.getFacilityDetail(
+                FACILITY_ID, null, SEOUL_LATITUDE, SEOUL_LONGITUDE);
+
+        assertThat(result.pets()).isEmpty();
+        assertThat(result.hasNonDogCatPet()).isFalse();
+        verify(petRepository, never()).findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(any());
+    }
+
+    @Test
     @DisplayName("동반 조건 안내문은 전용 컬럼 값을 그대로 내려준다")
     void 동반_조건_안내문은_전용_컬럼_값을_그대로_내려준다() {
         Facility facility = createFacility(FACILITY_ID);

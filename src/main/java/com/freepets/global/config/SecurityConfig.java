@@ -52,6 +52,17 @@ public class SecurityConfig {
             "/api/v1/auth/refresh",
             // 동반 출입증 QR이 가리키는 공개 웹페이지 — 스캔하는 시설 직원은 앱 계정이 없다.
             "/verify/**",
+            // 게스트 모드 — 로그인 없이도 시설을 탐색할 수 있어야 한다. 토큰이 있으면 각 서비스가
+            // @AuthenticationPrincipal로 받은 userId로 개인화(내 리뷰·반려동물 궁합 등)를 얹고,
+            // 없으면 공개 데이터만 내려준다. 리뷰·거부 제보 작성 등 쓰기 API는 대상이 아니다.
+            //
+            // {facilityId}는 숫자로 제한해서 연다 — "*"로 열면 같은 depth의 /facilities/regions
+            // (인증 필요, 이번 범위 밖)까지 같이 열려버린다.
+            "/api/v1/facilities/search",
+            "/api/v1/facilities/ranking",
+            "/api/v1/facilities/{facilityId:[0-9]+}",
+            "/api/v1/facilities/*/reviews",
+            "/api/v1/facilities/*/denial-reports/recent",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",

@@ -28,6 +28,10 @@ public class ReviewController {
     private final ReviewCommandService reviewCommandService;
     private final ReviewQueryService reviewQueryService;
 
+    /**
+     * 게스트(토큰 없음)도 호출할 수 있다. 이때 {@code userId}는 null로 들어오며, 신고·좋아요한
+     * 리뷰 표시 같은 개인화만 빠지고 나머지 리뷰 목록은 그대로 내려간다.
+     */
     @GetMapping("/facilities/{facilityId}/reviews")
     public ApiResponse<ReviewResponseDTO.ReviewListResult> getReviews(
             @AuthenticationPrincipal Long userId,

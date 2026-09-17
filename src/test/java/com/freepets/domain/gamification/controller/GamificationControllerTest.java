@@ -44,7 +44,11 @@ class GamificationControllerTest {
         when(gamificationQueryService.getMyStatus(isNull())).thenReturn(
                 new GamificationResponseDTO.MyStatus(
                         2, 150L, 200L, PawAnimal.DOG, PawColor.RED, "개 발바닥 · 빨강", null, true,
-                        List.of(new GamificationResponseDTO.BadgeSummary("REVIEW_BRONZE", "리뷰 동", "리뷰를 1개 작성했어요", null))
+                        List.of(new GamificationResponseDTO.BadgeSummary("REVIEW_BRONZE", "리뷰 동", "리뷰를 1개 작성했어요", null)),
+                        List.of(new GamificationResponseDTO.BadgeProgress(
+                                "REVIEW", "리뷰", 12L,
+                                List.of(new GamificationResponseDTO.TierProgress("BRONZE", 1, null))
+                        ))
                 )
         );
 
@@ -56,7 +60,10 @@ class GamificationControllerTest {
                 .andExpect(jsonPath("$.result.tierAnimal").value("DOG"))
                 .andExpect(jsonPath("$.result.tierColor").value("RED"))
                 .andExpect(jsonPath("$.result.tierLabel").value("개 발바닥 · 빨강"))
-                .andExpect(jsonPath("$.result.badges[0].code").value("REVIEW_BRONZE"));
+                .andExpect(jsonPath("$.result.badges[0].code").value("REVIEW_BRONZE"))
+                .andExpect(jsonPath("$.result.progress[0].family").value("REVIEW"))
+                .andExpect(jsonPath("$.result.progress[0].count").value(12))
+                .andExpect(jsonPath("$.result.progress[0].tiers[0].tier").value("BRONZE"));
     }
 
     @Test
@@ -64,7 +71,7 @@ class GamificationControllerTest {
     void 최대_레벨이면_xpToNextLevel_키가_응답에서_빠진다() throws Exception {
         when(gamificationQueryService.getMyStatus(isNull())).thenReturn(
                 new GamificationResponseDTO.MyStatus(
-                        70, 999999L, null, PawAnimal.CAT, PawColor.VIOLET, "고양이 발바닥 · 보라", null, true, List.of()
+                        70, 999999L, null, PawAnimal.CAT, PawColor.VIOLET, "고양이 발바닥 · 보라", null, true, List.of(), List.of()
                 )
         );
 

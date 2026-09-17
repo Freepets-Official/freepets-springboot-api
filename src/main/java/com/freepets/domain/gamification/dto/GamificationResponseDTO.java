@@ -25,13 +25,42 @@ public class GamificationResponseDTO {
             String tierLabel,
             String tierBadgeImageUrl,
             boolean levelUpNotificationEnabled,
-            List<BadgeSummary> badges
+            List<BadgeSummary> badges,
+            List<BadgeProgress> progress
     ) {}
 
     public record BadgeSummary(
             String code,
             String label,
             String description,
+            LocalDateTime earnedAt
+    ) {}
+
+    /**
+     * 패밀리(예: 리뷰) 단위 진행도 — 획득한 배지만 담는 {@link BadgeSummary}와 달리, 아직 못
+     * 받은 단계까지 포함한 전체 6단계를 보여준다. {@code count}가 지금 누적 횟수라 프론트가
+     * "다음 단계까지 N회 남음"을 계산할 수 있다.
+     *
+     * @param family 패밀리 코드(예: {@code "REVIEW"}) — {@link com.freepets.domain.gamification.entity.BadgeFamily} 이름
+     * @param label  패밀리 한글 이름(예: "리뷰")
+     * @param count  이 패밀리의 현재 누적 횟수
+     * @param tiers  동→다이아 6단계, 낮은 단계부터 순서대로
+     */
+    public record BadgeProgress(
+            String family,
+            String label,
+            long count,
+            List<TierProgress> tiers
+    ) {}
+
+    /**
+     * @param tier      단계 코드(예: {@code "GOLD"}) — {@link com.freepets.domain.gamification.entity.BadgeTier} 이름
+     * @param threshold 이 단계를 달성하는 누적 횟수
+     * @param earnedAt  이 단계를 이미 획득했으면 그 시각, 아직이면 {@code null}(잠긴 단계)
+     */
+    public record TierProgress(
+            String tier,
+            int threshold,
             LocalDateTime earnedAt
     ) {}
 

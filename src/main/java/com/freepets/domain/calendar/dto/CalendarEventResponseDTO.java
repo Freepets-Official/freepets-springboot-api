@@ -25,6 +25,9 @@ public class CalendarEventResponseDTO {
             CalendarEventType eventType,
             String title,
             LocalDate date, // 발생일(occurrence date) — startDate가 아니라 이 조회에서 실제로 해당하는 날짜
+            LocalDate startDate, // 이 반복 일정의 진짜 시작일(anchor). date와 별개로 항상 채워진다 —
+            // 프론트가 반복 일정을 편집할 때 이 값을 써야 한다. date를 startDate 대신 넘기면
+            // (예: 9/26 시작 매일 반복 일정을 9/30 발생일에서 수정) 앵커가 그 발생일로 밀린다.
             LocalDate endDate, // date와 같으면(기간 없음) null — 다르면 기간의 끝
             LocalTime time,
             RepeatType repeatType,

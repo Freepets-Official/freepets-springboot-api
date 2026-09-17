@@ -234,8 +234,15 @@ class BusinessControllerTest {
         when(facilityOwnerClaimQueryService.getMyClaims(any())).thenReturn(
                 new BusinessResponseDTO.MyClaimList(List.of(
                         new BusinessResponseDTO.MyClaim(
-                                11L, 6L, "카페 파도살롱", "강원 강릉시 창해로 17", ClaimStatus.PENDING, appliedAt, null,
-                                new BigDecimal("10.00"), true
+                                11L,
+                                6L,
+                                "카페 파도살롱",
+                                "강원 강릉시 창해로 17",
+                                ClaimStatus.PENDING,
+                                appliedAt,
+                                null,
+                                new BigDecimal("10.00"),
+                                true
                         )
                 ))
         );
@@ -258,8 +265,15 @@ class BusinessControllerTest {
         when(facilityOwnerClaimQueryService.getMyClaims(any())).thenReturn(
                 new BusinessResponseDTO.MyClaimList(List.of(
                         new BusinessResponseDTO.MyClaim(
-                                12L, 7L, "카페 해변길", "강원 속초시 해오름로 5", ClaimStatus.REJECTED, appliedAt,
-                                "등록증 사업자명이 신청자와 일치하지 않습니다", null, null
+                                12L,
+                                7L,
+                                "카페 해변길",
+                                "강원 속초시 해오름로 5",
+                                ClaimStatus.REJECTED,
+                                appliedAt,
+                                "등록증 사업자명이 신청자와 일치하지 않습니다",
+                                null,
+                                null
                         )
                 ))
         );

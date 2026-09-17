@@ -11,6 +11,7 @@ import com.freepets.domain.facility.dto.FacilityResponseDTO;
 import com.freepets.domain.facility.entity.CheckList;
 import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.FacilityAmenity;
 import com.freepets.domain.facility.entity.PetFriendlyGrade;
 import com.freepets.domain.facility.entity.Region;
 import com.freepets.domain.facility.entity.Requirement;
@@ -214,8 +215,19 @@ public class FacilityConverter {
                 toPawGrade(aggregate),
                 toRatings(aggregate),
                 toOwnedPets(myPets),
-                hasNonDogCatPet(myPets)
+                hasNonDogCatPet(myPets),
+                toOwnerIntroduction(facility)
         );
+    }
+
+    /** 소개글도 없고 편의시설 태그도 비어 있으면 null을 내려 화면이 블록 자체를 숨기게 한다. */
+    private static FacilityResponseDTO.OwnerIntroduction toOwnerIntroduction(Facility facility) {
+        String introduction = facility.getIntroduction();
+        List<FacilityAmenity> amenityTags = facility.getAmenityTags();
+        if ((introduction == null || introduction.isBlank()) && amenityTags.isEmpty()) {
+            return null;
+        }
+        return new FacilityResponseDTO.OwnerIntroduction(introduction, amenityTags);
     }
 
     /** 등급 판정은 표시용으로 반올림하기 전 원점수로 한다. 87.96이 88.0이 되며 한 등급 올라가면 안 된다. */

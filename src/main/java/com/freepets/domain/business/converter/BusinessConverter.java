@@ -96,7 +96,15 @@ public class BusinessConverter {
                 facility.getAddress(),
                 toEntryCondition(facility, denialAlertCount),
                 new BusinessResponseDTO.Stats(weeklyPetCheckCount, facility.getReviewCount()),
-                toDenialAlerts(denialAlertCount, latestDenialAlert)
+                toDenialAlerts(denialAlertCount, latestDenialAlert),
+                toFacilityProfile(facility)
+        );
+    }
+
+    public static BusinessResponseDTO.FacilityProfile toFacilityProfile(Facility facility) {
+        return new BusinessResponseDTO.FacilityProfile(
+                facility.getIntroduction(),
+                facility.getAmenityTags()
         );
     }
 

@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.springframework.web.multipart.MultipartFile;
 
+import com.freepets.domain.facility.entity.FacilityAmenity;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
 
@@ -12,6 +13,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -116,6 +118,22 @@ public class BusinessRequestDTO {
 
         /** 화면에 그대로 보여줄 조건 안내문. */
         private String conditionRaw;
+    }
+
+    /**
+     * 매장 소개·홍보 저장. 소개글과 편의시설 태그를 화면 하단 "저장하기" 하나로 함께 보낸다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class FacilityProfileUpdateRequest {
+
+        @Size(max = 500, message = "소개글은 500자 이내로 입력해주세요.")
+        private String introduction;
+
+        /** 반려동물 편의시설 태그. 없으면 빈 목록으로 보내 전체 해제한다. */
+        @NotNull(message = "편의시설 태그 목록은 필수입니다.")
+        private List<FacilityAmenity> amenityTags;
     }
 
     /** 관리자 반려. 사유는 신청자에게 보여줄 수 있어야 하므로 필수로 받는다. */

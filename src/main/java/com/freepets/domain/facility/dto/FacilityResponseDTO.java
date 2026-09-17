@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.ConfidenceSource;
+import com.freepets.domain.facility.entity.FacilityAmenity;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
@@ -158,6 +159,20 @@ public class FacilityResponseDTO {
             PawGrade pawGrade,
             Ratings ratings,
             List<OwnedPet> pets,
-            boolean hasNonDogCatPet
+            boolean hasNonDogCatPet,
+
+            // 사장님이 전하는 우리 매장. 소개글도 없고 편의시설 태그도 비어 있으면 null이라, 화면이
+            // 이 블록 자체를 숨긴다.
+            OwnerIntroduction ownerIntroduction
+    ) {}
+
+    /**
+     * "사장님이 전하는 우리 매장" 블록. 사업자 대시보드 DTO({@code BusinessResponseDTO.FacilityProfile})와
+     * 모양은 같지만, 도메인 간 상호 의존을 피하기 위해 별도로 둔다 — 둘 다 {@code Facility} 엔티티에서
+     * 각자 변환한다.
+     */
+    public record OwnerIntroduction(
+            String introduction,
+            List<FacilityAmenity> amenityTags
     ) {}
 }

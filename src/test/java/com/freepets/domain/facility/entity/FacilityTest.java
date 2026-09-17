@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -229,5 +230,64 @@ class FacilityTest {
         assertThat(facility.getMaxWeight()).isEqualByComparingTo("10.00");
         assertThat(facility.getPetConditionRaw()).isEqualTo("리드줄 착용 시 실내 동반 가능");
         assertThat(facility.getCheckLists()).hasSize(1);
+    }
+
+    @Test
+    void updateProfile_소개글과_편의시설_태그를_반영한다() {
+        Facility facility = createFacility();
+
+        facility.updateProfile(
+                "대형견도 환영해요. 야외 테라스와 급수대, 펫 메뉴가 준비돼 있어요.",
+                List.of(FacilityAmenity.WATER_BOWL, FacilityAmenity.OUTDOOR_TERRACE)
+        );
+
+        assertThat(facility.getIntroduction())
+                .isEqualTo("대형견도 환영해요. 야외 테라스와 급수대, 펫 메뉴가 준비돼 있어요.");
+        assertThat(facility.getAmenityTags())
+                .containsExactly(FacilityAmenity.WATER_BOWL, FacilityAmenity.OUTDOOR_TERRACE);
+    }
+
+    @Test
+    void updateProfile_빈_태그_목록으로_저장하면_전부_해제된다() {
+        Facility facility = createFacility();
+        facility.updateProfile("소개글", List.of(FacilityAmenity.PARKING));
+
+        facility.updateProfile("소개글", List.of());
+
+        assertThat(facility.getAmenityTags()).isEmpty();
+    }
+
+    @Test
+    void updateProfile_요청에_중복된_태그가_있어도_저장되는_태그는_중복되지_않는다() {
+        Facility facility = createFacility();
+
+        facility.updateProfile(
+                "소개글",
+                List.of(FacilityAmenity.PARKING, FacilityAmenity.PARKING, FacilityAmenity.WATER_BOWL)
+        );
+
+        assertThat(facility.getAmenityTags())
+                .containsExactly(FacilityAmenity.PARKING, FacilityAmenity.WATER_BOWL);
+    }
+
+    @Test
+    void updateProfile_태그_목록에_null이_섞여도_예외없이_걸러진다() {
+        Facility facility = createFacility();
+
+        facility.updateProfile("소개글", Arrays.asList(FacilityAmenity.PARKING, null));
+
+        assertThat(facility.getAmenityTags()).containsExactly(FacilityAmenity.PARKING);
+    }
+
+    @Test
+    void updateProfile_판별값과_확정_시각은_건드리지_않는다() {
+        Facility facility = createFacility();
+        confirm(facility);
+        LocalDateTime confirmedAt = facility.getConfirmedAt();
+
+        facility.updateProfile("소개글", List.of(FacilityAmenity.PARKING));
+
+        assertThat(facility.getConfirmedAt()).isEqualTo(confirmedAt);
+        assertThat(facility.getPetAllowed()).isEqualTo(PetAllowed.ALLOWED);
     }
 }

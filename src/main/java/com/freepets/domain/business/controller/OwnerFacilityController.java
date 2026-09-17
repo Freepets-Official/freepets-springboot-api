@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.freepets.domain.business.dto.BusinessRequestDTO;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
 import com.freepets.domain.business.service.OwnerFacilityConditionCommandService;
+import com.freepets.domain.business.service.OwnerFacilityProfileCommandService;
 import com.freepets.domain.business.service.OwnerFacilityQueryService;
 import com.freepets.global.apiPayload.ApiResponse;
 
@@ -36,6 +37,7 @@ public class OwnerFacilityController {
 
     private final OwnerFacilityQueryService ownerFacilityQueryService;
     private final OwnerFacilityConditionCommandService ownerFacilityConditionCommandService;
+    private final OwnerFacilityProfileCommandService ownerFacilityProfileCommandService;
 
     /**
      * 내 매장 목록. 대시보드 첫 화면이 이 API로 매장 카드를 그리고, 사장님이 카드를 골라 관리 대상을 정한다.
@@ -75,6 +77,20 @@ public class OwnerFacilityController {
     ) {
         return ApiResponse.onSuccess(
                 ownerFacilityConditionCommandService.updateConditions(userId, facilityId, request)
+        );
+    }
+
+    /**
+     * 매장 소개·홍보 저장. 소개글과 편의시설 태그를 화면 하단 "저장하기" 하나로 함께 반영한다.
+     */
+    @PutMapping("/facilities/{facilityId}/profile")
+    public ApiResponse<BusinessResponseDTO.FacilityProfile> updateProfile(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long facilityId,
+            @Valid @RequestBody BusinessRequestDTO.FacilityProfileUpdateRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                ownerFacilityProfileCommandService.updateProfile(userId, facilityId, request)
         );
     }
 }

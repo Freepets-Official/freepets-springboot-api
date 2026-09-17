@@ -7,6 +7,7 @@ import java.util.List;
 import com.freepets.domain.business.entity.ClaimStatus;
 import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.ConfidenceSource;
+import com.freepets.domain.facility.entity.FacilityAmenity;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
@@ -133,7 +134,17 @@ public class BusinessResponseDTO {
             String address,
             EntryCondition entryCondition,
             Stats stats,
-            DenialAlerts denialAlerts
+            DenialAlerts denialAlerts,
+            FacilityProfile profile
+    ) {}
+
+    /**
+     * 매장 소개·홍보 화면의 초기값이자 저장 결과. 홈 목록 응답에 실어 편집 화면 진입 시 별도 조회 없이
+     * 그대로 쓴다("홈은 호출 1번" 원칙).
+     */
+    public record FacilityProfile(
+            String introduction,
+            List<FacilityAmenity> amenityTags
     ) {}
 
     /**

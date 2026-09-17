@@ -262,6 +262,25 @@ public class Facility extends BaseEntity {
     @Column(name = "pet_condition_raw", columnDefinition = "TEXT")
     private String petConditionRaw;
 
+    /** 사장님이 직접 쓰는 매장 소개글. 손님 시설 상세에 "사장님이 전하는 우리 매장"으로 노출된다. */
+    @Column(columnDefinition = "TEXT")
+    private String introduction;
+
+    /**
+     * 사장님이 선언하는 반려동물 편의시설 태그. {@code requiredItems}(210행)와 같은 이유로 JSON
+     * 컬럼에 담는다 — 순수 표시 정보라 관계형 쿼리가 필요 없다.
+     *
+     * <p>저장은 JSON 문자열, 읽기는 {@link #getAmenityTags()}로 {@code List<FacilityAmenity>}
+     * 반환 — Lombok 기본 getter는 끄고 아래 커스텀 getter만 노출한다.
+     *
+     * <p>리뷰 집계 캐시 필드 {@link #amenities}(친화도 편의 항목 평균 점수)와 이름이 겹치지 않도록
+     * {@code amenityTags}로 둔다.
+     */
+    @Getter(AccessLevel.NONE)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "amenity_tags", columnDefinition = "json")
+    private String amenityTags;
+
     /**
      * 리뷰에서 계산한 친화도 점수(0~100). 리뷰가 바뀔 때 {@code FacilityGradeCacheService}가 갱신한다.
      *
@@ -569,6 +588,23 @@ public class Facility extends BaseEntity {
 
     public List<String> getDangerousBreedRequiredItems() {
         return JsonListUtil.fromJson(dangerousBreedRequiredItems);
+    }
+
+    public List<FacilityAmenity> getAmenityTags() {
+        return JsonListUtil.fromJson(amenityTags).stream()
+                .map(FacilityAmenity::valueOf)
+                .toList();
+    }
+
+    /**
+     * 매장 소개글·편의시설 태그를 함께 반영한다(매장 소개·홍보 화면 "저장하기"). 판별에 쓰이는 값이
+     * 아니므로 {@code confirmedAt}·추천 자격과는 무관하다.
+     */
+    public void updateProfile(String introduction, List<FacilityAmenity> amenityTags) {
+        this.introduction = introduction;
+        this.amenityTags = JsonListUtil.toJson(
+                amenityTags.stream().filter(Objects::nonNull).distinct().map(Enum::name).toList()
+        );
     }
 
     /**

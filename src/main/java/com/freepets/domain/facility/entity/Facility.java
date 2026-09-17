@@ -574,7 +574,11 @@ public class Facility extends BaseEntity {
     ) {
         this.petConditionStatus = petConditionStatus;
         this.maxWeight = maxWeight;
-        this.maxWeightInclusive = maxWeightInclusive;
+        // confirmByOwner와 같은 이유 — 상한이 없으면 경계 종류("이하"/"미만")도 의미가 없다.
+        // maxWeight/maxWeightInclusive가 API 응답에 그대로 노출되므로(FacilitySummary·
+        // FacilityDetail) 이 불변식을 엔티티 경계에서 지켜야 호출부(LLM 파싱 결과 등)가
+        // 실수로 깨도 API까지 새지 않는다.
+        this.maxWeightInclusive = maxWeight == null ? null : maxWeightInclusive;
         this.isDangerousBreedExcluded = isDangerousBreedExcluded;
         this.requiredItems = JsonListUtil.toJson(requiredItems);
         this.dangerousBreedRequiredItems = JsonListUtil.toJson(dangerousBreedRequiredItems);

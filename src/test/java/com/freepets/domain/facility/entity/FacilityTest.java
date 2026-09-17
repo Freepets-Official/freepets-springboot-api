@@ -80,6 +80,29 @@ class FacilityTest {
         assertThat(facility.getMaxWeightInclusive()).isNull();
     }
 
+    // maxWeight·maxWeightInclusive가 FacilitySummary/FacilityDetail 응답에 그대로 노출되므로
+    // (코드 리뷰 지적), confirmByOwner와 같은 불변식을 이 메소드에도 지켜야 한다 — 안 그러면
+    // LLM 파싱 결과가 실수로 maxWeight 없이 maxWeightInclusive만 넘겨도 그대로 저장되고 API로
+    // 새어나간다.
+    @Test
+    void applyParsedCondition_최대_체중이_없으면_경계_종류도_비운다() {
+        Facility facility = createFacility();
+
+        facility.applyParsedCondition(
+                PetConditionStatus.PARSED,
+                null,
+                true,
+                false,
+                List.of(),
+                List.of(),
+                null,
+                null
+        );
+
+        assertThat(facility.getMaxWeight()).isNull();
+        assertThat(facility.getMaxWeightInclusive()).isNull();
+    }
+
     @Test
     void updateFromTourApi_확정된_시설은_동반_조건을_덮어쓰지_않는다() {
         // 이 보호가 없으면 다음 동기화가 사장님이 직접 확정한 값을 지운다.

@@ -7,6 +7,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
@@ -30,6 +31,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.s3.S3ImageService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -56,9 +58,10 @@ public class ReviewCommandService {
     private final PetRepository petRepository;
     private final PetCheckRepository petCheckRepository;
     private final GamificationService gamificationService;
+    private final S3ImageService s3ImageService;
 
-    // 리뷰 신규 작성 1건당 지급하는 경험치(수정은 미지급). 사진 첨부 가산점은 리뷰에 사진 필드
-    // 자체가 아직 없어 보류했다.
+    // 리뷰 신규 작성 1건당 지급하는 경험치(수정은 미지급). 사진 첨부 가산점은 기획 요청이 아직
+    // 없어 보류했다(사진 필드 자체는 있음).
     private static final int REVIEW_XP = 20;
 
     // 리뷰가 바뀌면 시설의 친화도 점수·리뷰 수·발자국 등급을 다시 계산해둔다. 발자국 랭킹이
@@ -83,18 +86,35 @@ public class ReviewCommandService {
         List<Pet> pets = findOwnedPets(userId, request.getPetIds());
         List<Tag> tags = distinctTags(request.getTags());
 
+        MultipartFile photo = request.getPhoto();
         Review existingReview = reviewRepository
                 .findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facilityId, userId)
                 .orElse(null);
         boolean isNewReview = existingReview == null;
-        Review review = isNewReview
-                ? createReview(request, facility, user)
-                : existingReview;
-        applyRequestToReview(review, request, pets, tags);
+        String previousPhotoUrl = isNewReview ? null : existingReview.getPhotoUrl();
+        String photoUrl = resolvePhotoUrl(photo, previousPhotoUrl);
 
-        Review savedReview = saveReview(review);
+        Review review = isNewReview
+                ? createReview(request, facility, user, photoUrl)
+                : existingReview;
+        applyRequestToReview(review, request, pets, tags, photoUrl);
+
+        // 같은 시설+유저로 사진 첨부된 리뷰 두 개가 동시에 들어오면 둘 다 사진을 먼저 S3에 올린
+        // 뒤 저장을 시도한다 — 한쪽은 saveReview()가 유니크 인덱스 충돌로 막는데(그 메소드
+        // 참고), 이때 이미 올라간 사진이 고아 파일로 남지 않도록 저장 실패 시 지운다.
+        Review savedReview;
+        try {
+            savedReview = saveReview(review);
+        } catch (RuntimeException exception) {
+            if (isNewPhotoPresent(photo)) {
+                s3ImageService.delete(photoUrl);
+            }
+            throw exception;
+        }
 
         facilityGradeCacheService.refresh(facilityId);
+
+        deleteReplacedPhotoIfPresent(photo, previousPhotoUrl);
 
         if (isNewReview) {
             gamificationService.grantXp(userId, XpSourceType.REVIEW, savedReview.getReviewId(), REVIEW_XP);
@@ -106,28 +126,34 @@ public class ReviewCommandService {
     private Review createReview(
             ReviewRequestDTO.UpsertRequest request,
             Facility facility,
-            User user
+            User user,
+            String photoUrl
     ) {
         // 방문일은 실제로 다녀온 날짜라 최초 작성 시에만 정하고, 그 뒤로는 수정해도 바뀌지 않는다.
         LocalDate visitedAt = request.getVisitedAt() != null ? request.getVisitedAt() : LocalDate.now();
-        return ReviewConverter.toReview(request, facility, user, visitedAt);
+        return ReviewConverter.toReview(request, facility, user, visitedAt, photoUrl);
     }
 
     // upsertReview(신규/수정 공통)와 updateReview(PUT) 둘 다 쓴다 — 신규 리뷰에도 그대로 태운다.
     // createReview가 이미 같은 request로 값을 채워서 update() 호출이 중복이지만, 분기를 나눠서
     // 따로 관리하는 것보다 한 곳에서만 고치면 두 경로가 갈라질 일이 없는 쪽을 택했다.
+    //
+    // photoUrl은 호출부가 이미 계산해서 넘긴다(새 사진 업로드 여부에 따라 새 URL 또는 기존
+    // URL) — 여기서 request.getPhoto()를 다시 보고 업로드를 결정하지 않는다.
     private void applyRequestToReview(
             Review review,
             ReviewRequestDTO.UpsertRequest request,
             List<Pet> pets,
-            List<Tag> tags
+            List<Tag> tags,
+            String photoUrl
     ) {
         review.update(
                 request.getRatingSpace(),
                 request.getRatingStaff(),
                 request.getRatingAmenity(),
                 request.getContent(),
-                request.isShowPetInfo()
+                request.isShowPetInfo(),
+                photoUrl
         );
         review.replacePets(pets);
         review.replaceTags(tags);
@@ -149,11 +175,48 @@ public class ReviewCommandService {
         List<Pet> pets = findOwnedPets(userId, request.getPetIds());
         List<Tag> tags = distinctTags(request.getTags());
 
-        applyRequestToReview(review, request, pets, tags);
+        MultipartFile photo = request.getPhoto();
+        String previousPhotoUrl = review.getPhotoUrl();
+        String photoUrl = resolvePhotoUrl(photo, previousPhotoUrl);
+
+        applyRequestToReview(review, request, pets, tags, photoUrl);
 
         facilityGradeCacheService.refresh(review.getFacility().getFacilityId());
 
+        deleteReplacedPhotoIfPresent(photo, previousPhotoUrl);
+
         return ReviewConverter.toUpsertResult(review);
+    }
+
+    // 새 사진이 오면 업로드해서 새 URL을, 안 오면(수정 시 기존 사진 유지) 이전 URL을 그대로
+    // 돌려준다 — upsertReview·updateReview 둘 다 신규/수정 여부와 무관하게 같은 규칙을 쓴다.
+    private String resolvePhotoUrl(
+            MultipartFile photo,
+            String previousPhotoUrl
+    ) {
+        return isNewPhotoPresent(photo) ? uploadPhotoIfPresent(photo) : previousPhotoUrl;
+    }
+
+    // 새 사진으로 교체된 경우에만 이전 S3 객체를 지운다 — 신규 작성이거나 사진을 안 바꾼
+    // 경우는 previousPhotoUrl이 그대로 photoUrl로 쓰이고 있어 지울 대상이 없다.
+    private void deleteReplacedPhotoIfPresent(
+            MultipartFile photo,
+            String previousPhotoUrl
+    ) {
+        if (isNewPhotoPresent(photo) && previousPhotoUrl != null) {
+            s3ImageService.delete(previousPhotoUrl);
+        }
+    }
+
+    private boolean isNewPhotoPresent(MultipartFile photo) {
+        return photo != null && !photo.isEmpty();
+    }
+
+    private String uploadPhotoIfPresent(MultipartFile photo) {
+        if (!isNewPhotoPresent(photo)) {
+            return null;
+        }
+        return s3ImageService.upload(photo);
     }
 
     // 신규 insert일 때는 Review가 GenerationType.IDENTITY라 save() 호출 시점에 바로 INSERT가

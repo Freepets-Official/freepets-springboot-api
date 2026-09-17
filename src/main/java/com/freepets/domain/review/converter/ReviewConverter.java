@@ -21,7 +21,8 @@ public class ReviewConverter {
             ReviewRequestDTO.UpsertRequest request,
             Facility facility,
             User user,
-            LocalDate visitedAt
+            LocalDate visitedAt,
+            String photoUrl
     ) {
         return Review.builder()
                 .facility(facility)
@@ -32,6 +33,7 @@ public class ReviewConverter {
                 .content(request.getContent())
                 .isShowPetInfo(request.isShowPetInfo())
                 .visitedAt(visitedAt)
+                .photoUrl(photoUrl)
                 .build();
     }
 
@@ -74,7 +76,8 @@ public class ReviewConverter {
                 review.getVisitedAt(),
                 reportedByMe,
                 review.getHelpfulCount(),
-                helpfulByMe
+                helpfulByMe,
+                review.getPhotoUrl()
         );
     }
 
@@ -96,7 +99,8 @@ public class ReviewConverter {
                 review.getRatingAmenity(),
                 review.getContent(),
                 tags,
-                review.getVisitedAt()
+                review.getVisitedAt(),
+                review.getPhotoUrl()
         );
     }
 

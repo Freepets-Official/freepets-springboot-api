@@ -66,6 +66,10 @@ public class Review extends BaseEntity {
     @Column(name = "visited_at", nullable = false)
     private LocalDate visitedAt;
 
+    // 방문 인증샷(선택). CalendarEvent.photoUrl과 같은 방식 — S3에 올린 뒤 URL만 저장한다.
+    @Column(name = "photo_url", columnDefinition = "TEXT")
+    private String photoUrl;
+
     // Pet과 동일하게 소프트 삭제로 둔다 — 하드 삭제로 지우면 신고 이력(reports)까지
     // cascade로 함께 사라져서 운영·감사 기록이 날아간다. Review.delete() 참고.
     @Column(name = "deleted_at")
@@ -106,7 +110,8 @@ public class Review extends BaseEntity {
             Integer ratingAmenity,
             String content,
             boolean isShowPetInfo,
-            LocalDate visitedAt
+            LocalDate visitedAt,
+            String photoUrl
     ) {
         this.facility = facility;
         this.user = user;
@@ -116,6 +121,7 @@ public class Review extends BaseEntity {
         this.content = content;
         this.isShowPetInfo = isShowPetInfo;
         this.visitedAt = visitedAt;
+        this.photoUrl = photoUrl;
     }
 
     // visitedAt은 실제 방문한 날짜라 수정 시 함께 바뀌면 안 된다 — 여기서 받지 않고
@@ -125,13 +131,15 @@ public class Review extends BaseEntity {
             Integer ratingStaff,
             Integer ratingAmenity,
             String content,
-            boolean isShowPetInfo
+            boolean isShowPetInfo,
+            String photoUrl
     ) {
         this.ratingSpace = ratingSpace;
         this.ratingStaff = ratingStaff;
         this.ratingAmenity = ratingAmenity;
         this.content = content;
         this.isShowPetInfo = isShowPetInfo;
+        this.photoUrl = photoUrl;
     }
 
     // 기존 반려동물 연결을 통째로 교체한다 — 서비스가 reviewPets 컬렉션을 직접 clear/add하지

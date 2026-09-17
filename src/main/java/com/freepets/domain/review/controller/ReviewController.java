@@ -1,8 +1,10 @@
 package com.freepets.domain.review.controller;
 
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -44,8 +46,22 @@ public class ReviewController {
         );
     }
 
-    @PostMapping("/facilities/{facilityId}/reviews")
+    // 사진(photo)을 받으려면 멀티파트가 필요하지만, 기존에 JSON(application/json)으로 호출하던
+    // 클라이언트를 그대로 깨뜨리지 않기 위해 같은 경로에 consumes만 다른 메소드를 하나 더 둔다.
+    // JSON 경로로 오면 photo 필드 자체가 요청에 없으니 그냥 null로 남아 사진 없이 처리된다.
+    @PostMapping(value = "/facilities/{facilityId}/reviews", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<ReviewResponseDTO.UpsertResult> upsertReview(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable("facilityId") Long facilityId,
+            @Valid @ModelAttribute ReviewRequestDTO.UpsertRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                reviewCommandService.upsertReview(userId, facilityId, request)
+        );
+    }
+
+    @PostMapping(value = "/facilities/{facilityId}/reviews", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ApiResponse<ReviewResponseDTO.UpsertResult> upsertReviewJson(
             @AuthenticationPrincipal Long userId,
             @PathVariable("facilityId") Long facilityId,
             @Valid @RequestBody ReviewRequestDTO.UpsertRequest request
@@ -55,8 +71,19 @@ public class ReviewController {
         );
     }
 
-    @PutMapping("/reviews/{reviewId}")
+    @PutMapping(value = "/reviews/{reviewId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<ReviewResponseDTO.UpsertResult> updateReview(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable("reviewId") Long reviewId,
+            @Valid @ModelAttribute ReviewRequestDTO.UpsertRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                reviewCommandService.updateReview(userId, reviewId, request)
+        );
+    }
+
+    @PutMapping(value = "/reviews/{reviewId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ApiResponse<ReviewResponseDTO.UpsertResult> updateReviewJson(
             @AuthenticationPrincipal Long userId,
             @PathVariable("reviewId") Long reviewId,
             @Valid @RequestBody ReviewRequestDTO.UpsertRequest request

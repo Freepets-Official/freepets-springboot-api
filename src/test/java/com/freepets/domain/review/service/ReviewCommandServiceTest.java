@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -26,6 +27,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
@@ -55,6 +57,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.s3.S3ImageService;
 
 @ExtendWith(MockitoExtension.class)
 class ReviewCommandServiceTest {
@@ -88,6 +91,9 @@ class ReviewCommandServiceTest {
 
     @Mock
     private GamificationService gamificationService;
+
+    @Mock
+    private S3ImageService s3ImageService;
 
     @InjectMocks
     private ReviewCommandService reviewCommandService;
@@ -334,6 +340,138 @@ class ReviewCommandServiceTest {
     }
 
     @Test
+    void upsertReview_신규_리뷰에_사진을_첨부하면_S3에_업로드하고_photoUrl로_내려준다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+        MultipartFile photo = mock(MultipartFile.class);
+        when(photo.isEmpty()).thenReturn(false);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+        request.setPhoto(photo);
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(s3ImageService.upload(photo)).thenReturn("https://s3/new-photo.jpg");
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.upsertReview(1L, 7L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3/new-photo.jpg");
+        // 신규 작성이라 지울 이전 사진이 없다.
+        verify(s3ImageService, never()).delete(any());
+    }
+
+    @Test
+    void upsertReview_기존_리뷰의_사진을_교체하면_이전_사진을_S3에서_지운다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+
+        Review existingReview = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .photoUrl("https://s3/old-photo.jpg")
+                .build();
+        existingReview.replacePets(List.of(pet));
+
+        MultipartFile newPhoto = mock(MultipartFile.class);
+        when(newPhoto.isEmpty()).thenReturn(false);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+        request.setPhoto(newPhoto);
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.of(existingReview));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(s3ImageService.upload(newPhoto)).thenReturn("https://s3/new-photo.jpg");
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.upsertReview(1L, 7L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3/new-photo.jpg");
+        verify(s3ImageService).delete("https://s3/old-photo.jpg");
+    }
+
+    @Test
+    void upsertReview_사진_없이_수정하면_기존_사진을_유지하고_지우지_않는다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+
+        Review existingReview = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .photoUrl("https://s3/old-photo.jpg")
+                .build();
+        existingReview.replacePets(List.of(pet));
+
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.of(existingReview));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.upsertReview(1L, 7L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3/old-photo.jpg");
+        verify(s3ImageService, never()).delete(any());
+        verify(s3ImageService, never()).upload(any());
+    }
+
+    @Test
+    void upsertReview_저장에_실패하면_새로_업로드한_사진을_S3에서_지운다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+        MultipartFile photo = mock(MultipartFile.class);
+        when(photo.isEmpty()).thenReturn(false);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+        request.setPhoto(photo);
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(s3ImageService.upload(photo)).thenReturn("https://s3/orphan-photo.jpg");
+        // 동시에 같은 시설+유저로 리뷰가 하나 더 저장돼 유니크 인덱스에 걸린 상황을 흉내낸다.
+        ConstraintViolationException uniqueConstraintViolation = new ConstraintViolationException(
+                "duplicate key value violates unique constraint",
+                new SQLException("duplicate key"),
+                "uq_reviews_facility_user_active"
+        );
+        when(reviewRepository.save(any(Review.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key", uniqueConstraintViolation));
+
+        assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.upsertReview(1L, 7L, request)
+        );
+
+        // 저장이 실패했으니 방금 올린 사진이 고아 파일로 남지 않도록 지워야 한다.
+        verify(s3ImageService).delete("https://s3/orphan-photo.jpg");
+    }
+
+    @Test
     void upsertReview_기존_리뷰_수정시_방문일을_요청에_담아도_바뀌지_않는다() {
         Facility facility = createFacility(7L);
         User user = createUser(1L);
@@ -424,6 +562,73 @@ class ReviewCommandServiceTest {
         verify(facilityGradeCacheService).refresh(7L);
         // 새 리뷰가 아니라 경험치는 지급되지 않는다.
         verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void updateReview_사진을_교체하면_이전_사진을_S3에서_지운다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+
+        Review review = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .photoUrl("https://s3/old-photo.jpg")
+                .build();
+        review.replacePets(List.of(pet));
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        MultipartFile newPhoto = mock(MultipartFile.class);
+        when(newPhoto.isEmpty()).thenReturn(false);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+        request.setPhoto(newPhoto);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(s3ImageService.upload(newPhoto)).thenReturn("https://s3/new-photo.jpg");
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.updateReview(1L, 7001L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3/new-photo.jpg");
+        verify(s3ImageService).delete("https://s3/old-photo.jpg");
+    }
+
+    @Test
+    void updateReview_사진_없이_수정하면_기존_사진을_유지하고_지우지_않는다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+
+        Review review = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .photoUrl("https://s3/old-photo.jpg")
+                .build();
+        review.replacePets(List.of(pet));
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.updateReview(1L, 7001L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3/old-photo.jpg");
+        verify(s3ImageService, never()).delete(any());
+        verify(s3ImageService, never()).upload(any());
     }
 
     @Test

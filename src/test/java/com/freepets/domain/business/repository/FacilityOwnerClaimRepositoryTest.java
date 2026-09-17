@@ -173,6 +173,57 @@ class FacilityOwnerClaimRepositoryTest {
     }
 
     @Test
+    void existsApprovedByFacilityIdAndUserId_승인된_기록이면_true를_반환한다() {
+        // FacilityOwnershipValidator.requireOwner가 그대로 이 결과로 통과 여부를 정한다.
+        Facility facility = createFacility("카페 파도살롱");
+        entityManager.persist(createClaim(owner, facility, ClaimStatus.APPROVED));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(facilityOwnerClaimRepository.existsApprovedByFacilityIdAndUserId(
+                facility.getFacilityId(), owner.getId()
+        )).isTrue();
+    }
+
+    @Test
+    void existsApprovedByFacilityIdAndUserId_대기_반려_해제_상태는_false를_반환한다() {
+        // 심사 중·반려·해제는 소유자가 아니다 — FacilityOwnershipValidatorTest는 이 메소드를
+        // mock 처리해서 넘어가므로, 세 상태 모두 실제로 걸러지는지는 여기서만 검증된다.
+        Facility pendingFacility = createFacility("대기 매장");
+        Facility rejectedFacility = createFacility("반려 매장");
+        Facility revokedFacility = createFacility("해제 매장");
+        entityManager.persist(createClaim(owner, pendingFacility, ClaimStatus.PENDING));
+        entityManager.persist(createClaim(owner, rejectedFacility, ClaimStatus.REJECTED));
+        entityManager.persist(createClaim(owner, revokedFacility, ClaimStatus.REVOKED));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(facilityOwnerClaimRepository.existsApprovedByFacilityIdAndUserId(
+                pendingFacility.getFacilityId(), owner.getId()
+        )).isFalse();
+        assertThat(facilityOwnerClaimRepository.existsApprovedByFacilityIdAndUserId(
+                rejectedFacility.getFacilityId(), owner.getId()
+        )).isFalse();
+        assertThat(facilityOwnerClaimRepository.existsApprovedByFacilityIdAndUserId(
+                revokedFacility.getFacilityId(), owner.getId()
+        )).isFalse();
+    }
+
+    @Test
+    void existsApprovedByFacilityIdAndUserId_다른_사용자의_승인_기록은_false를_반환한다() {
+        // 남의 매장에 대한 403 시나리오 — 그 매장에 승인된 소유자가 있어도 나와 매칭되지 않으면 false다.
+        Facility facility = createFacility("옆 가게");
+        User realOwner = createUser("real-owner@test.com");
+        entityManager.persist(createClaim(realOwner, facility, ClaimStatus.APPROVED));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(facilityOwnerClaimRepository.existsApprovedByFacilityIdAndUserId(
+                facility.getFacilityId(), owner.getId()
+        )).isFalse();
+    }
+
+    @Test
     void findApprovedFacilityIdsByUserId_소유_기록이_없으면_빈_목록을_반환한다() {
         assertThat(facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(owner.getId())).isEmpty();
     }

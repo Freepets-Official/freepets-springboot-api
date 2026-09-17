@@ -92,4 +92,14 @@ public class ReviewController {
                 reviewCommandService.markHelpful(userId, reviewId)
         );
     }
+
+    @DeleteMapping("/reviews/{reviewId}/helpful")
+    public ApiResponse<ReviewResponseDTO.HelpfulResult> unmarkHelpful(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable("reviewId") Long reviewId
+    ) {
+        return ApiResponse.onSuccess(
+                reviewCommandService.unmarkHelpful(userId, reviewId)
+        );
+    }
 }

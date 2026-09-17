@@ -610,6 +610,82 @@ class ReviewCommandServiceTest {
     }
 
     @Test
+    void unmarkHelpful_표시돼_있으면_카운트가_1_감소한다() {
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+        ReflectionTestUtils.setField(review, "helpfulCount", 1L);
+        // decrementHelpfulCount도 incrementHelpfulCount와 같은 벌크 업데이트라 재조회로만 최신
+        // 값을 얻는다.
+        Review refreshed = Review.builder()
+                .facility(review.getFacility())
+                .user(review.getUser())
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(refreshed, "reviewId", 7001L);
+        ReflectionTestUtils.setField(refreshed, "helpfulCount", 0L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L))
+                .thenReturn(Optional.of(review))
+                .thenReturn(Optional.of(refreshed));
+        when(reviewHelpfulRepository.deleteByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(1);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.unmarkHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(0L);
+        verify(reviewRepository).decrementHelpfulCount(7001L);
+    }
+
+    @Test
+    void unmarkHelpful_표시한_적_없으면_아무것도_하지_않고_그대로_성공한다() {
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(reviewHelpfulRepository.deleteByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(0);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.unmarkHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(0L);
+        verify(reviewRepository, never()).decrementHelpfulCount(any());
+    }
+
+    @Test
+    void unmarkHelpful_존재하지_않는_리뷰면_예외를_던진다() {
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.empty());
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.unmarkHelpful(1L, 7001L)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4041);
+        verify(reviewHelpfulRepository, never()).deleteByReviewReviewIdAndUserId(any(), any());
+    }
+
+    @Test
     void deleteReview_본인_리뷰면_삭제한다() {
         Facility facility = createFacility(7L);
         User user = createUser(1L);

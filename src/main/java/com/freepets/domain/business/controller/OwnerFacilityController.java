@@ -3,13 +3,18 @@ package com.freepets.domain.business.controller;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.freepets.domain.business.dto.BusinessRequestDTO;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
+import com.freepets.domain.business.service.OwnerFacilityConditionCommandService;
 import com.freepets.domain.business.service.OwnerFacilityQueryService;
 import com.freepets.global.apiPayload.ApiResponse;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -30,6 +35,7 @@ import lombok.RequiredArgsConstructor;
 public class OwnerFacilityController {
 
     private final OwnerFacilityQueryService ownerFacilityQueryService;
+    private final OwnerFacilityConditionCommandService ownerFacilityConditionCommandService;
 
     /**
      * 내 매장 목록. 대시보드 첫 화면이 이 API로 매장 카드를 그리고, 사장님이 카드를 골라 관리 대상을 정한다.
@@ -55,6 +61,20 @@ public class OwnerFacilityController {
     ) {
         return ApiResponse.onSuccess(
                 ownerFacilityQueryService.getDenialAlerts(userId, facilityId)
+        );
+    }
+
+    /**
+     * 출입 조건 수정. 재심사 없이 즉시 반영한다 — 이미 등록증 대조를 통과한 소유자이기 때문이다.
+     */
+    @PutMapping("/facilities/{facilityId}/conditions")
+    public ApiResponse<BusinessResponseDTO.EntryCondition> updateConditions(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long facilityId,
+            @Valid @RequestBody BusinessRequestDTO.ConditionUpdateRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                ownerFacilityConditionCommandService.updateConditions(userId, facilityId, request)
         );
     }
 }

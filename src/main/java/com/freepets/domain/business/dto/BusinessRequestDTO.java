@@ -90,6 +90,34 @@ public class BusinessRequestDTO {
         private MultipartFile registrationCertificate;
     }
 
+    /**
+     * 출입 조건 수정. 재심사 없이 즉시 반영된다 — 이미 등록증 대조를 통과한 소유자의 매장이기 때문이다.
+     *
+     * <p>{@link ClaimRequest}의 조건 5필드와 같은 값·검증을 쓴다. 등록증 파일이 없어 JSON body로 받는다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class ConditionUpdateRequest {
+
+        @NotNull(message = "반려동물 동반 가능 여부는 필수입니다.")
+        private PetAllowed petAllowed;
+
+        /** 동반 가능한 최대 체중(kg). 상한이 있을 때만 보낸다. */
+        @DecimalMin(value = "0.0", inclusive = false, message = "최대 체중은 0보다 커야 합니다.")
+        private BigDecimal maxWeight;
+
+        /** {@code true}="이하", {@code false}="미만". 최대 체중이 없으면 무시된다. */
+        private Boolean maxWeightInclusive;
+
+        /** 방문객이 지켜야 할 조건. 없으면 빈 목록으로 보낸다. */
+        @NotNull(message = "필수 준비물 목록은 필수입니다.")
+        private List<Requirement> requirements;
+
+        /** 화면에 그대로 보여줄 조건 안내문. */
+        private String conditionRaw;
+    }
+
     /** 관리자 반려. 사유는 신청자에게 보여줄 수 있어야 하므로 필수로 받는다. */
     @Getter
     @Setter

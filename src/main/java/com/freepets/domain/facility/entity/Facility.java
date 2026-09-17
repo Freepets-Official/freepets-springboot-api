@@ -3,7 +3,11 @@ package com.freepets.domain.facility.entity;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.ColumnDefault;
@@ -450,7 +454,7 @@ public class Facility extends BaseEntity {
 
     public void replaceRequirements(List<Requirement> requirements) {
         this.checkLists.clear();
-        requirements.forEach(requirement -> this.checkLists.add(
+        requirements.stream().distinct().forEach(requirement -> this.checkLists.add(
                 CheckList.builder()
                         .facility(this)
                         .type(requirement)
@@ -467,6 +471,13 @@ public class Facility extends BaseEntity {
      *
      * <p>{@code requiredItems}(LLM이 만든 화면 표시 문구)와 {@code petConditionStatus}는 건드리지
      * 않는다. 그쪽은 "조건 원문을 얼마나 구조화했는지"를 나타내는 별개 축이다.
+     *
+     * <p>승인(최초 확정)과 사업자의 직접 수정이 같은 메서드를 탄다. {@code confirmedAt}은 판별에 실제로
+     * 쓰이는 값({@code petAllowed}/{@code maxWeight}/{@code maxWeightInclusive}/{@code requirements})이
+     * 이전과 실제로 달라졌을 때만 갱신한다 — 같은 값으로 반복 확정해도 거부 제보로 인한 신뢰도 하향이
+     * 풀리지 않게 하기 위함이다. 아직 한 번도 확정한 적이 없으면({@code confirmedAt == null}) 값이
+     * 우연히 같아도 최초 확정으로 보고 갱신한다. {@code conditionRaw}는 화면 안내문일 뿐 판별에 쓰이지
+     * 않으므로 이 판단에서 제외한다 — 값은 항상 저장한다.
      */
     public void confirmByOwner(
             PetAllowed petAllowed,
@@ -475,13 +486,47 @@ public class Facility extends BaseEntity {
             List<Requirement> requirements,
             String conditionRaw
     ) {
+        // 상한이 없으면 경계 종류("이하"/"미만")도 의미가 없다.
+        Boolean normalizedMaxWeightInclusive = maxWeight == null ? null : maxWeightInclusive;
+        boolean shouldRefreshConfirmedAt = this.confirmedAt == null
+                || judgmentValuesChanged(petAllowed, maxWeight, normalizedMaxWeightInclusive, requirements);
+
         this.petAllowed = petAllowed;
         this.maxWeight = maxWeight;
-        // 상한이 없으면 경계 종류("이하"/"미만")도 의미가 없다.
-        this.maxWeightInclusive = maxWeight == null ? null : maxWeightInclusive;
+        this.maxWeightInclusive = normalizedMaxWeightInclusive;
         this.petConditionRaw = conditionRaw;
-        this.confirmedAt = LocalDateTime.now();
+        if (shouldRefreshConfirmedAt) {
+            this.confirmedAt = LocalDateTime.now();
+        }
         replaceRequirements(requirements);
+    }
+
+    private boolean judgmentValuesChanged(
+            PetAllowed newPetAllowed,
+            BigDecimal newMaxWeight,
+            Boolean newMaxWeightInclusive,
+            List<Requirement> newRequirements
+    ) {
+        if (this.petAllowed != newPetAllowed) {
+            return true;
+        }
+        if (!bigDecimalEquals(this.maxWeight, newMaxWeight)) {
+            return true;
+        }
+        if (!Objects.equals(this.maxWeightInclusive, newMaxWeightInclusive)) {
+            return true;
+        }
+        Set<Requirement> currentRequirements = this.checkLists.stream()
+                .map(CheckList::getType)
+                .collect(Collectors.toSet());
+        return !currentRequirements.equals(new HashSet<>(newRequirements));
+    }
+
+    private static boolean bigDecimalEquals(BigDecimal a, BigDecimal b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        return a.compareTo(b) == 0;
     }
 
     /**

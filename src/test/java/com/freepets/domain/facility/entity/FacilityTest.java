@@ -3,6 +3,7 @@ package com.freepets.domain.facility.entity;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -103,6 +104,115 @@ class FacilityTest {
         assertThat(facility.getPetAllowed()).isEqualTo(PetAllowed.DENIED);
         assertThat(facility.getMaxWeight()).isEqualByComparingTo("5.00");
         assertThat(facility.getMaxWeightInclusive()).isFalse();
+    }
+
+    @Test
+    void confirmByOwner_같은_값으로_다시_확정하면_확정_시각을_유지한다() throws InterruptedException {
+        // 같은 값으로 PUT만 반복해도 거부 제보로 인한 신뢰도 하향이 계속 풀리면 안 된다.
+        Facility facility = createFacility();
+        confirm(facility);
+        LocalDateTime firstConfirmedAt = facility.getConfirmedAt();
+        Thread.sleep(5);
+
+        confirm(facility);
+
+        assertThat(facility.getConfirmedAt()).isEqualTo(firstConfirmedAt);
+    }
+
+    @Test
+    void confirmByOwner_판별값이_바뀌면_확정_시각을_갱신한다() throws InterruptedException {
+        Facility facility = createFacility();
+        confirm(facility);
+        LocalDateTime firstConfirmedAt = facility.getConfirmedAt();
+        Thread.sleep(5);
+
+        facility.confirmByOwner(
+                PetAllowed.ALLOWED,
+                new BigDecimal("12.00"),
+                true,
+                List.of(Requirement.LEASH),
+                "리드줄 착용 시 실내 동반 가능"
+        );
+
+        assertThat(facility.getConfirmedAt()).isAfter(firstConfirmedAt);
+    }
+
+    @Test
+    void confirmByOwner_안내문만_바뀌면_확정_시각을_유지한다() throws InterruptedException {
+        // conditionRaw는 화면 안내문일 뿐 판별에 쓰이지 않는다 — 값은 저장하되 기준선은 유지한다.
+        Facility facility = createFacility();
+        confirm(facility);
+        LocalDateTime firstConfirmedAt = facility.getConfirmedAt();
+        Thread.sleep(5);
+
+        facility.confirmByOwner(
+                PetAllowed.ALLOWED,
+                new BigDecimal("10.00"),
+                true,
+                List.of(Requirement.LEASH),
+                "안내문만 바꿔봄"
+        );
+
+        assertThat(facility.getConfirmedAt()).isEqualTo(firstConfirmedAt);
+        assertThat(facility.getPetConditionRaw()).isEqualTo("안내문만 바꿔봄");
+    }
+
+    @Test
+    void confirmByOwner_필수_준비물_순서만_바뀌면_확정_시각을_유지한다() throws InterruptedException {
+        Facility facility = createFacility();
+        facility.confirmByOwner(
+                PetAllowed.ALLOWED,
+                new BigDecimal("10.00"),
+                true,
+                List.of(Requirement.LEASH, Requirement.CAGE),
+                "동반 가능"
+        );
+        LocalDateTime firstConfirmedAt = facility.getConfirmedAt();
+        Thread.sleep(5);
+
+        facility.confirmByOwner(
+                PetAllowed.ALLOWED,
+                new BigDecimal("10.00"),
+                true,
+                List.of(Requirement.CAGE, Requirement.LEASH),
+                "동반 가능"
+        );
+
+        assertThat(facility.getConfirmedAt()).isEqualTo(firstConfirmedAt);
+        assertThat(facility.getCheckLists()).hasSize(2);
+    }
+
+    @Test
+    void confirmByOwner_요청에_중복된_준비물이_있어도_체크리스트가_중복되지_않는다() {
+        Facility facility = createFacility();
+
+        facility.confirmByOwner(
+                PetAllowed.ALLOWED,
+                new BigDecimal("10.00"),
+                true,
+                List.of(Requirement.LEASH, Requirement.LEASH),
+                "동반 가능"
+        );
+
+        assertThat(facility.getCheckLists()).hasSize(1);
+    }
+
+    @Test
+    void confirmByOwner_최대_체중_스케일만_다르면_확정_시각을_유지한다() throws InterruptedException {
+        Facility facility = createFacility();
+        confirm(facility);
+        LocalDateTime firstConfirmedAt = facility.getConfirmedAt();
+        Thread.sleep(5);
+
+        facility.confirmByOwner(
+                PetAllowed.ALLOWED,
+                new BigDecimal("10.0"),
+                true,
+                List.of(Requirement.LEASH),
+                "리드줄 착용 시 실내 동반 가능"
+        );
+
+        assertThat(facility.getConfirmedAt()).isEqualTo(firstConfirmedAt);
     }
 
     @Test

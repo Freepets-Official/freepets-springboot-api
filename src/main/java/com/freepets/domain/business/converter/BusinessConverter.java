@@ -100,7 +100,7 @@ public class BusinessConverter {
         );
     }
 
-    private static BusinessResponseDTO.EntryCondition toEntryCondition(
+    public static BusinessResponseDTO.EntryCondition toEntryCondition(
             Facility facility,
             long denialAlertCount
     ) {

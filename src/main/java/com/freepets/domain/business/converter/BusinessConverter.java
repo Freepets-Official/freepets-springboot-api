@@ -1,6 +1,7 @@
 package com.freepets.domain.business.converter;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.springframework.data.domain.Page;
@@ -8,7 +9,15 @@ import org.springframework.data.domain.Page;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
 import com.freepets.domain.business.entity.FacilityOwnerClaim;
 import com.freepets.domain.business.entity.RequestedCondition;
+import com.freepets.domain.facility.entity.CheckList;
+import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.FacilityBenefit;
+import com.freepets.domain.facility.entity.FacilityGradeSnapshot;
+import com.freepets.domain.facility.entity.Requirement;
+import com.freepets.domain.report.entity.FacilityReport;
+import com.freepets.domain.report.repository.DowngradingDenialReport;
+import com.freepets.domain.review.repository.FacilityReviewAggregate;
 import com.freepets.infra.nts.NtsValidationResult;
 
 public class BusinessConverter {
@@ -47,6 +56,106 @@ public class BusinessConverter {
                 claim.getStatus(),
                 claim.getCreatedAt(),
                 claim.getReviewReason()
+        );
+    }
+
+    /**
+     * 내 매장 목록. 신뢰도는 저장값이 아니라 여기서 계산한다({@link Confidence#of}) — 시설 상세
+     * ({@code FacilityConverter.toFacilityDetail})와 같은 규칙을 써야 사장님이 보는 배지와 손님이
+     * 보는 배지가 어긋나지 않는다.
+     *
+     * @param denialAlertCounts    시설별 신뢰도를 내리고 있는 거부 제보 수. 제보가 없는 시설은 키가 없다
+     * @param latestDenialAlerts   시설별 가장 최근 거부 제보. 제보가 없는 시설은 키가 없다
+     * @param weeklyPetCheckCounts 시설별 이번 주 판별 수. 판별이 없는 시설은 키가 없다
+     */
+    public static BusinessResponseDTO.OwnerFacilityList toOwnerFacilityList(
+            List<FacilityOwnerClaim> claims,
+            Map<Long, Long> denialAlertCounts,
+            Map<Long, DowngradingDenialReport> latestDenialAlerts,
+            Map<Long, Long> weeklyPetCheckCounts
+    ) {
+        List<BusinessResponseDTO.OwnerFacility> facilities = claims.stream()
+                .map(FacilityOwnerClaim::getFacility)
+                .map(facility -> toOwnerFacility(
+                        facility,
+                        denialAlertCounts.getOrDefault(facility.getFacilityId(), 0L),
+                        latestDenialAlerts.get(facility.getFacilityId()),
+                        weeklyPetCheckCounts.getOrDefault(facility.getFacilityId(), 0L)
+                ))
+                .toList();
+
+        return new BusinessResponseDTO.OwnerFacilityList(facilities);
+    }
+
+    private static BusinessResponseDTO.OwnerFacility toOwnerFacility(
+            Facility facility,
+            long denialAlertCount,
+            DowngradingDenialReport latestDenialAlert,
+            long weeklyPetCheckCount
+    ) {
+        return new BusinessResponseDTO.OwnerFacility(
+                facility.getFacilityId(),
+                facility.getName(),
+                facility.getCategory(),
+                facility.getAddress(),
+                toEntryCondition(facility, denialAlertCount),
+                new BusinessResponseDTO.Stats(weeklyPetCheckCount, facility.getReviewCount()),
+                toDenialAlerts(denialAlertCount, latestDenialAlert),
+                toFacilityProfile(facility)
+        );
+    }
+
+    public static BusinessResponseDTO.FacilityProfile toFacilityProfile(Facility facility) {
+        return new BusinessResponseDTO.FacilityProfile(
+                facility.getIntroduction(),
+                facility.getAmenityTags()
+        );
+    }
+
+    public static BusinessResponseDTO.EntryCondition toEntryCondition(
+            Facility facility,
+            long denialAlertCount
+    ) {
+        Confidence.View confidence = Confidence.of(
+                facility.getPetConditionRaw(),
+                denialAlertCount,
+                facility.getConfirmedAt()
+        );
+
+        List<Requirement> requirements = facility.getCheckLists().stream()
+                .map(CheckList::getType)
+                .toList();
+
+        return new BusinessResponseDTO.EntryCondition(
+                facility.getPetAllowed(),
+                facility.getMaxWeight(),
+                facility.getMaxWeightInclusive(),
+                requirements,
+                facility.getPetConditionRaw(),
+                facility.getConfirmedAt(),
+                confidence.confidence(),
+                confidence.source()
+        );
+    }
+
+    /**
+     * 제보가 없으면 최신 제보를 비운다 — 경고 카드 자체를 그리지 않는다. 건수와 최신 제보는 서로 다른
+     * 쿼리에서 오므로 둘 중 하나만 비는 상태가 나올 수 있어, 건수를 기준으로 맞춘다.
+     */
+    private static BusinessResponseDTO.DenialAlerts toDenialAlerts(
+            long denialAlertCount,
+            DowngradingDenialReport latestDenialAlert
+    ) {
+        if (denialAlertCount == 0 || latestDenialAlert == null) {
+            return new BusinessResponseDTO.DenialAlerts(0, null);
+        }
+
+        return new BusinessResponseDTO.DenialAlerts(
+                denialAlertCount,
+                new BusinessResponseDTO.DenialAlert(
+                        latestDenialAlert.denialReason(),
+                        latestDenialAlert.reportedAt()
+                )
         );
     }
 
@@ -97,6 +206,72 @@ public class BusinessConverter {
                 claim.getReviewedAt(),
                 claim.getReviewReason(),
                 approvedFacilityIds.contains(facility.getFacilityId())
+        );
+    }
+
+    public static BusinessResponseDTO.DenialAlertList toDenialAlertList(List<FacilityReport> reports) {
+        return new BusinessResponseDTO.DenialAlertList(
+                reports.stream().map(BusinessConverter::toDenialAlertDetail).toList()
+        );
+    }
+
+    private static BusinessResponseDTO.DenialAlertDetail toDenialAlertDetail(FacilityReport report) {
+        return new BusinessResponseDTO.DenialAlertDetail(
+                report.getReportId(),
+                report.getDenialReason(),
+                report.getContent(),
+                report.getCreatedAt()
+        );
+    }
+
+    public static BusinessResponseDTO.VisitBenefitList toVisitBenefitList(List<FacilityBenefit> benefits) {
+        return new BusinessResponseDTO.VisitBenefitList(
+                benefits.stream().map(BusinessConverter::toVisitBenefit).toList()
+        );
+    }
+
+    public static BusinessResponseDTO.VisitBenefit toVisitBenefit(FacilityBenefit benefit) {
+        return new BusinessResponseDTO.VisitBenefit(
+                benefit.getFacilityBenefitId(),
+                benefit.getTitle(),
+                benefit.getDescription(),
+                benefit.isEnabled()
+        );
+    }
+
+    /**
+     * 리뷰·통계 화면. {@code aggregate}가 없으면(적격 리뷰 0건) 평균은 전부 0으로 내린다.
+     */
+    public static BusinessResponseDTO.ReviewStats toReviewStats(
+            FacilityReviewAggregate aggregate,
+            List<FacilityGradeSnapshot> snapshots,
+            long interestCount
+    ) {
+        return new BusinessResponseDTO.ReviewStats(
+                toItemAverages(aggregate),
+                snapshots.stream().map(BusinessConverter::toGradeTrendPoint).toList(),
+                interestCount
+        );
+    }
+
+    private static BusinessResponseDTO.ItemAverages toItemAverages(FacilityReviewAggregate aggregate) {
+        if (aggregate == null) {
+            return new BusinessResponseDTO.ItemAverages(0, 0, 0, 0);
+        }
+
+        return new BusinessResponseDTO.ItemAverages(
+                aggregate.reviewCount(),
+                aggregate.averageSpace(),
+                aggregate.averageStaff(),
+                aggregate.averageAmenity()
+        );
+    }
+
+    private static BusinessResponseDTO.GradeTrendPoint toGradeTrendPoint(FacilityGradeSnapshot snapshot) {
+        return new BusinessResponseDTO.GradeTrendPoint(
+                snapshot.getSnapshotDate(),
+                snapshot.getPawGradeLevel(),
+                snapshot.getPetScore()
         );
     }
 

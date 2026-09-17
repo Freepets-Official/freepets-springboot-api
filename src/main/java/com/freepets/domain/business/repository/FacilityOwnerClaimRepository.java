@@ -41,6 +41,38 @@ public interface FacilityOwnerClaimRepository extends JpaRepository<FacilityOwne
     Optional<FacilityOwnerClaim> findApprovedByFacilityId(@Param("facilityId") Long facilityId);
 
     /**
+     * 소유한 매장을 시설과 함께, 소유 기록이 생긴 순서대로 가져온다. 사업자 대시보드의 내 매장 목록이 쓴다.
+     *
+     * <p>{@link #findApprovedFacilityIdsByUserId}는 ID만 주지만 목록 화면은 이름·주소·조건까지 그려야 해서
+     * 시설을 함께 가져온다. 요구조건({@code Facility.checkLists})은 {@code @BatchSize}가 붙어 있어
+     * 지연 로딩이어도 한 번에 묶여 나간다 — 여기서 함께 fetch하면 컬렉션이 둘이 되어 곱집합이 된다.
+     */
+    @Query("""
+            SELECT claim FROM FacilityOwnerClaim claim
+            JOIN FETCH claim.facility
+            WHERE claim.user.id = :userId
+              AND claim.status = com.freepets.domain.business.entity.ClaimStatus.APPROVED
+            ORDER BY claim.claimId
+            """)
+    List<FacilityOwnerClaim> findApprovedWithFacilityByUserId(@Param("userId") Long userId);
+
+    /**
+     * 요청자가 이 시설의 주인인지. {@code owner/**} 요청마다 부르는 검사라
+     * ({@code FacilityOwnershipValidator}) 시설과 사용자를 불러오지 않고 존재 여부만 센다.
+     *
+     * <p>{@link #findApprovedFacilityIdsByUserId}로 목록을 받아 포함 여부를 보는 방법도 있지만,
+     * 매장이 여러 곳인 사업자의 소유 목록을 매 요청마다 통째로 읽게 된다.
+     */
+    @Query("select count(claim) > 0 from FacilityOwnerClaim claim"
+            + " where claim.facility.facilityId = :facilityId"
+            + " and claim.user.id = :userId"
+            + " and claim.status = com.freepets.domain.business.entity.ClaimStatus.APPROVED")
+    boolean existsApprovedByFacilityIdAndUserId(
+            @Param("facilityId") Long facilityId,
+            @Param("userId") Long userId
+    );
+
+    /**
      * 요청자가 이 시설에 이미 심사 중인 신청을 냈는지. 같은 사람이 같은 매장에 신청을 여러 번 쌓지 못하게 한다
      * (남이 낸 대기 신청은 막지 않는다 — 먼저 신청했다고 선점하면 안 된다).
      */

@@ -37,6 +37,7 @@ import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Region;
 import com.freepets.domain.facility.entity.Requirement;
+import com.freepets.domain.facility.repository.FacilityBenefitRepository;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.facility.repository.FacilityWithDistance;
 import com.freepets.domain.facility.repository.RegionRepository;
@@ -72,6 +73,9 @@ class FacilityQueryServiceTest {
 
     @Mock
     private FacilityReportRepository facilityReportRepository;
+
+    @Mock
+    private FacilityBenefitRepository facilityBenefitRepository;
 
     @InjectMocks
     private FacilityQueryService facilityQueryService;

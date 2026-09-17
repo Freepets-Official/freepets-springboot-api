@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.springframework.web.multipart.MultipartFile;
 
+import com.freepets.domain.facility.entity.FacilityAmenity;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
 
@@ -12,6 +13,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -88,6 +90,74 @@ public class BusinessRequestDTO {
         /** 사업자등록증 사진 또는 PDF. 운영자가 상호·소재지를 신청한 매장과 대조한다. */
         @NotNull(message = "사업자등록증 파일은 필수입니다.")
         private MultipartFile registrationCertificate;
+    }
+
+    /**
+     * 출입 조건 수정. 재심사 없이 즉시 반영된다 — 이미 등록증 대조를 통과한 소유자의 매장이기 때문이다.
+     *
+     * <p>{@link ClaimRequest}의 조건 5필드와 같은 값·검증을 쓴다. 등록증 파일이 없어 JSON body로 받는다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class ConditionUpdateRequest {
+
+        @NotNull(message = "반려동물 동반 가능 여부는 필수입니다.")
+        private PetAllowed petAllowed;
+
+        /** 동반 가능한 최대 체중(kg). 상한이 있을 때만 보낸다. */
+        @DecimalMin(value = "0.0", inclusive = false, message = "최대 체중은 0보다 커야 합니다.")
+        private BigDecimal maxWeight;
+
+        /** {@code true}="이하", {@code false}="미만". 최대 체중이 없으면 무시된다. */
+        private Boolean maxWeightInclusive;
+
+        /** 방문객이 지켜야 할 조건. 없으면 빈 목록으로 보낸다. */
+        @NotNull(message = "필수 준비물 목록은 필수입니다.")
+        private List<Requirement> requirements;
+
+        /** 화면에 그대로 보여줄 조건 안내문. */
+        private String conditionRaw;
+    }
+
+    /**
+     * 매장 소개·홍보 저장. 소개글과 편의시설 태그를 화면 하단 "저장하기" 하나로 함께 보낸다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class FacilityProfileUpdateRequest {
+
+        @Size(max = 500, message = "소개글은 500자 이내로 입력해주세요.")
+        private String introduction;
+
+        /** 반려동물 편의시설 태그. 없으면 빈 목록으로 보내 전체 해제한다. */
+        @NotNull(message = "편의시설 태그 목록은 필수입니다.")
+        private List<FacilityAmenity> amenityTags;
+    }
+
+    /** 방문 혜택 추가. 상세 안내는 선택이다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class VisitBenefitCreateRequest {
+
+        @NotBlank(message = "제목은 필수입니다.")
+        @Size(max = 50, message = "제목은 50자 이내로 입력해주세요.")
+        private String title;
+
+        @Size(max = 300, message = "상세 안내는 300자 이내로 입력해주세요.")
+        private String description;
+    }
+
+    /** 방문 혜택 노출 on/off. 목표 상태를 명시적으로 받는다 — blind toggle은 중복 호출에 취약하다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class VisitBenefitEnabledUpdateRequest {
+
+        @NotNull(message = "노출 여부는 필수입니다.")
+        private Boolean isEnabled;
     }
 
     /** 관리자 반려. 사유는 신청자에게 보여줄 수 있어야 하므로 필수로 받는다. */

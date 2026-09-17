@@ -57,7 +57,8 @@ class PetCheckVerifyControllerTest {
                 "몽이는 리드줄만 착용하면 이용 가능합니다",
                 "야외 좌석에 한해 반려동물 동반이 가능합니다.",
                 LocalDateTime.now().minusDays(60),
-                LocalDateTime.now()
+                LocalDateTime.now(),
+                List.of(new PetCheckResponseDTO.VerifyBenefit("출입증 제시 시 음료 10% 할인", "프리펫츠 동반 출입증을 보여주세요"))
         );
         when(petCheckQueryService.getVerifyPage("FP-ABC1234567")).thenReturn(page);
 
@@ -66,7 +67,8 @@ class PetCheckVerifyControllerTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("테라로자 커피공장")))
                 .andExpect(content().string(containsString("몽이")))
-                .andExpect(content().string(containsString("리드줄 필수 착용")));
+                .andExpect(content().string(containsString("리드줄 필수 착용")))
+                .andExpect(content().string(containsString("출입증 제시 시 음료 10% 할인")));
     }
 
     @Test
@@ -92,7 +94,8 @@ class PetCheckVerifyControllerTest {
                 "모든 조건을 충족해 출입 가능합니다",
                 null,
                 null,
-                LocalDateTime.now()
+                LocalDateTime.now(),
+                List.of()
         );
         when(petCheckQueryService.getVerifyPage("FP-ABC1234567")).thenReturn(page);
 

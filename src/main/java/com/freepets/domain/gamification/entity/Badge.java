@@ -106,4 +106,20 @@ public enum Badge {
         return threshold;
     }
 
+    /**
+     * 이 배지가 속한 패밀리 — 상수 이름 {@code {패밀리}_{단계}}에서 마지막 단계 부분을 뗀
+     * 나머지를 그대로 {@link BadgeFamily}로 해석한다. 42개 상수마다 패밀리를 따로 저장해두는
+     * 대신 이름 규칙 하나로 유도한다 — 새 패밀리가 추가돼도 상수 이름만 규칙대로 지으면 되고,
+     * 패밀리 목록과 상수 목록이 서로 어긋날 일이 없다. {@link BadgeFamilyTierNamingTest}가 42개
+     * 전부 이 규칙을 지키는지 검증한다.
+     */
+    public BadgeFamily getFamily() {
+        return BadgeFamily.valueOf(name().substring(0, name().lastIndexOf('_')));
+    }
+
+    /** 이 배지의 단계 — 상수 이름의 마지막 {@code _} 뒤 부분을 {@link BadgeTier}로 해석한다. */
+    public BadgeTier getTier() {
+        return BadgeTier.valueOf(name().substring(name().lastIndexOf('_') + 1));
+    }
+
 }

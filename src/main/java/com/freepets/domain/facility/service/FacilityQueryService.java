@@ -302,8 +302,10 @@ public class FacilityQueryService {
                 .aggregateByFacilityId(facilityId, ReviewReportStatus.ACCEPTED)
                 .orElse(null);
 
-        // 인증이 필요한 API라 userId는 항상 있다.
-        List<Pet> myPets = petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(userId);
+        // 게스트(토큰 없음)는 userId가 null로 들어온다 — 반려동물 궁합 없이 공개 정보만 내려준다.
+        List<Pet> myPets = userId == null
+                ? List.of()
+                : petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(userId);
 
         long recentDenialReportCount = facilityReportRepository.countByFacility_FacilityIdAndIsRealtimeTrueAndCreatedAtAfter(
                 facilityId,

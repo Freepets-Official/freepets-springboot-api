@@ -38,7 +38,10 @@ public class FacilityController {
      *
      * <p>조회지만 POST로 받는다. 위도·경도는 개인위치정보라 쿼리 스트링에 실으면
      * 웹 서버 액세스 로그와 APM 트레이스에 그대로 쌓인다. GET의 이점인 캐싱은
-     * 인증이 필요한 데다 좌표마다 응답이 달라 얻을 것이 없다.
+     * 좌표마다 응답이 달라 얻을 것이 없다.
+     *
+     * <p>게스트(토큰 없음)도 호출할 수 있다. 개인화 없이 공개 데이터만 내려가는
+     * 순수 조회라 로그인 여부와 무관하다({@code SecurityConfig} 참고).
      */
     @PostMapping("/search")
     public ApiResponse<FacilityResponseDTO.FacilitySearchResult> searchFacilities(
@@ -93,6 +96,9 @@ public class FacilityController {
      *
      * <p>좌표는 선택이다. 위치 권한을 거부했거나 딥링크로 바로 들어온 경우 거리를 낼 수 없으므로
      * {@code distanceM}만 비워서 내려준다. 다만 둘 중 하나만 보내는 것은 실수이므로 400으로 막는다.
+     *
+     * <p>게스트(토큰 없음)도 호출할 수 있다. 이때 {@code userId}는 null로 들어오며, 반려동물
+     * 궁합 같은 개인화만 빠지고 나머지 공개 정보는 그대로 내려간다.
      */
     @GetMapping("/{facilityId}")
     public ApiResponse<FacilityResponseDTO.FacilityDetail> getFacilityDetail(

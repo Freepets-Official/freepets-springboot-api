@@ -1,6 +1,7 @@
 package com.freepets.global.security;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -29,6 +30,15 @@ import com.freepets.domain.course.service.CourseLikedService;
 import com.freepets.domain.course.service.CoursePresetService;
 import com.freepets.domain.course.service.CourseQueryService;
 import com.freepets.domain.course.service.CourseSimilarService;
+import com.freepets.domain.facility.controller.FacilityController;
+import com.freepets.domain.facility.dto.FacilityResponseDTO;
+import com.freepets.domain.facility.service.FacilityQueryService;
+import com.freepets.domain.report.controller.DenialReportController;
+import com.freepets.domain.report.service.DenialReportCommandService;
+import com.freepets.domain.report.service.DenialReportQueryService;
+import com.freepets.domain.review.controller.ReviewController;
+import com.freepets.domain.review.service.ReviewCommandService;
+import com.freepets.domain.review.service.ReviewQueryService;
 import com.freepets.domain.user.controller.UserController;
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.entity.Role;
@@ -39,7 +49,15 @@ import com.freepets.global.config.SecurityConfig;
 import com.freepets.global.config.JwtConfig;
 import com.freepets.global.security.jwt.JwtProvider;
 
-@WebMvcTest(controllers = {UserController.class, AuthController.class, CourseController.class, SecurityTestPingController.class})
+@WebMvcTest(controllers = {
+        UserController.class,
+        AuthController.class,
+        CourseController.class,
+        FacilityController.class,
+        ReviewController.class,
+        DenialReportController.class,
+        SecurityTestPingController.class
+})
 @Import({SecurityConfig.class, JwtConfig.class, JwtProvider.class, JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
 class SecurityFilterChainTest {
 
@@ -75,6 +93,21 @@ class SecurityFilterChainTest {
 
     @MockitoBean
     private CourseCommandService courseCommandService;
+
+    @MockitoBean
+    private FacilityQueryService facilityQueryService;
+
+    @MockitoBean
+    private ReviewQueryService reviewQueryService;
+
+    @MockitoBean
+    private ReviewCommandService reviewCommandService;
+
+    @MockitoBean
+    private DenialReportQueryService denialReportQueryService;
+
+    @MockitoBean
+    private DenialReportCommandService denialReportCommandService;
 
     @Test
     void 토큰없이_보호된_경로_요청시_401과_COMMON401을_반환한다() throws Exception {
@@ -212,5 +245,69 @@ class SecurityFilterChainTest {
                         .content("{\"stopIds\":[2,1]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    // 게스트 모드 — "로그인 없이도 시설 탐색은 돼야 한다"는 요구사항으로 연 5개 읽기 API가
+    // 실제로 토큰 없이 통과하는지 확인한다. 각 서비스는 @AuthenticationPrincipal이 null로 넘겨준
+    // userId를 그대로 받는다.
+    @Test
+    void 시설_검색은_토큰없이도_통과한다() throws Exception {
+        when(facilityQueryService.searchFacilities(any()))
+                .thenReturn(new FacilityResponseDTO.FacilitySearchResult(List.of(), 0));
+
+        mockMvc.perform(post("/api/v1/facilities/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"latitude\":37.5,\"longitude\":127.0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    void 시설_상세_조회는_토큰없이도_통과한다() throws Exception {
+        when(facilityQueryService.getFacilityDetail(any(), any(), any(), any()))
+                .thenReturn(null);
+
+        mockMvc.perform(get("/api/v1/facilities/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    void 발자국_랭킹_조회는_토큰없이도_통과한다() throws Exception {
+        when(facilityQueryService.getRanking(any()))
+                .thenReturn(new FacilityResponseDTO.RankingResult(List.of(), 0));
+
+        mockMvc.perform(get("/api/v1/facilities/ranking"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    void 시설_리뷰_목록_조회는_토큰없이도_통과한다() throws Exception {
+        when(reviewQueryService.getReviews(any(), any(), anyInt(), anyInt()))
+                .thenReturn(null);
+
+        mockMvc.perform(get("/api/v1/facilities/1/reviews"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    void 최근_거부_제보_조회는_토큰없이도_통과한다() throws Exception {
+        when(denialReportQueryService.getRecent(any(), any()))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/facilities/1/denial-reports/recent"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    // {facilityId}를 숫자 전용 패턴으로 열었기 때문에 같은 depth의 문자열 경로(regions)까지
+    // 함께 열리지 않는지 확인한다 — 이번 요구사항 범위 밖이라 계속 인증이 필요해야 한다.
+    @Test
+    void 시설_지역_목록_조회는_여전히_토큰이_필요하다() throws Exception {
+        mockMvc.perform(get("/api/v1/facilities/regions"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("COMMON401"));
     }
 }

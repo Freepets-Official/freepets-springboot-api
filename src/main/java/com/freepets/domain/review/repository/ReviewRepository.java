@@ -61,6 +61,16 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     void incrementHelpfulCount(@Param("reviewId") Long reviewId);
 
     /**
+     * "도움됐어요" 취소 — increment와 같은 이유로 원자적 벌크 업데이트를 쓴다. 실제로 표시했던
+     * 기록(review_helpfuls 행)을 지운 다음에만 호출하는 게 전제라 0 밑으로 내려갈 일은 없지만,
+     * {@code greatest(0, ...)}로 방어선을 하나 더 둔다 — 음수 카운트가 화면에 보이는 것보다는
+     * 안전하다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("update Review review set review.helpfulCount = function('greatest', 0, review.helpfulCount - 1) where review.reviewId = :reviewId")
+    void decrementHelpfulCount(@Param("reviewId") Long reviewId);
+
+    /**
      * 이 유저가 쓴 리뷰 전체가 지금까지 받은 "도움됐어요" 총합(게이미피케이션 "구원자" 배지,
      * {@link com.freepets.domain.gamification.entity.Badge#HELPFUL_GOLD} 참고). 삭제된 리뷰도
      * 포함한다 — 이미 받은 도움됐어요는 실제 있었던 실적이라, 나중에 그 리뷰를 지웠다고 배지

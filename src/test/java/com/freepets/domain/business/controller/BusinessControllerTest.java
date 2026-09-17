@@ -233,7 +233,7 @@ class BusinessControllerTest {
         when(facilityOwnerClaimQueryService.getMyClaims(any())).thenReturn(
                 new BusinessResponseDTO.MyClaimList(List.of(
                         new BusinessResponseDTO.MyClaim(
-                                11L, 6L, "카페 파도살롱", "강원 강릉시 창해로 17", ClaimStatus.PENDING, appliedAt
+                                11L, 6L, "카페 파도살롱", "강원 강릉시 창해로 17", ClaimStatus.PENDING, appliedAt, null
                         )
                 ))
         );
@@ -246,6 +246,24 @@ class BusinessControllerTest {
                 .andExpect(jsonPath("$.result.claims[0].facilityName").value("카페 파도살롱"))
                 .andExpect(jsonPath("$.result.claims[0].facilityAddress").value("강원 강릉시 창해로 17"))
                 .andExpect(jsonPath("$.result.claims[0].status").value("PENDING"));
+    }
+
+    @Test
+    void myClaims_반려된_신청은_반려_사유를_함께_반환한다() throws Exception {
+        LocalDateTime appliedAt = LocalDateTime.of(2026, 9, 16, 10, 0);
+        when(facilityOwnerClaimQueryService.getMyClaims(any())).thenReturn(
+                new BusinessResponseDTO.MyClaimList(List.of(
+                        new BusinessResponseDTO.MyClaim(
+                                12L, 7L, "카페 해변길", "강원 속초시 해오름로 5", ClaimStatus.REJECTED, appliedAt,
+                                "등록증 사업자명이 신청자와 일치하지 않습니다"
+                        )
+                ))
+        );
+
+        mockMvc.perform(get("/api/v1/business/claims"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.claims[0].status").value("REJECTED"))
+                .andExpect(jsonPath("$.result.claims[0].reviewReason").value("등록증 사업자명이 신청자와 일치하지 않습니다"));
     }
 
     @Test

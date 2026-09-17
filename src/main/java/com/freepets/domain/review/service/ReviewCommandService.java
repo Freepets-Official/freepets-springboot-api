@@ -252,7 +252,7 @@ public class ReviewCommandService {
     /**
      * POST /api/v1/reviews/{reviewId}/helpful — "도움됐어요" 표시. 존재 여부가 곧 표시 상태라
      * CalendarMedLog와 같은 방식 — 이미 표시한 리뷰에 다시 눌러도 에러 없이 그대로 성공
-     * 처리한다(멱등). 취소(un-mark)는 아직 없다 — 필요해지면 DELETE로 추가하면 된다.
+     * 처리한다(멱등). 취소는 {@link #unmarkHelpful}이 대칭으로 처리한다.
      *
      * <p>본인 리뷰는 표시할 수 없다 — 작성자 본인이 자기 리뷰를 눌러 카운트를 스스로
      * 올리는 걸 막는다(CourseCommandService의 자기 복사 방지와 같은 이유).
@@ -277,6 +277,31 @@ public class ReviewCommandService {
         // incrementHelpfulCount는 영속성 컨텍스트를 거치지 않는 벌크 업데이트라(ReviewRepository
         // 참고) 위에서 로드해둔 review의 메모리 값이 안 바뀐다 — 최신 값을 응답하려면 다시 읽어야
         // 한다. 이 사이에 리뷰가 지워지는 등의 극단적인 경우엔 방금 읽은 값을 그대로 쓴다.
+        Review refreshed = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId).orElse(review);
+        return ReviewConverter.toHelpfulResult(refreshed);
+    }
+
+    /**
+     * DELETE /api/v1/reviews/{reviewId}/helpful — "도움됐어요" 취소. mark와 대칭으로 멱등하다 —
+     * 표시한 적 없는 리뷰를 취소해도 에러 없이 그대로 성공 처리한다. 삭제되는 행이 실제 있었는지
+     * (반환된 행 수)로만 카운트 감소 여부를 정하므로, 본인 리뷰인지 여부는 따로 검사하지 않는다 —
+     * 애초에 본인 리뷰는 markHelpful에서 막혀 표시 자체가 될 수 없어서 삭제 대상이 없다.
+     *
+     * <p>이미 부여된 "구원자" 배지는 취소해도 회수하지 않는다 — 리뷰를 지워도 REVIEW 계열
+     * 배지를 회수하지 않는 것과 같은 정책이다(한 번 달성한 배지는 계속 남는다).
+     */
+    public ReviewResponseDTO.HelpfulResult unmarkHelpful(
+            Long userId,
+            Long reviewId
+    ) {
+        Review review = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
+
+        int deletedCount = reviewHelpfulRepository.deleteByReviewReviewIdAndUserId(reviewId, userId);
+        if (deletedCount > 0) {
+            reviewRepository.decrementHelpfulCount(reviewId);
+        }
+
         Review refreshed = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId).orElse(review);
         return ReviewConverter.toHelpfulResult(refreshed);
     }

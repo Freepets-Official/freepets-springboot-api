@@ -45,7 +45,8 @@ public class BusinessConverter {
                 facility.getName(),
                 facility.getAddress(),
                 claim.getStatus(),
-                claim.getCreatedAt()
+                claim.getCreatedAt(),
+                claim.getReviewReason()
         );
     }
 

@@ -1,8 +1,10 @@
 package com.freepets.domain.review.controller;
 
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -44,22 +46,22 @@ public class ReviewController {
         );
     }
 
-    @PostMapping("/facilities/{facilityId}/reviews")
+    @PostMapping(value = "/facilities/{facilityId}/reviews", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<ReviewResponseDTO.UpsertResult> upsertReview(
             @AuthenticationPrincipal Long userId,
             @PathVariable("facilityId") Long facilityId,
-            @Valid @RequestBody ReviewRequestDTO.UpsertRequest request
+            @Valid @ModelAttribute ReviewRequestDTO.UpsertRequest request
     ) {
         return ApiResponse.onSuccess(
                 reviewCommandService.upsertReview(userId, facilityId, request)
         );
     }
 
-    @PutMapping("/reviews/{reviewId}")
+    @PutMapping(value = "/reviews/{reviewId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<ReviewResponseDTO.UpsertResult> updateReview(
             @AuthenticationPrincipal Long userId,
             @PathVariable("reviewId") Long reviewId,
-            @Valid @RequestBody ReviewRequestDTO.UpsertRequest request
+            @Valid @ModelAttribute ReviewRequestDTO.UpsertRequest request
     ) {
         return ApiResponse.onSuccess(
                 reviewCommandService.updateReview(userId, reviewId, request)

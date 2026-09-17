@@ -16,6 +16,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.web.multipart.MultipartFile;
 
 public class ReviewRequestDTO {
 
@@ -56,6 +57,10 @@ public class ReviewRequestDTO {
         // 생략하면 신규 작성 시 오늘 날짜, 수정 시 기존 방문일을 그대로 유지한다.
         @PastOrPresent(message = "방문일은 오늘 이전 날짜여야 합니다.")
         private LocalDate visitedAt;
+
+        // 방문 인증샷(선택). CalendarEvent.photo·Pet.profile과 같은 방식 — 안 보내면(수정 시)
+        // 기존 사진을 그대로 유지한다.
+        private MultipartFile photo;
     }
 
     @Getter

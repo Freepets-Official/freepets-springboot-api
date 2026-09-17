@@ -55,6 +55,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.s3.S3ImageService;
 
 @ExtendWith(MockitoExtension.class)
 class ReviewCommandServiceTest {
@@ -88,6 +89,9 @@ class ReviewCommandServiceTest {
 
     @Mock
     private GamificationService gamificationService;
+
+    @Mock
+    private S3ImageService s3ImageService;
 
     @InjectMocks
     private ReviewCommandService reviewCommandService;

@@ -7,6 +7,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
@@ -30,6 +31,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.s3.S3ImageService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -56,9 +58,10 @@ public class ReviewCommandService {
     private final PetRepository petRepository;
     private final PetCheckRepository petCheckRepository;
     private final GamificationService gamificationService;
+    private final S3ImageService s3ImageService;
 
-    // 리뷰 신규 작성 1건당 지급하는 경험치(수정은 미지급). 사진 첨부 가산점은 리뷰에 사진 필드
-    // 자체가 아직 없어 보류했다.
+    // 리뷰 신규 작성 1건당 지급하는 경험치(수정은 미지급). 사진 첨부 가산점은 기획 요청이 아직
+    // 없어 보류했다(사진 필드 자체는 있음).
     private static final int REVIEW_XP = 20;
 
     // 리뷰가 바뀌면 시설의 친화도 점수·리뷰 수·발자국 등급을 다시 계산해둔다. 발자국 랭킹이
@@ -87,14 +90,23 @@ public class ReviewCommandService {
                 .findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facilityId, userId)
                 .orElse(null);
         boolean isNewReview = existingReview == null;
+        String previousPhotoUrl = isNewReview ? null : existingReview.getPhotoUrl();
+        String photoUrl = isNewPhotoPresent(request.getPhoto())
+                ? uploadPhotoIfPresent(request.getPhoto())
+                : previousPhotoUrl;
+
         Review review = isNewReview
-                ? createReview(request, facility, user)
+                ? createReview(request, facility, user, photoUrl)
                 : existingReview;
-        applyRequestToReview(review, request, pets, tags);
+        applyRequestToReview(review, request, pets, tags, photoUrl);
 
         Review savedReview = saveReview(review);
 
         facilityGradeCacheService.refresh(facilityId);
+
+        if (isNewPhotoPresent(request.getPhoto()) && previousPhotoUrl != null) {
+            s3ImageService.delete(previousPhotoUrl);
+        }
 
         if (isNewReview) {
             gamificationService.grantXp(userId, XpSourceType.REVIEW, savedReview.getReviewId(), REVIEW_XP);
@@ -106,28 +118,34 @@ public class ReviewCommandService {
     private Review createReview(
             ReviewRequestDTO.UpsertRequest request,
             Facility facility,
-            User user
+            User user,
+            String photoUrl
     ) {
         // 방문일은 실제로 다녀온 날짜라 최초 작성 시에만 정하고, 그 뒤로는 수정해도 바뀌지 않는다.
         LocalDate visitedAt = request.getVisitedAt() != null ? request.getVisitedAt() : LocalDate.now();
-        return ReviewConverter.toReview(request, facility, user, visitedAt);
+        return ReviewConverter.toReview(request, facility, user, visitedAt, photoUrl);
     }
 
     // upsertReview(신규/수정 공통)와 updateReview(PUT) 둘 다 쓴다 — 신규 리뷰에도 그대로 태운다.
     // createReview가 이미 같은 request로 값을 채워서 update() 호출이 중복이지만, 분기를 나눠서
     // 따로 관리하는 것보다 한 곳에서만 고치면 두 경로가 갈라질 일이 없는 쪽을 택했다.
+    //
+    // photoUrl은 호출부가 이미 계산해서 넘긴다(새 사진 업로드 여부에 따라 새 URL 또는 기존
+    // URL) — 여기서 request.getPhoto()를 다시 보고 업로드를 결정하지 않는다.
     private void applyRequestToReview(
             Review review,
             ReviewRequestDTO.UpsertRequest request,
             List<Pet> pets,
-            List<Tag> tags
+            List<Tag> tags,
+            String photoUrl
     ) {
         review.update(
                 request.getRatingSpace(),
                 request.getRatingStaff(),
                 request.getRatingAmenity(),
                 request.getContent(),
-                request.isShowPetInfo()
+                request.isShowPetInfo(),
+                photoUrl
         );
         review.replacePets(pets);
         review.replaceTags(tags);
@@ -149,11 +167,31 @@ public class ReviewCommandService {
         List<Pet> pets = findOwnedPets(userId, request.getPetIds());
         List<Tag> tags = distinctTags(request.getTags());
 
-        applyRequestToReview(review, request, pets, tags);
+        String previousPhotoUrl = review.getPhotoUrl();
+        String photoUrl = isNewPhotoPresent(request.getPhoto())
+                ? uploadPhotoIfPresent(request.getPhoto())
+                : previousPhotoUrl;
+
+        applyRequestToReview(review, request, pets, tags, photoUrl);
 
         facilityGradeCacheService.refresh(review.getFacility().getFacilityId());
 
+        if (isNewPhotoPresent(request.getPhoto()) && previousPhotoUrl != null) {
+            s3ImageService.delete(previousPhotoUrl);
+        }
+
         return ReviewConverter.toUpsertResult(review);
+    }
+
+    private boolean isNewPhotoPresent(MultipartFile photo) {
+        return photo != null && !photo.isEmpty();
+    }
+
+    private String uploadPhotoIfPresent(MultipartFile photo) {
+        if (!isNewPhotoPresent(photo)) {
+            return null;
+        }
+        return s3ImageService.upload(photo);
     }
 
     // 신규 insert일 때는 Review가 GenerationType.IDENTITY라 save() 호출 시점에 바로 INSERT가

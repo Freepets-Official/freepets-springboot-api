@@ -10,6 +10,7 @@ import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.ConfidenceSource;
 import com.freepets.domain.facility.entity.FacilityAmenity;
 import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.domain.report.entity.DenialReason;
@@ -38,6 +39,38 @@ public class BusinessResponseDTO {
     public record ClaimResult(
             Long claimId,
             Long facilityId,
+            ClaimStatus status
+    ) {}
+
+    /**
+     * 신규 매장 등록 전 중복 후보. 반경 100m 안에서 이름이 비슷한 시설(관광공사 적재분 포함, 출처 무관)만
+     * 담긴다.
+     */
+    public record FacilityDuplicateCandidate(
+            Long facilityId,
+            String name,
+            String address,
+            FacilityCategory category,
+            FacilitySource source,
+            double distanceMeters
+    ) {}
+
+    public record FacilityDuplicateCandidateList(
+            List<FacilityDuplicateCandidate> candidates
+    ) {}
+
+    /**
+     * 신규 매장 등록 결과. claim 접수({@link ClaimResult})와 달리 심사 대기가 없어, 응답이 오는 순간
+     * 시설과 소유권이 이미 확정돼 있다.
+     *
+     * @param status 즉시 확정되므로 항상 {@code APPROVED}다
+     */
+    public record FacilityRegisterResult(
+            Long facilityId,
+            Long claimId,
+            String name,
+            FacilityCategory category,
+            String address,
             ClaimStatus status
     ) {}
 

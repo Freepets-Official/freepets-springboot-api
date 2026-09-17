@@ -1,11 +1,16 @@
 package com.freepets.domain.business.service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.springframework.stereotype.Service;
 
 import com.freepets.domain.business.dto.BusinessRequestDTO;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
+import com.freepets.domain.facility.entity.Region;
+import com.freepets.global.apiPayload.code.status.ErrorStatus;
+import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.geocoding.GeocodedAddress;
 import com.freepets.infra.s3.S3ImageService;
 
 import lombok.RequiredArgsConstructor;
@@ -23,6 +28,9 @@ public class BusinessCommandService {
 
     private final BusinessQueryService businessQueryService;
     private final FacilityOwnerClaimCommandService facilityOwnerClaimCommandService;
+    private final FacilitySelfRegistrationCommandService facilitySelfRegistrationCommandService;
+    private final FacilityDuplicateCandidateQueryService facilityDuplicateCandidateQueryService;
+    private final GeocodingService geocodingService;
     private final S3ImageService s3ImageService;
 
     /**
@@ -62,5 +70,54 @@ public class BusinessCommandService {
             s3ImageService.delete(registrationCertificateUrl);
             throw exception;
         }
+    }
+
+    /**
+     * 신규 매장 등록. 관광공사 목록에 없는 매장을 사업자가 직접 만들면서 동시에 소유권을 갖는다. claim과
+     * 달리 등록증 업로드·관리자 심사가 없어, 국세청 진위확인만 통과하면 즉시 시설이 생기고 소유권이
+     * 확정된다.
+     *
+     * <p>호출 순서가 곧 "싼 검증부터, 비싸거나 쿼터가 유한한 외부 호출은 나중에" 원칙이다: 지역코드
+     * 검증(로컬) → 지오코딩(외부) → 중복 후보 확인(로컬) → 국세청 진위확인(외부, 일일 한도 유한) → 저장.
+     * 특히 중복 후보가 있는데 미확인 상태면 국세청 호출까지 가지 않아 쿼터를 아낀다.
+     */
+    public BusinessResponseDTO.FacilityRegisterResult registerFacility(
+            Long userId,
+            BusinessRequestDTO.FacilityRegisterRequest request
+    ) {
+        Region region = facilitySelfRegistrationCommandService.validateRegion(
+                request.getSidoCode(),
+                request.getSigunguCode()
+        );
+
+        GeocodedAddress geocoded = geocodingService.geocode(request.getAddress());
+
+        List<BusinessResponseDTO.FacilityDuplicateCandidate> duplicates = facilityDuplicateCandidateQueryService.findCandidates(
+                request.getName(),
+                geocoded.lat().doubleValue(),
+                geocoded.lng().doubleValue()
+        );
+        if (!duplicates.isEmpty() && !request.isDuplicateCheckAcknowledged()) {
+            throw new GeneralException(
+                    ErrorStatus.BUSINESS4010,
+                    new BusinessResponseDTO.FacilityDuplicateCandidateList(duplicates)
+            );
+        }
+
+        businessQueryService.verify(
+                request.getBusinessNumber(),
+                request.getRepresentativeName(),
+                request.getOpeningDate()
+        );
+
+        return facilitySelfRegistrationCommandService.register(
+                userId,
+                request,
+                region,
+                geocoded.lat(),
+                geocoded.lng(),
+                BusinessNumberMasker.mask(request.getBusinessNumber()),
+                LocalDateTime.now()
+        );
     }
 }

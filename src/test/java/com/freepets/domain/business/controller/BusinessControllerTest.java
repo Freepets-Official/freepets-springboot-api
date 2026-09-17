@@ -31,6 +31,8 @@ import com.freepets.domain.business.entity.ClaimStatus;
 import com.freepets.domain.business.service.BusinessCommandService;
 import com.freepets.domain.business.service.BusinessQueryService;
 import com.freepets.domain.business.service.FacilityOwnerClaimQueryService;
+import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
@@ -274,5 +276,115 @@ class BusinessControllerTest {
         mockMvc.perform(get("/api/v1/business/claims"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.claims").isEmpty());
+    }
+
+    private static final String DUPLICATE_CHECK_BODY = """
+            {"name":"카페 파도살롱","address":"강원 강릉시 창해로 17"}
+            """;
+
+    @Test
+    void duplicateCheck_성공하면_200과_후보_목록을_반환한다() throws Exception {
+        when(businessQueryService.duplicateCheck(any())).thenReturn(
+                new BusinessResponseDTO.FacilityDuplicateCandidateList(List.of(
+                        new BusinessResponseDTO.FacilityDuplicateCandidate(
+                                6L, "카페 파도살롱", "강원 강릉시 창해로 17", FacilityCategory.CAFE, FacilitySource.TOUR_API, 30.0
+                        )
+                ))
+        );
+
+        mockMvc.perform(post("/api/v1/business/facilities/duplicate-check")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(DUPLICATE_CHECK_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.candidates[0].facilityId").value(6))
+                .andExpect(jsonPath("$.result.candidates[0].name").value("카페 파도살롱"))
+                .andExpect(jsonPath("$.result.candidates[0].source").value("TOUR_API"));
+    }
+
+    @Test
+    void duplicateCheck_이름이_없으면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/business/facilities/duplicate-check")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"","address":"강원 강릉시 창해로 17"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.result.name").exists());
+
+        verifyNoInteractions(businessQueryService);
+    }
+
+    private static final String REGISTER_BODY = """
+            {
+              "businessNumber":"1234567890","representativeName":"홍길동","openingDate":"20200315",
+              "name":"새로 연 카페","category":"CAFE","address":"강원 강릉시 창해로 20",
+              "sidoCode":"32","sigunguCode":"32210",
+              "petAllowed":"ALLOWED","requirements":["LEASH"],"conditionRaw":"리드줄 착용 시 동반 가능"
+            }
+            """;
+
+    @Test
+    void registerFacility_성공하면_201대신_200과_즉시_확정된_결과를_반환한다() throws Exception {
+        when(businessCommandService.registerFacility(any(), any())).thenReturn(
+                new BusinessResponseDTO.FacilityRegisterResult(
+                        20L, 30L, "새로 연 카페", FacilityCategory.CAFE, "강원 강릉시 창해로 20", ClaimStatus.APPROVED
+                )
+        );
+
+        mockMvc.perform(post("/api/v1/business/facilities")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REGISTER_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.facilityId").value(20))
+                .andExpect(jsonPath("$.result.claimId").value(30))
+                .andExpect(jsonPath("$.result.status").value("APPROVED"));
+    }
+
+    @Test
+    void registerFacility_매장명이_없으면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/business/facilities")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "businessNumber":"1234567890","representativeName":"홍길동","openingDate":"20200315",
+                                  "name":"","category":"CAFE","address":"강원 강릉시 창해로 20",
+                                  "sidoCode":"32","petAllowed":"ALLOWED"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.result.name").exists());
+
+        verifyNoInteractions(businessCommandService);
+    }
+
+    @Test
+    void registerFacility_중복_후보가_있으면_409와_후보_목록을_반환한다() throws Exception {
+        when(businessCommandService.registerFacility(any(), any())).thenThrow(new GeneralException(
+                ErrorStatus.BUSINESS4010,
+                new BusinessResponseDTO.FacilityDuplicateCandidateList(List.of(
+                        new BusinessResponseDTO.FacilityDuplicateCandidate(
+                                6L, "새로 연 카페", "강원 강릉시 창해로 20", FacilityCategory.CAFE, FacilitySource.TOUR_API, 30.0
+                        )
+                ))
+        ));
+
+        mockMvc.perform(post("/api/v1/business/facilities")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REGISTER_BODY))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("BUSINESS4010"))
+                .andExpect(jsonPath("$.result.candidates[0].name").value("새로 연 카페"));
+    }
+
+    @Test
+    void registerFacility_지역코드가_잘못되면_400을_반환한다() throws Exception {
+        when(businessCommandService.registerFacility(any(), any()))
+                .thenThrow(new GeneralException(ErrorStatus.BUSINESS4012));
+
+        mockMvc.perform(post("/api/v1/business/facilities")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REGISTER_BODY))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BUSINESS4012"));
     }
 }

@@ -46,6 +46,34 @@ public class BusinessController {
     }
 
     /**
+     * 신규 매장 등록 전 중복 후보 사전조회. 이름·주소를 입력한 시점에 바로 근처 유사 시설을 보여줘,
+     * 등록 폼을 다 채우기 전에 "이 매장 아닌가요?" 확인을 띄울 수 있게 한다.
+     */
+    @PostMapping("/facilities/duplicate-check")
+    public ApiResponse<BusinessResponseDTO.FacilityDuplicateCandidateList> duplicateCheck(
+            @Valid @RequestBody BusinessRequestDTO.FacilityDuplicateCheckRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                businessQueryService.duplicateCheck(request)
+        );
+    }
+
+    /**
+     * 신규 매장 등록. 관광공사 목록에 없는 매장을 사업자가 직접 입력해 시설을 만들면서 동시에 소유권을
+     * 갖는다. {@link #claim}과 달리 등록증 업로드·관리자 심사가 없어, 국세청 진위확인만 통과하면 즉시
+     * 시설이 생기고 소유권이 확정된다.
+     */
+    @PostMapping("/facilities")
+    public ApiResponse<BusinessResponseDTO.FacilityRegisterResult> registerFacility(
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody BusinessRequestDTO.FacilityRegisterRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                businessCommandService.registerFacility(userId, request)
+        );
+    }
+
+    /**
      * 매장 등록 신청. 사업자 정보를 다시 확인하고 사업자등록증을 올린 뒤, 운영자 승인을 기다리는 신청을 만든다.
      *
      * <p>접수일 뿐이라 이 시점에는 소유권도 사업자 프로필도 생기지 않고, 함께 받은 출입 조건도 시설에 반영되지

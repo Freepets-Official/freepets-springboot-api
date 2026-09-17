@@ -51,6 +51,7 @@ public class CalendarEventConverter {
                 event.getEventType(),
                 event.getTitle(),
                 occurrenceDate,
+                event.getStartDate(),
                 responseEndDate(event),
                 event.getEventTime(),
                 event.getRepeatType(),

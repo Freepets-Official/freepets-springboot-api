@@ -55,14 +55,14 @@ class CalendarEventControllerTest {
     private CalendarEventResponseDTO.EventOccurrence medOccurrence(boolean taken) {
         return new CalendarEventResponseDTO.EventOccurrence(
                 1L, 2L, "댕댕이", CalendarEventType.MED, "관절 영양제",
-                LocalDate.of(2026, 9, 10), null, null, RepeatType.DAILY, true, null, taken, null
+                LocalDate.of(2026, 9, 10), LocalDate.of(2026, 9, 1), null, null, RepeatType.DAILY, true, null, taken, null
         );
     }
 
     private CalendarEventResponseDTO.EventOccurrence vaccineOccurrence() {
         return new CalendarEventResponseDTO.EventOccurrence(
                 3L, null, null, CalendarEventType.VACCINE, "종합백신 2차",
-                LocalDate.of(2026, 9, 10), null, null, RepeatType.NONE, true, null, null, null
+                LocalDate.of(2026, 9, 10), LocalDate.of(2026, 9, 10), null, null, RepeatType.NONE, true, null, null, null
         );
     }
 

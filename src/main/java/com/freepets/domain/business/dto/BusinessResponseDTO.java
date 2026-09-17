@@ -1,6 +1,7 @@
 package com.freepets.domain.business.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -242,6 +243,41 @@ public class BusinessResponseDTO {
 
     public record VisitBenefitDeleteResult(
             Long benefitId
+    ) {}
+
+    /**
+     * 리뷰·통계 화면 — 이슈 3-4(항목 평균 · 등급 추이 · 관심도). 홈 목록 응답과 달리 매장을 골라
+     * 들어간 뒤에만 조회하므로 별도 엔드포인트로 둔다.
+     */
+    public record ReviewStats(
+            ItemAverages itemAverages,
+            List<GradeTrendPoint> gradeTrend,
+            long interestCount
+    ) {}
+
+    /**
+     * 항목별 평균. 적격 리뷰가 한 건도 없으면 평균은 전부 0, {@code reviewCount}도 0이다.
+     *
+     * @param averageSpace   공간 평균(1~5)
+     * @param averageStaff   직원 평균(1~5)
+     * @param averageAmenity 편의 평균(1~5)
+     */
+    public record ItemAverages(
+            long reviewCount,
+            double averageSpace,
+            double averageStaff,
+            double averageAmenity
+    ) {}
+
+    /**
+     * 등급 추이 그래프의 점 하나 — 그날 새벽에 찍힌 스냅샷 값이다({@code FacilityGradeSnapshotScheduler}).
+     *
+     * @param petScore 그 시점의 친화도 점수. 등급을 아직 못 받았으면 {@code null}
+     */
+    public record GradeTrendPoint(
+            LocalDate date,
+            int pawGradeLevel,
+            Double petScore
     ) {}
 
     public record PageInfo(

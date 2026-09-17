@@ -19,6 +19,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,9 +38,11 @@ import com.freepets.domain.facility.entity.ConfidenceSource;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityBenefit;
 import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.domain.facility.entity.FacilityGradeSnapshot;
 import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityBenefitRepository;
+import com.freepets.domain.facility.repository.FacilityGradeSnapshotRepository;
 import com.freepets.domain.petcheck.repository.FacilityPetCheckCount;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.report.entity.DenialReason;
@@ -49,6 +52,9 @@ import com.freepets.domain.report.entity.ReportType;
 import com.freepets.domain.report.repository.DowngradingDenialReport;
 import com.freepets.domain.report.repository.FacilityDenialReportCount;
 import com.freepets.domain.report.repository.FacilityReportRepository;
+import com.freepets.domain.review.entity.ReviewReportStatus;
+import com.freepets.domain.review.repository.FacilityReviewAggregate;
+import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -72,6 +78,12 @@ class OwnerFacilityQueryServiceTest {
 
     @Mock
     private FacilityBenefitRepository facilityBenefitRepository;
+
+    @Mock
+    private FacilityGradeSnapshotRepository facilityGradeSnapshotRepository;
+
+    @Mock
+    private ReviewRepository reviewRepository;
 
     @Mock
     private FacilityOwnershipValidator facilityOwnershipValidator;
@@ -308,6 +320,67 @@ class OwnerFacilityQueryServiceTest {
         assertThat(result.benefits().get(0).isEnabled()).isTrue();
         assertThat(result.benefits().get(1).title()).isEqualTo("여름 시즌 아이스크림 증정");
         assertThat(result.benefits().get(1).isEnabled()).isFalse();
+    }
+
+    @Test
+    void getReviewStats_소유자가_아니면_403으로_막고_조회하지_않는다() {
+        doThrow(new GeneralException(ErrorStatus.BUSINESS4008))
+                .when(facilityOwnershipValidator).requireOwner(USER_ID, FACILITY_ID);
+
+        GeneralException exception = catchThrowableOfType(
+                () -> ownerFacilityQueryService.getReviewStats(USER_ID, FACILITY_ID),
+                GeneralException.class
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4008);
+        verify(reviewRepository, never()).aggregateByFacilityId(any(), any());
+    }
+
+    /** 항목 평균은 리뷰 집계에서, 등급 추이는 스냅샷에서, 관심도는 누적 판별 건수에서 온다. */
+    @Test
+    void getReviewStats_항목_평균과_등급_추이와_관심도를_함께_내려준다() {
+        when(reviewRepository.aggregateByFacilityId(eq(FACILITY_ID), eq(ReviewReportStatus.ACCEPTED)))
+                .thenReturn(Optional.of(new FacilityReviewAggregate(FACILITY_ID, 96L, 88.4, 4.5, 4.8, 4.2)));
+        FacilityGradeSnapshot snapshot = FacilityGradeSnapshot.builder()
+                .facility(confirmedFacility())
+                .snapshotDate(LocalDate.of(2026, 9, 16))
+                .pawGradeLevel(4)
+                .petScore(88.4)
+                .reviewCount(96L)
+                .build();
+        when(facilityGradeSnapshotRepository
+                .findByFacility_FacilityIdAndSnapshotDateGreaterThanEqualOrderBySnapshotDateAsc(eq(FACILITY_ID), any()))
+                .thenReturn(List.of(snapshot));
+        when(petCheckRepository.countByFacility_FacilityId(FACILITY_ID)).thenReturn(42L);
+
+        BusinessResponseDTO.ReviewStats result = ownerFacilityQueryService.getReviewStats(USER_ID, FACILITY_ID);
+
+        assertThat(result.itemAverages().reviewCount()).isEqualTo(96L);
+        assertThat(result.itemAverages().averageSpace()).isEqualTo(4.5);
+        assertThat(result.itemAverages().averageStaff()).isEqualTo(4.8);
+        assertThat(result.itemAverages().averageAmenity()).isEqualTo(4.2);
+        assertThat(result.gradeTrend()).hasSize(1);
+        assertThat(result.gradeTrend().get(0).date()).isEqualTo(LocalDate.of(2026, 9, 16));
+        assertThat(result.gradeTrend().get(0).pawGradeLevel()).isEqualTo(4);
+        assertThat(result.interestCount()).isEqualTo(42L);
+    }
+
+    /** 적격 리뷰가 한 건도 없으면(집계 자체가 없으면) 평균은 0으로 내려간다. */
+    @Test
+    void getReviewStats_적격_리뷰가_없으면_평균은_0이다() {
+        when(reviewRepository.aggregateByFacilityId(eq(FACILITY_ID), eq(ReviewReportStatus.ACCEPTED)))
+                .thenReturn(Optional.empty());
+        when(facilityGradeSnapshotRepository
+                .findByFacility_FacilityIdAndSnapshotDateGreaterThanEqualOrderBySnapshotDateAsc(eq(FACILITY_ID), any()))
+                .thenReturn(List.of());
+        when(petCheckRepository.countByFacility_FacilityId(FACILITY_ID)).thenReturn(0L);
+
+        BusinessResponseDTO.ReviewStats result = ownerFacilityQueryService.getReviewStats(USER_ID, FACILITY_ID);
+
+        assertThat(result.itemAverages().reviewCount()).isZero();
+        assertThat(result.itemAverages().averageSpace()).isZero();
+        assertThat(result.gradeTrend()).isEmpty();
+        assertThat(result.interestCount()).isZero();
     }
 
     private FacilityReport denialReport(

@@ -100,6 +100,19 @@ public class OwnerFacilityController {
     }
 
     /**
+     * 리뷰·통계 화면. 항목 평균(공간·직원·편의), 등급 추이(최근 30일 스냅샷), 관심도(누적 판별 건수).
+     */
+    @GetMapping("/facilities/{facilityId}/review-stats")
+    public ApiResponse<BusinessResponseDTO.ReviewStats> getReviewStats(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long facilityId
+    ) {
+        return ApiResponse.onSuccess(
+                ownerFacilityQueryService.getReviewStats(userId, facilityId)
+        );
+    }
+
+    /**
      * 방문 혜택 관리 화면 목록. on/off 상관없이 등록순으로 전부 보여준다.
      */
     @GetMapping("/facilities/{facilityId}/benefits")

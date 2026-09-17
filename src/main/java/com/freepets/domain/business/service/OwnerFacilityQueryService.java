@@ -18,13 +18,17 @@ import com.freepets.domain.business.dto.BusinessResponseDTO;
 import com.freepets.domain.business.entity.FacilityOwnerClaim;
 import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
 import com.freepets.domain.facility.entity.FacilityBenefit;
+import com.freepets.domain.facility.entity.FacilityGradeSnapshot;
 import com.freepets.domain.facility.repository.FacilityBenefitRepository;
+import com.freepets.domain.facility.repository.FacilityGradeSnapshotRepository;
 import com.freepets.domain.petcheck.repository.FacilityPetCheckCount;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.report.entity.FacilityReport;
 import com.freepets.domain.report.repository.DowngradingDenialReport;
 import com.freepets.domain.report.repository.FacilityDenialReportCount;
 import com.freepets.domain.report.repository.FacilityReportRepository;
+import com.freepets.domain.review.entity.ReviewReportStatus;
+import com.freepets.domain.review.repository.ReviewRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -51,6 +55,8 @@ public class OwnerFacilityQueryService {
     private final FacilityReportRepository facilityReportRepository;
     private final PetCheckRepository petCheckRepository;
     private final FacilityBenefitRepository facilityBenefitRepository;
+    private final FacilityGradeSnapshotRepository facilityGradeSnapshotRepository;
+    private final ReviewRepository reviewRepository;
     private final FacilityOwnershipValidator facilityOwnershipValidator;
 
     /**
@@ -105,6 +111,25 @@ public class OwnerFacilityQueryService {
         List<FacilityBenefit> benefits = facilityBenefitRepository
                 .findAllByFacility_FacilityIdOrderByCreatedAtAsc(facilityId);
         return BusinessConverter.toVisitBenefitList(benefits);
+    }
+
+    /**
+     * 리뷰·통계 화면 — 항목 평균(공간·직원·편의), 등급 추이(최근 30일), 관심도(누적 판별 건수).
+     *
+     * <p>대시보드 홈 카드({@link BusinessResponseDTO.Stats})와 달리 매장을 골라 들어간 뒤에만
+     * 조회하는 상세 화면이라 별도 엔드포인트로 둔다.
+     */
+    public BusinessResponseDTO.ReviewStats getReviewStats(Long userId, Long facilityId) {
+        facilityOwnershipValidator.requireOwner(userId, facilityId);
+
+        return BusinessConverter.toReviewStats(
+                reviewRepository.aggregateByFacilityId(facilityId, ReviewReportStatus.ACCEPTED).orElse(null),
+                facilityGradeSnapshotRepository.findByFacility_FacilityIdAndSnapshotDateGreaterThanEqualOrderBySnapshotDateAsc(
+                        facilityId,
+                        LocalDate.now(BUSINESS_ZONE).minusDays(FacilityGradeSnapshot.TREND_WINDOW_DAYS)
+                ),
+                petCheckRepository.countByFacility_FacilityId(facilityId)
+        );
     }
 
     private Map<Long, Long> countDenialAlerts(

@@ -90,4 +90,8 @@ public interface PetCheckRepository extends JpaRepository<PetCheck, Long> {
             @Param("since") LocalDateTime since
     );
 
+    // 리뷰·통계 화면의 "관심도" — 기간 제한 없이 이 시설을 판별한 누적 횟수. 이번 주 한정인
+    // countByFacilityIdsSince와는 다른 지표라 별도로 둔다.
+    long countByFacility_FacilityId(Long facilityId);
+
 }

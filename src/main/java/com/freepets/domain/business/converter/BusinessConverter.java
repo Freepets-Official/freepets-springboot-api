@@ -13,9 +13,11 @@ import com.freepets.domain.facility.entity.CheckList;
 import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityBenefit;
+import com.freepets.domain.facility.entity.FacilityGradeSnapshot;
 import com.freepets.domain.facility.entity.Requirement;
 import com.freepets.domain.report.entity.FacilityReport;
 import com.freepets.domain.report.repository.DowngradingDenialReport;
+import com.freepets.domain.review.repository.FacilityReviewAggregate;
 import com.freepets.infra.nts.NtsValidationResult;
 
 public class BusinessConverter {
@@ -233,6 +235,42 @@ public class BusinessConverter {
                 benefit.getTitle(),
                 benefit.getDescription(),
                 benefit.isEnabled()
+        );
+    }
+
+    /**
+     * 리뷰·통계 화면. {@code aggregate}가 없으면(적격 리뷰 0건) 평균은 전부 0으로 내린다.
+     */
+    public static BusinessResponseDTO.ReviewStats toReviewStats(
+            FacilityReviewAggregate aggregate,
+            List<FacilityGradeSnapshot> snapshots,
+            long interestCount
+    ) {
+        return new BusinessResponseDTO.ReviewStats(
+                toItemAverages(aggregate),
+                snapshots.stream().map(BusinessConverter::toGradeTrendPoint).toList(),
+                interestCount
+        );
+    }
+
+    private static BusinessResponseDTO.ItemAverages toItemAverages(FacilityReviewAggregate aggregate) {
+        if (aggregate == null) {
+            return new BusinessResponseDTO.ItemAverages(0, 0, 0, 0);
+        }
+
+        return new BusinessResponseDTO.ItemAverages(
+                aggregate.reviewCount(),
+                aggregate.averageSpace(),
+                aggregate.averageStaff(),
+                aggregate.averageAmenity()
+        );
+    }
+
+    private static BusinessResponseDTO.GradeTrendPoint toGradeTrendPoint(FacilityGradeSnapshot snapshot) {
+        return new BusinessResponseDTO.GradeTrendPoint(
+                snapshot.getSnapshotDate(),
+                snapshot.getPawGradeLevel(),
+                snapshot.getPetScore()
         );
     }
 

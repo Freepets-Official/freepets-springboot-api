@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -233,7 +234,8 @@ class BusinessControllerTest {
         when(facilityOwnerClaimQueryService.getMyClaims(any())).thenReturn(
                 new BusinessResponseDTO.MyClaimList(List.of(
                         new BusinessResponseDTO.MyClaim(
-                                11L, 6L, "카페 파도살롱", "강원 강릉시 창해로 17", ClaimStatus.PENDING, appliedAt, null
+                                11L, 6L, "카페 파도살롱", "강원 강릉시 창해로 17", ClaimStatus.PENDING, appliedAt, null,
+                                new BigDecimal("10.00"), true
                         )
                 ))
         );
@@ -245,7 +247,9 @@ class BusinessControllerTest {
                 .andExpect(jsonPath("$.result.claims[0].facilityId").value(6))
                 .andExpect(jsonPath("$.result.claims[0].facilityName").value("카페 파도살롱"))
                 .andExpect(jsonPath("$.result.claims[0].facilityAddress").value("강원 강릉시 창해로 17"))
-                .andExpect(jsonPath("$.result.claims[0].status").value("PENDING"));
+                .andExpect(jsonPath("$.result.claims[0].status").value("PENDING"))
+                .andExpect(jsonPath("$.result.claims[0].requestedMaxWeight").value(10.00))
+                .andExpect(jsonPath("$.result.claims[0].requestedMaxWeightInclusive").value(true));
     }
 
     @Test
@@ -255,7 +259,7 @@ class BusinessControllerTest {
                 new BusinessResponseDTO.MyClaimList(List.of(
                         new BusinessResponseDTO.MyClaim(
                                 12L, 7L, "카페 해변길", "강원 속초시 해오름로 5", ClaimStatus.REJECTED, appliedAt,
-                                "등록증 사업자명이 신청자와 일치하지 않습니다"
+                                "등록증 사업자명이 신청자와 일치하지 않습니다", null, null
                         )
                 ))
         );

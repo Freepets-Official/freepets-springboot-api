@@ -39,6 +39,9 @@ public class BusinessConverter {
 
     private static BusinessResponseDTO.MyClaim toMyClaim(FacilityOwnerClaim claim) {
         Facility facility = claim.getFacility();
+        // AdminClaim과 같은 이유 — 4단계(신청 접수) 이전에 곧바로 승인 상태로 만들어진 기존
+        // 매장은 이 값을 저장한 적이 없어 null이다.
+        RequestedCondition condition = claim.getRequestedCondition();
         return new BusinessResponseDTO.MyClaim(
                 claim.getClaimId(),
                 facility.getFacilityId(),
@@ -46,7 +49,9 @@ public class BusinessConverter {
                 facility.getAddress(),
                 claim.getStatus(),
                 claim.getCreatedAt(),
-                claim.getReviewReason()
+                claim.getReviewReason(),
+                condition == null ? null : condition.getMaxWeight(),
+                condition == null ? null : condition.getMaxWeightInclusive()
         );
     }
 

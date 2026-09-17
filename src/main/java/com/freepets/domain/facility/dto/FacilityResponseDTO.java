@@ -28,6 +28,11 @@ public class FacilityResponseDTO {
             long distanceM,
             PetAllowed petAllowed,
             BigDecimal maxWeight,
+
+            // maxWeight 경계 포함 여부. TRUE="이하"(그 체중까지 포함), FALSE="미만"(그 체중은
+            // 제외), null=maxWeight가 없거나 원문에서 경계 종류를 알 수 없음(Facility 엔티티
+            // 주석 참고). maxWeight가 null이면 이 값도 항상 null이다.
+            Boolean maxWeightInclusive,
             List<Requirement> requirements,
 
             // 시설에 저장된 친화도 점수를 반올림한 값. 등급 판정은 반올림 전 원점수로 하므로
@@ -147,6 +152,13 @@ public class FacilityResponseDTO {
 
             // 화면에 그대로 보여줄 동반 조건 안내문. 아직 채우지 않은 시설은 null이다.
             String petConditionRaw,
+
+            // 목록(FacilitySummary)엔 있었는데 상세엔 없어서, 탐색에서 상세로 넘어오면 체중
+            // 제한 표시가 사라지는 문제가 있었다(프론트가 목록 값을 캐시에 남겨 병합하는
+            // 임시 대응으로 버티던 상태 — freepets-docs facility.md 참고). maxWeightInclusive는
+            // FacilitySummary와 같은 규칙.
+            BigDecimal maxWeight,
+            Boolean maxWeightInclusive,
             LocalDateTime confirmedAt,
 
             // 이 조건 정보를 얼마나 믿을 수 있는지 — 저장값이 아니라 조회 시점에 계산한다

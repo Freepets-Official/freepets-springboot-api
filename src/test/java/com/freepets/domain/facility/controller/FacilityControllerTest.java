@@ -56,6 +56,7 @@ class FacilityControllerTest {
                 1200L,
                 PetAllowed.PENDING,
                 new BigDecimal("10.00"),
+                true,
                 List.of(Requirement.LEASH),
                 null,
                 null,
@@ -82,6 +83,8 @@ class FacilityControllerTest {
                 .andExpect(jsonPath("$.result.items[0].category").value("CAFE"))
                 .andExpect(jsonPath("$.result.items[0].distanceM").value(1200))
                 .andExpect(jsonPath("$.result.items[0].petAllowed").value("PENDING"))
+                .andExpect(jsonPath("$.result.items[0].maxWeight").value(10.00))
+                .andExpect(jsonPath("$.result.items[0].maxWeightInclusive").value(true))
                 .andExpect(jsonPath("$.result.items[0].requirements[0]").value("LEASH"))
                 .andExpect(jsonPath("$.result.items[0].reviewCnt").value(45));
     }
@@ -187,6 +190,8 @@ class FacilityControllerTest {
                 1200L,
                 PetAllowed.PENDING,
                 null,
+                new BigDecimal("10.00"),
+                true,
                 LocalDateTime.of(2026, 7, 5, 0, 0),
                 Confidence.UNVERIFIED,
                 ConfidenceSource.NONE,
@@ -219,6 +224,8 @@ class FacilityControllerTest {
                 .andExpect(jsonPath("$.result.longitude").value(128.9107))
                 .andExpect(jsonPath("$.result.distanceM").value(1200))
                 .andExpect(jsonPath("$.result.petAllowed").value("PENDING"))
+                .andExpect(jsonPath("$.result.maxWeight").value(10.00))
+                .andExpect(jsonPath("$.result.maxWeightInclusive").value(true))
                 .andExpect(jsonPath("$.result.imageUrl").value("https://tong.visitkorea.or.kr/image.jpg"))
                 .andExpect(jsonPath("$.result.pawGrade.level").value(4))
                 .andExpect(jsonPath("$.result.pawGrade.label").value("동반 우수"))

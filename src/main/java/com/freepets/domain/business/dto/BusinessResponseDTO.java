@@ -43,9 +43,15 @@ public class BusinessResponseDTO {
     ) {}
 
     /**
-     * @param appliedAt    신청을 접수한 시각
-     * @param reviewReason 반려·해제 사유. 승인됐거나 아직 대기 중이면 {@code null} — 반려된 신청을
-     *                     사장님 화면에서 보여줄 수 있도록 {@link AdminClaim}에만 있던 값을 그대로 노출한다.
+     * @param appliedAt                 신청을 접수한 시각
+     * @param reviewReason               반려·해제 사유. 승인됐거나 아직 대기 중이면 {@code null} —
+     *                                    반려된 신청을 사장님 화면에서 보여줄 수 있도록
+     *                                    {@link AdminClaim}에만 있던 값을 그대로 노출한다.
+     * @param requestedMaxWeight         신청 시 제출한 최대 체중(kg). {@link AdminClaim}에만
+     *                                    있던 값을 그대로 노출한다 — 이 값 없이는 재신청 화면에
+     *                                    지난 신청 내용을 미리 채워줄 수 없다.
+     * @param requestedMaxWeightInclusive requestedMaxWeight 경계 포함 여부. {@code TRUE}="이하"
+     *                                    (그 체중까지 포함), {@code FALSE}="미만"(그 체중은 제외)
      */
     public record MyClaim(
             Long claimId,
@@ -54,7 +60,9 @@ public class BusinessResponseDTO {
             String facilityAddress,
             ClaimStatus status,
             LocalDateTime appliedAt,
-            String reviewReason
+            String reviewReason,
+            BigDecimal requestedMaxWeight,
+            Boolean requestedMaxWeightInclusive
     ) {}
 
     /**

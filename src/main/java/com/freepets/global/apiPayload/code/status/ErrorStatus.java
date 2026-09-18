@@ -96,7 +96,11 @@ public enum ErrorStatus implements BaseErrorCode {
     BUSINESS4007(CONFLICT, "BUSINESS4007", "처리할 수 없는 신청 상태입니다."),
     BUSINESS4008(FORBIDDEN, "BUSINESS4008", "해당 매장의 소유자가 아닙니다."),
     BUSINESS4009(NOT_FOUND, "BUSINESS4009", "해당 방문 혜택을 찾을 수 없습니다."),
-    BUSINESS5001(BAD_GATEWAY, "BUSINESS5001", "국세청 사업자등록정보 서비스와의 통신에 실패했습니다.");
+    BUSINESS4010(CONFLICT, "BUSINESS4010", "근처에 이름이 비슷한 시설이 있어 확인이 필요합니다."),
+    BUSINESS4011(BAD_REQUEST, "BUSINESS4011", "입력한 주소로 좌표를 찾지 못했습니다."),
+    BUSINESS4012(BAD_REQUEST, "BUSINESS4012", "존재하지 않는 지역코드입니다."),
+    BUSINESS5001(BAD_GATEWAY, "BUSINESS5001", "국세청 사업자등록정보 서비스와의 통신에 실패했습니다."),
+    BUSINESS5002(BAD_GATEWAY, "BUSINESS5002", "지도 서비스와의 통신에 실패했습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

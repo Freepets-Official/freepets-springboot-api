@@ -83,4 +83,42 @@ class FacilityOwnerClaimTest {
         assertThat(claim.getReviewedAt()).isNotNull();
         assertThat(claim.getReviewedByUserId()).isEqualTo(ADMIN_USER_ID);
     }
+
+    @Test
+    void createApproved_즉시_승인된_기록을_만들고_신청_전용_필드는_비운다() {
+        User user = User.builder()
+                .email("owner@test.com")
+                .passwordHash("encodedPassword")
+                .nickname("사장님")
+                .provider(Provider.LOCAL)
+                .build();
+        Facility facility = Facility.builder()
+                .name("새로 연 카페")
+                .category(FacilityCategory.CAFE)
+                .address("강원 강릉시 창해로 20")
+                .lat(new BigDecimal("37.8100000"))
+                .lng(new BigDecimal("128.9100000"))
+                .petAllowed(PetAllowed.ALLOWED)
+                .source(FacilitySource.BUSINESS_SELF)
+                .isActive(true)
+                .petTourListed(false)
+                .build();
+        LocalDateTime verifiedAt = LocalDateTime.of(2026, 9, 17, 10, 0);
+
+        FacilityOwnerClaim claim = FacilityOwnerClaim.createApproved(
+                user, facility, "123-45-*****", verifiedAt
+        );
+
+        assertThat(claim.getStatus()).isEqualTo(ClaimStatus.APPROVED);
+        assertThat(claim.getUser()).isEqualTo(user);
+        assertThat(claim.getFacility()).isEqualTo(facility);
+        assertThat(claim.getMaskedBusinessNumber()).isEqualTo("123-45-*****");
+        assertThat(claim.getVerifiedAt()).isEqualTo(verifiedAt);
+        assertThat(claim.getReviewedAt()).isNotNull();
+        // 관리자가 아니라 국세청 인증 통과로 시스템이 즉시 승인했다는 뜻이다.
+        assertThat(claim.getReviewedByUserId()).isNull();
+        // 심사를 거치지 않아 신청서 전용 필드가 없다 — 조건은 Facility에 바로 반영된다.
+        assertThat(claim.getRequestedCondition()).isNull();
+        assertThat(claim.getRegistrationCertificateUrl()).isNull();
+    }
 }

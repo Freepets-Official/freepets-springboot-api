@@ -126,6 +126,28 @@ public class FacilityOwnerClaim extends BaseEntity {
     }
 
     /**
+     * 국세청 진위확인만으로 곧바로 소유권을 확정하는 경로(신규 매장 자체 등록) 전용이다. 대조할 관광공사
+     * 데이터가 없어 등록증 대조·관리자 심사 자체를 두지 않으므로, {@code requestedCondition}·
+     * {@code registrationCertificateUrl}은 남기지 않는다 — 출입 조건은 {@link Facility#confirmByOwner}로
+     * 시설에 바로 반영되기 때문이다.
+     *
+     * <p>private 생성자가 강제하는 {@code PENDING} 시작 불변식은 그대로 두고, 생성 직후 이 팩토리가 명시적으로
+     * {@link #approve}를 태우는 2단계로 즉시 승인한다 — 빌더로 임의 상태를 만드는 경로를 새로 열지 않는다.
+     * {@code adminUserId}를 {@code null}로 넘겨 {@code reviewedByUserId}가 비는 것은 "관리자가 아니라
+     * 국세청 인증 통과로 시스템이 즉시 승인했다"는 뜻이다.
+     */
+    public static FacilityOwnerClaim createApproved(
+            User user,
+            Facility facility,
+            String maskedBusinessNumber,
+            LocalDateTime verifiedAt
+    ) {
+        FacilityOwnerClaim claim = new FacilityOwnerClaim(user, facility, maskedBusinessNumber, verifiedAt, null, null);
+        claim.approve(null);
+        return claim;
+    }
+
+    /**
      * 이 기록을 낸 사람이 요청자인지. <b>승인 여부는 보지 않는다</b> — 대기 신청에도 쓰이므로 이것만으로
      * 매장의 주인이라고 볼 수 없다. 주인인지는 승인된 기록을 조회해서 판단한다.
      */

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import com.freepets.domain.business.converter.BusinessConverter;
 import com.freepets.domain.business.dto.BusinessRequestDTO;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
+import com.freepets.infra.geocoding.GeocodedAddress;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
 import com.freepets.infra.nts.NtsClient;
@@ -30,6 +31,8 @@ public class BusinessQueryService {
 
     private final NtsProperties ntsProperties;
     private final NtsClient ntsClient;
+    private final GeocodingService geocodingService;
+    private final FacilityDuplicateCandidateQueryService facilityDuplicateCandidateQueryService;
 
     /**
      * {@code NtsClient}를 지연 주입받는다. 이 빈은 서비스키가 없으면 생성에 실패하는데, 그냥
@@ -40,10 +43,14 @@ public class BusinessQueryService {
      */
     public BusinessQueryService(
             NtsProperties ntsProperties,
-            @Lazy NtsClient ntsClient
+            @Lazy NtsClient ntsClient,
+            GeocodingService geocodingService,
+            FacilityDuplicateCandidateQueryService facilityDuplicateCandidateQueryService
     ) {
         this.ntsProperties = ntsProperties;
         this.ntsClient = ntsClient;
+        this.geocodingService = geocodingService;
+        this.facilityDuplicateCandidateQueryService = facilityDuplicateCandidateQueryService;
     }
 
     public BusinessResponseDTO.VerifyResult verify(BusinessRequestDTO.VerifyRequest request) {
@@ -106,5 +113,23 @@ public class BusinessQueryService {
     private boolean hasServiceKey() {
         String serviceKey = ntsProperties.serviceKey();
         return serviceKey != null && !serviceKey.isBlank();
+    }
+
+    /**
+     * 신규 매장 등록 전 중복 후보 사전조회. 이름·주소만으로 좌표를 구해 반경 검색을 돌린다 — 폼 작성
+     * 초반(사업자 정보를 아직 입력하지 않은 시점)에도 부를 수 있어야 한다.
+     */
+    public BusinessResponseDTO.FacilityDuplicateCandidateList duplicateCheck(
+            BusinessRequestDTO.FacilityDuplicateCheckRequest request
+    ) {
+        GeocodedAddress geocoded = geocodingService.geocode(request.getAddress());
+
+        return new BusinessResponseDTO.FacilityDuplicateCandidateList(
+                facilityDuplicateCandidateQueryService.findCandidates(
+                        request.getName(),
+                        geocoded.lat().doubleValue(),
+                        geocoded.lng().doubleValue()
+                )
+        );
     }
 }

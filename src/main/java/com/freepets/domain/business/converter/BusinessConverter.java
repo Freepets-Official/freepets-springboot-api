@@ -15,6 +15,7 @@ import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityBenefit;
 import com.freepets.domain.facility.entity.FacilityGradeSnapshot;
 import com.freepets.domain.facility.entity.Requirement;
+import com.freepets.domain.facility.repository.FacilityWithDistance;
 import com.freepets.domain.report.entity.FacilityReport;
 import com.freepets.domain.report.repository.DowngradingDenialReport;
 import com.freepets.domain.review.repository.FacilityReviewAggregate;
@@ -36,6 +37,34 @@ public class BusinessConverter {
         return new BusinessResponseDTO.ClaimResult(
                 claim.getClaimId(),
                 claim.getFacility().getFacilityId(),
+                claim.getStatus()
+        );
+    }
+
+    public static BusinessResponseDTO.FacilityDuplicateCandidate toFacilityDuplicateCandidate(
+            FacilityWithDistance facilityWithDistance
+    ) {
+        Facility facility = facilityWithDistance.facility();
+        return new BusinessResponseDTO.FacilityDuplicateCandidate(
+                facility.getFacilityId(),
+                facility.getName(),
+                facility.getAddress(),
+                facility.getCategory(),
+                facility.getSource(),
+                facilityWithDistance.distanceMeter()
+        );
+    }
+
+    public static BusinessResponseDTO.FacilityRegisterResult toFacilityRegisterResult(
+            Facility facility,
+            FacilityOwnerClaim claim
+    ) {
+        return new BusinessResponseDTO.FacilityRegisterResult(
+                facility.getFacilityId(),
+                claim.getClaimId(),
+                facility.getName(),
+                facility.getCategory(),
+                facility.getAddress(),
                 claim.getStatus()
         );
     }

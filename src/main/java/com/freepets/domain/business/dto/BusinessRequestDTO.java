@@ -159,7 +159,7 @@ public class BusinessRequestDTO {
          * 사전조회({@code duplicate-check})에서 유사 후보를 보고도 "다른 매장이 맞다"고 확인했을 때만
          * {@code true}로 보낸다. 기본값 {@code false}는 후보가 있으면 등록을 막는 방어선이다.
          */
-        private boolean duplicateCheckAcknowledged;
+        private boolean isDuplicateCheckAcknowledged;
     }
 
     /**

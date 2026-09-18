@@ -25,6 +25,8 @@ import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
+import com.freepets.domain.pet.entity.Pet;
+import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.User;
@@ -47,6 +49,7 @@ public class CourseCommandService {
     private final GamificationService gamificationService;
     private final PetCheckRepository petCheckRepository;
     private final ReviewRepository reviewRepository;
+    private final PetRepository petRepository;
 
     // 코스가 처음 공개(isPublic=true)로 전환된 시점에 지급하는 경험치 — 스톱이 많을수록(그만큼
     // 판별·리뷰를 더 많이 실제로 남겨야 하므로) 조금씩 더 준다. courseId 자체는 매번 새로
@@ -274,11 +277,15 @@ public class CourseCommandService {
         // 매번 새 courseId로 XP를 받아갈 수 있다(하루 상한만으로는 완전히 막지 못한다) —
         // 원 소유자 본인이 복사한 경우는 지급하지 않는다.
         if (!original.getUser().getId().equals(userId)) {
+            Long originalOwnerId = original.getUser().getId();
+            // 반려동물 개별 경험치도 원 소유자 기준이다 — 복사한 사람(userId)의 반려동물이 아니다.
+            List<Pet> originalOwnerPets = petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(originalOwnerId);
             gamificationService.grantXp(
-                    original.getUser().getId(),
+                    originalOwnerId,
                     XpSourceType.COURSE_SHARED_COPY,
                     saved.getCourseId(),
-                    COURSE_SHARED_COPY_XP
+                    COURSE_SHARED_COPY_XP,
+                    originalOwnerPets
             );
         }
 
@@ -381,8 +388,12 @@ public class CourseCommandService {
             return;
         }
 
+        // 코스는 특정 반려동물과 연결되지 않는 행동이라(시설 동선이지 반려동물 동행 기록이
+        // 아님), 반려동물 개별 경험치는 이 유저의 반려동물 전체에게 나눠준다.
+        List<Pet> pets = petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(userId);
         gamificationService.grantXp(
-                userId, XpSourceType.COURSE_PUBLISHED, courseId, coursePublishedXp((int) newStopCount), componentSignature
+                userId, XpSourceType.COURSE_PUBLISHED, courseId, coursePublishedXp((int) newStopCount),
+                componentSignature, pets
         );
     }
 

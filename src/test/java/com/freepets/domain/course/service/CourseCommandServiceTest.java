@@ -32,6 +32,7 @@ import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
+import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.Provider;
@@ -62,6 +63,9 @@ class CourseCommandServiceTest {
 
     @Mock
     private ReviewRepository reviewRepository;
+
+    @Mock
+    private PetRepository petRepository;
 
     @InjectMocks
     private CourseCommandService courseCommandService;
@@ -104,7 +108,7 @@ class CourseCommandServiceTest {
         assertThat(result.isPublic()).isTrue();
         // 공개로 만들면 경험치가 지급되는지(게이미피케이션 훅) — 스톱 1개면 20(기본) + 5×1 = 25.
         verify(gamificationService)
-                .grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(result.courseId()), eq(25), eq("1"));
+                .grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(result.courseId()), eq(25), eq("1"), eq(List.of()));
     }
 
     @Test
@@ -188,7 +192,7 @@ class CourseCommandServiceTest {
         courseCommandService.updateCourse(1L, 10L, request);
 
         // 스톱 2개면 20(기본) + 5×2 = 30.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30), eq("1,2"));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30), eq("1,2"), eq(List.of()));
     }
 
     @Test
@@ -250,7 +254,7 @@ class CourseCommandServiceTest {
 
         assertThat(result.isPublic()).isTrue();
         // 스톱 2개면 20(기본) + 5×2 = 30.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30), eq("1,2"));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30), eq("1,2"), eq(List.of()));
     }
 
     @Test
@@ -266,7 +270,7 @@ class CourseCommandServiceTest {
         courseCommandService.updateVisibility(1L, 10L, true);
 
         // 시설2는 오늘 이미 다른 코스로 XP를 받았으니 제외, 새 스톱은 시설3 하나뿐 — 20 + 5×1 = 25.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(25), eq("2,3"));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(25), eq("2,3"), eq(List.of()));
     }
 
     @Test
@@ -282,7 +286,7 @@ class CourseCommandServiceTest {
         courseCommandService.updateVisibility(1L, 10L, true);
 
         // 시설2·3 모두 오늘 이미 지급됐으니 새 스톱이 0개 — 지급 자체를 스킵한다.
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt(), any());
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt(), any(), any());
     }
 
     @Test
@@ -299,7 +303,7 @@ class CourseCommandServiceTest {
         courseCommandService.updateVisibility(1L, 10L, true);
 
         // 순서만 다를 뿐 스톱 구성(시설 집합)이 완전히 같아 재지급되지 않는다.
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt(), any());
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt(), any(), any());
     }
 
     @Test
@@ -530,7 +534,7 @@ class CourseCommandServiceTest {
         assertThat(savedCourse.getValue().isOwnedBy(2L)).isTrue();
         assertThat(savedCourse.getValue()).isNotSameAs(original);
         // 복사되면 원본 소유자(1L)에게 경험치가 지급된다 — 복사한 사람(2L)이 아니다.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_SHARED_COPY), any(), eq(15));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_SHARED_COPY), any(), eq(15), eq(List.of()));
     }
 
     @Test

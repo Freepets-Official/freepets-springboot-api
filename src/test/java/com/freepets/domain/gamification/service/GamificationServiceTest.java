@@ -19,9 +19,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.freepets.domain.gamification.entity.PetXpEvent;
 import com.freepets.domain.gamification.entity.XpEvent;
 import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.repository.PetXpEventRepository;
 import com.freepets.domain.gamification.repository.XpEventRepository;
+import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
@@ -35,6 +38,9 @@ class GamificationServiceTest {
 
     @Mock
     private XpEventRepository xpEventRepository;
+
+    @Mock
+    private PetXpEventRepository petXpEventRepository;
 
     @Mock
     private GamificationNotificationService gamificationNotificationService;
@@ -55,9 +61,16 @@ class GamificationServiceTest {
         return user;
     }
 
+    private Pet newPet(Long petId) {
+        Pet pet = Pet.builder().build();
+        ReflectionTestUtils.setField(pet, "petId", petId);
+        return pet;
+    }
+
     private void setUpService() {
         gamificationService = new GamificationService(
-                userRepository, xpEventRepository, gamificationNotificationService, badgeEvaluationService
+                userRepository, xpEventRepository, petXpEventRepository,
+                gamificationNotificationService, badgeEvaluationService
         );
     }
 
@@ -228,5 +241,76 @@ class GamificationServiceTest {
         gamificationService.evaluateHelpfulSaviorBadge(author, 10L);
 
         verify(badgeEvaluationService).evaluateHelpfulSaviorBadge(author, 10L);
+    }
+
+    @Test
+    void petsToCredit이_있으면_각_반려동물에게_전액이_그대로_지급된다() {
+        setUpService();
+        User user = newUser();
+        Pet petA = newPet(1L);
+        Pet petB = newPet(2L);
+
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.PETCHECK, 100L))
+                .thenReturn(false);
+
+        gamificationService.grantXp(1L, XpSourceType.PETCHECK, 100L, 5, java.util.List.of(petA, petB));
+
+        // 나눠주지 않고 두 마리 모두 5XP씩 그대로 — 스톱/아이 수와 무관하게 전액.
+        assertThat(petA.getTotalXp()).isEqualTo(5);
+        assertThat(petB.getTotalXp()).isEqualTo(5);
+        verify(petXpEventRepository, org.mockito.Mockito.times(2)).save(any(PetXpEvent.class));
+    }
+
+    @Test
+    void petsToCredit이_비어있으면_반려동물_지급을_아예_건드리지_않는다() {
+        setUpService();
+        User user = newUser();
+
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.REVIEW, 100L))
+                .thenReturn(false);
+
+        gamificationService.grantXp(1L, XpSourceType.REVIEW, 100L, 20, java.util.List.of());
+
+        verifyNoInteractions(petXpEventRepository);
+    }
+
+    @Test
+    void 한_반려동물이_이미_지급받은_적_있어도_나머지_반려동물은_정상_지급된다() {
+        setUpService();
+        User user = newUser();
+        Pet alreadyCredited = newPet(1L);
+        Pet fresh = newPet(2L);
+
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.PETCHECK, 100L))
+                .thenReturn(false);
+        when(petXpEventRepository.save(org.mockito.ArgumentMatchers.argThat(
+                petXpEvent -> petXpEvent != null && petXpEvent.getPet() == alreadyCredited
+        ))).thenThrow(new org.springframework.dao.DataIntegrityViolationException("uk_pet_xp_events_pet_source"));
+
+        gamificationService.grantXp(1L, XpSourceType.PETCHECK, 100L, 5, java.util.List.of(alreadyCredited, fresh));
+
+        // 첫 번째 반려동물이 유니크 제약에 걸려도 두 번째 반려동물은 그대로 지급된다.
+        assertThat(alreadyCredited.getTotalXp()).isZero();
+        assertThat(fresh.getTotalXp()).isEqualTo(5);
+    }
+
+    @Test
+    void User_지급_자체가_하루_상한으로_스킵되면_반려동물도_전혀_지급되지_않는다() {
+        setUpService();
+        Pet pet = newPet(1L);
+
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.PETCHECK, 555L))
+                .thenReturn(false);
+        when(xpEventRepository.countByUser_IdAndSourceTypeAndCreatedAtGreaterThanEqual(
+                eq(1L), eq(XpSourceType.PETCHECK), any(LocalDateTime.class)
+        )).thenReturn(10L); // PETCHECK 하루 상한(10) 도달
+
+        gamificationService.grantXp(1L, XpSourceType.PETCHECK, 555L, 5, java.util.List.of(pet));
+
+        assertThat(pet.getTotalXp()).isZero();
+        verifyNoInteractions(petXpEventRepository);
     }
 }

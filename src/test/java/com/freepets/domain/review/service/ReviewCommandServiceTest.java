@@ -174,8 +174,8 @@ class ReviewCommandServiceTest {
         assertThat(result.petIds()).containsExactlyInAnyOrder(1L, 2L);
         assertThat(result.ratingSpace()).isEqualTo(5);
         assertThat(result.tags()).containsExactlyInAnyOrder(Tag.SPACIOUS, Tag.WATER_BOWL);
-        // 신규 작성에만 경험치가 지급되는지(게이미피케이션 훅).
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20));
+        // 신규 작성에만 경험치가 지급되는지(게이미피케이션 훅) — 태그된 반려동물 각자에게도 지급.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq(List.of(pet1, pet2)));
     }
 
     @Test

@@ -117,7 +117,7 @@ public class ReviewCommandService {
         deleteReplacedPhotoIfPresent(photo, previousPhotoUrl);
 
         if (isNewReview) {
-            gamificationService.grantXp(userId, XpSourceType.REVIEW, savedReview.getReviewId(), REVIEW_XP);
+            gamificationService.grantXp(userId, XpSourceType.REVIEW, savedReview.getReviewId(), REVIEW_XP, pets);
         }
 
         return ReviewConverter.toUpsertResult(savedReview);

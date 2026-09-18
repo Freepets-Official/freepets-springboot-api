@@ -1,5 +1,7 @@
 package com.freepets.domain.petsatisfaction.service;
 
+import java.util.List;
+
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -86,7 +88,9 @@ public class PetSatisfactionCommandService {
         }
 
         if (isNewSatisfaction) {
-            gamificationService.grantXp(userId, XpSourceType.SATISFACTION, saved.getPetSatisfactionId(), SATISFACTION_XP);
+            gamificationService.grantXp(
+                    userId, XpSourceType.SATISFACTION, saved.getPetSatisfactionId(), SATISFACTION_XP, List.of(pet)
+            );
         }
 
         return PetSatisfactionConverter.toUpsertResult(saved);

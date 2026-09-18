@@ -57,6 +57,16 @@ public class PetController {
         );
     }
 
+    @GetMapping("/{petId}/card")
+    public ApiResponse<PetResponseDTO.RegistrationCard> getPetCard(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable("petId") Long petId
+    ) {
+        return ApiResponse.onSuccess(
+                petQueryService.getPetCard(userId, petId)
+        );
+    }
+
     @PutMapping(value = "/{petId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<PetResponseDTO.PetDetail> updatePet(
             @AuthenticationPrincipal Long userId,

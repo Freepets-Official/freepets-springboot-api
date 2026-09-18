@@ -1,6 +1,7 @@
 package com.freepets.domain.report.service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -9,6 +10,8 @@ import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
+import com.freepets.domain.pet.entity.Pet;
+import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.report.converter.DenialReportConverter;
 import com.freepets.domain.report.dto.DenialReportResponseDTO;
 import com.freepets.domain.report.entity.DenialReason;
@@ -50,6 +53,7 @@ public class DenialReportCommandService {
     private final FacilityReportRepository facilityReportRepository;
     private final FacilityRepository facilityRepository;
     private final UserRepository userRepository;
+    private final PetRepository petRepository;
     private final DenialReportNotificationService denialReportNotificationService;
     private final GamificationService gamificationService;
 
@@ -88,7 +92,11 @@ public class DenialReportCommandService {
 
         warnIfEscalationThresholdReached(facilityId);
 
-        gamificationService.grantXp(userId, XpSourceType.REPORT, saved.getReportId(), REPORT_XP);
+        // 거부 제보는 특정 반려동물과 연결되지 않는 행동이라(시설 대상), 반려동물 개별 경험치는
+        // 이 유저의 반려동물 전체에게 나눠준다 — 코스 공개·코스 공유 복사와 같은 이유
+        // (CourseCommandService 참고).
+        List<Pet> pets = petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(userId);
+        gamificationService.grantXp(userId, XpSourceType.REPORT, saved.getReportId(), REPORT_XP, pets);
 
         // 이 시설을 판별했던 다른 유저들에게 실시간 푸시 — 비동기라 이 응답을 안 늦춘다.
         denialReportNotificationService.notifyDenial(facilityId, userId, reason, facility.getName());

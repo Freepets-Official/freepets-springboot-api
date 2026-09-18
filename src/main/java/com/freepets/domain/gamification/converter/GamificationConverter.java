@@ -12,6 +12,8 @@ import com.freepets.domain.gamification.entity.Badge;
 import com.freepets.domain.gamification.entity.BadgeFamily;
 import com.freepets.domain.gamification.entity.LevelTier;
 import com.freepets.domain.gamification.entity.UserBadge;
+import com.freepets.domain.gamification.entity.XpSourceType;
+import com.freepets.domain.gamification.repository.XpEventRepository;
 import com.freepets.domain.gamification.service.LevelCurve;
 import com.freepets.domain.user.entity.User;
 
@@ -80,6 +82,37 @@ public class GamificationConverter {
                 .toList();
 
         return new GamificationResponseDTO.BadgeProgress(family.name(), family.getLabel(), count, tiers);
+    }
+
+    // XpSourceType.values() 선언 순서(판별→리뷰→제보→만족도→코스공개→코스공유) 그대로 6개를
+    // 다 내려준다 — 오늘 한 번도 지급받지 않은 sourceType은 todayStats에 행 자체가 없으므로
+    // completed/earnedXpToday를 0으로 채운다.
+    public static GamificationResponseDTO.QuestList toQuestList(
+            LocalDateTime resetsAt,
+            List<XpEventRepository.SourceTypeDailyStats> todayStats
+    ) {
+        Map<XpSourceType, XpEventRepository.SourceTypeDailyStats> statsByType = new HashMap<>();
+        for (XpEventRepository.SourceTypeDailyStats stats : todayStats) {
+            statsByType.put(stats.getSourceType(), stats);
+        }
+
+        List<GamificationResponseDTO.Quest> quests = Arrays.stream(XpSourceType.values())
+                .map(sourceType -> toQuest(sourceType, statsByType.get(sourceType)))
+                .toList();
+
+        return new GamificationResponseDTO.QuestList(resetsAt, quests);
+    }
+
+    private static GamificationResponseDTO.Quest toQuest(
+            XpSourceType sourceType,
+            XpEventRepository.SourceTypeDailyStats stats
+    ) {
+        long completed = stats != null ? stats.getCount() : 0L;
+        long earnedXpToday = stats != null ? stats.getTotalAmount() : 0L;
+
+        return new GamificationResponseDTO.Quest(
+                sourceType, sourceType.getLabel(), completed, sourceType.getDailyCap(), earnedXpToday
+        );
     }
 
 }

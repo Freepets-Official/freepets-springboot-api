@@ -4,7 +4,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.Map;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -35,22 +34,6 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 @Transactional
 public class GamificationService {
-
-    // 기획 결정: "도메인별 하루 상한" — 구체 값은 엔지니어링 제안(LevelCurve와 같은 성격의 상수).
-    // REVIEW는 시설당 리뷰가 1개라 자연히 제한되고, 이 표에 없는 sourceType은 하루 상한이 없는
-    // 것으로 취급한다.
-    //
-    // COURSE_PUBLISHED는 "평생 1회"가 courseId 단위라 같은 시설을 스톱으로 재사용하는 트리비얼한
-    // 코스를 무한정 새로 만들어 공개하면(코스 공개 게이트가 스톱마다 판별·리뷰는 확인하지만 그
-    // 시설을 다른 코스에서 이미 썼는지는 확인하지 않는다) 하루 상한 없이 XP를 무제한으로 쌓을 수
-    // 있었다 — 그래서 다른 도메인처럼 하루 상한을 둔다.
-    private static final Map<XpSourceType, Integer> DAILY_CAP = Map.of(
-            XpSourceType.PETCHECK, 10,
-            XpSourceType.REPORT, 5,
-            XpSourceType.SATISFACTION, 5,
-            XpSourceType.COURSE_PUBLISHED, 5,
-            XpSourceType.COURSE_SHARED_COPY, 10
-    );
 
     // 서버 프로세스는 항상 UTC로 고정돼 있다(FreepetsServerApplication의 static 블록) —
     // "하루"의 경계는 서버 타임존이 아니라 실제 사용자가 있는 KST 기준이어야 한다.
@@ -161,14 +144,9 @@ public class GamificationService {
             Long userId,
             XpSourceType sourceType
     ) {
-        Integer dailyCap = DAILY_CAP.get(sourceType);
-        if (dailyCap == null) {
-            return false;
-        }
-
         long todayCount = xpEventRepository
                 .countByUser_IdAndSourceTypeAndCreatedAtGreaterThanEqual(userId, sourceType, startOfTodayInBusinessZone());
-        return todayCount >= dailyCap;
+        return todayCount >= sourceType.getDailyCap();
     }
 
     /**

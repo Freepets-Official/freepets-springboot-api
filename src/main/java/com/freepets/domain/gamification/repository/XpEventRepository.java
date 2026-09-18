@@ -47,10 +47,36 @@ public interface XpEventRepository extends JpaRepository<XpEvent, Long> {
             """)
     List<SourceTypeCount> countGroupedByUser_Id(@Param("userId") Long userId);
 
+    /**
+     * GamificationQueryService의 오늘의 퀘스트 조회용({@code GET /me/gamification/quests}) —
+     * 오늘(자정 이후) sourceType별 지급 횟수와 XP 합계를 한 번에 가져온다. countGroupedByUser_Id와
+     * 같은 이유로 그룹 쿼리 하나로 합친다 — sourceType 수만큼 반복 호출하지 않는다. 오늘 한 번도
+     * 지급받지 않은 sourceType은 결과에 행 자체가 없다 — 호출부가 0으로 채워야 한다.
+     */
+    @Query("""
+            SELECT xpEvent.sourceType AS sourceType, COUNT(xpEvent) AS count, SUM(xpEvent.amount) AS totalAmount
+            FROM XpEvent xpEvent
+            WHERE xpEvent.user.id = :userId
+            AND xpEvent.createdAt >= :since
+            GROUP BY xpEvent.sourceType
+            """)
+    List<SourceTypeDailyStats> countAndSumGroupedByUser_IdSince(
+            @Param("userId") Long userId,
+            @Param("since") LocalDateTime since
+    );
+
     interface SourceTypeCount {
         XpSourceType getSourceType();
 
         long getCount();
+    }
+
+    interface SourceTypeDailyStats {
+        XpSourceType getSourceType();
+
+        long getCount();
+
+        long getTotalAmount();
     }
 
 }

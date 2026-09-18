@@ -151,6 +151,24 @@ class GamificationServiceTest {
     }
 
     @Test
+    void 리뷰도_하루_상한이_있다() {
+        // 시설당 리뷰는 1개뿐이라 sourceId(reviewId)가 매번 달라 평생 1회 검사는 항상 통과하지만,
+        // 서로 다른 시설을 여러 곳 판별받고 리뷰를 남기면 하루에도 여러 번 지급될 수 있어
+        // 다른 도메인처럼 하루 상한(5)으로 막혀야 한다.
+        setUpService();
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.REVIEW, 777L))
+                .thenReturn(false);
+        when(xpEventRepository.countByUser_IdAndSourceTypeAndCreatedAtGreaterThanEqual(
+                eq(1L), eq(XpSourceType.REVIEW), any(LocalDateTime.class)
+        )).thenReturn(5L); // REVIEW 하루 상한(5) 도달
+
+        gamificationService.grantXp(1L, XpSourceType.REVIEW, 777L, 20);
+
+        verifyNoInteractions(userRepository);
+        verify(xpEventRepository, never()).save(any());
+    }
+
+    @Test
     void 코스_공개도_하루_상한이_있다() {
         // sourceId(courseId)가 매번 달라 평생 1회 검사는 항상 통과하므로, 같은 시설을 재사용한
         // 트리비얼한 코스를 계속 새로 만들어 공개해도 하루 상한으로 막혀야 한다.

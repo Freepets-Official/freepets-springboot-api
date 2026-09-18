@@ -26,7 +26,6 @@ import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
 import com.freepets.domain.pet.entity.Pet;
-import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.User;
@@ -49,7 +48,6 @@ public class CourseCommandService {
     private final GamificationService gamificationService;
     private final PetCheckRepository petCheckRepository;
     private final ReviewRepository reviewRepository;
-    private final PetRepository petRepository;
 
     // 코스가 처음 공개(isPublic=true)로 전환된 시점에 지급하는 경험치 — 스톱이 많을수록(그만큼
     // 판별·리뷰를 더 많이 실제로 남겨야 하므로) 조금씩 더 준다. courseId 자체는 매번 새로
@@ -279,7 +277,7 @@ public class CourseCommandService {
         if (!original.getUser().getId().equals(userId)) {
             Long originalOwnerId = original.getUser().getId();
             // 반려동물 개별 경험치도 원 소유자 기준이다 — 복사한 사람(userId)의 반려동물이 아니다.
-            List<Pet> originalOwnerPets = petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(originalOwnerId);
+            List<Pet> originalOwnerPets = gamificationService.allActivePetsOf(originalOwnerId);
             gamificationService.grantXp(
                     originalOwnerId,
                     XpSourceType.COURSE_SHARED_COPY,
@@ -352,14 +350,17 @@ public class CourseCommandService {
      *
      * <ol>
      *   <li>같은 시설 구성(순서 무관)으로 이미 XP를 받은 적이 있으면(과거 어느 날이든) 이번엔
-     *       완전히 스킵한다 — 재정렬만 해서 새 코스로 다시 올리는 패턴을 막는다.
-     *       componentSignature엔 DB 유니크 제약(uk_xp_events_user_source_type_component_signature)이
-     *       걸려있어, 동시에 서로 다른 courseId로 같은 스톱 구성을 공개해도 GamificationService의
-     *       grantXp가 DataIntegrityViolationException으로 한쪽을 마지막에 한 번 더 막는다.</li>
+     *       완전히 스킵한다 — 재정렬만 해서 새 코스로 다시 올리는 패턴을 막는다. 이 판정은
+     *       componentSignature를 인자로 넘기기만 하면 GamificationService.grantXp가 잠금
+     *       전/후로 이미 두 번 해주므로 여기서 따로 미리 확인하지 않는다.</li>
      *   <li>오늘 다른 코스로 이미 XP를 받은 스톱은 이번 코스에서 다시 세지 않는다 — 스톱
      *       하나짜리 차이만 두고 여러 코스를 만들어 하루 상한(5회)을 다 채우는 패턴을 막는다.
      *       겹치지 않는 새 스톱이 하나도 없으면(전부 오늘 이미 쓴 시설) 기본 지급(20XP)도 없이
-     *       완전히 스킵한다.</li>
+     *       완전히 스킵한다. 이 계산은 "오늘 이미 쓴 스톱"을 다시 조회해야 해서, 미리 계산해
+     *       고정값으로 넘기지 않고 {@link java.util.function.IntSupplier}로 넘긴다 — 그래야
+     *       GamificationService가 User 행 잠금을 잡아 동시 요청을 직렬화한 뒤에야 이 계산이
+     *       실행된다. 잠금 밖에서 미리 계산해버리면, 겹치는 스톱을 가진 두 코스를 거의 동시에
+     *       공개했을 때 둘 다 같은 스톱을 "아직 안 쓴 것"으로 보고 중복 지급하는 레이스가 남는다.</li>
      * </ol>
      */
     private void grantCoursePublishedXpIfEarned(
@@ -372,10 +373,29 @@ public class CourseCommandService {
                 .collect(Collectors.toSet());
         String componentSignature = componentSignatureOf(currentFacilityIds);
 
-        if (gamificationService.existsGrantedForComponentSignature(userId, XpSourceType.COURSE_PUBLISHED, componentSignature)) {
-            return;
-        }
+        // 코스는 특정 반려동물과 연결되지 않는 행동이라(시설 동선이지 반려동물 동행 기록이
+        // 아님), 반려동물 개별 경험치는 이 유저의 반려동물 전체에게 나눠준다.
+        List<Pet> pets = gamificationService.allActivePetsOf(userId);
 
+        gamificationService.grantXp(
+                userId,
+                XpSourceType.COURSE_PUBLISHED,
+                courseId,
+                () -> resolveCoursePublishedXp(userId, currentFacilityIds),
+                componentSignature,
+                pets
+        );
+    }
+
+    // "오늘 다른 코스로 이미 XP를 받은 스톱"을 뺀 나머지 스톱 수로 금액을 계산한다. 새 스톱이
+    // 0개면 0을 돌려줘 GamificationService가 기본 지급(20XP)도 없이 완전히 스킵하게 한다 —
+    // coursePublishedXp(0)을 그대로 넘기면 기본 XP만큼은 새어나간다. grantCoursePublishedXpIfEarned의
+    // IntSupplier가 GamificationService의 잠금을 잡은 뒤에 호출하는 메서드라, 매번 새로 조회해야
+    // 정확하다(호출 시점에 값을 캐싱해서 넘기면 안 된다).
+    private int resolveCoursePublishedXp(
+            Long userId,
+            Set<Long> currentFacilityIds
+    ) {
         Set<Long> alreadyCreditedTodayFacilityIds = gamificationService
                 .findComponentSignaturesGrantedToday(userId, XpSourceType.COURSE_PUBLISHED).stream()
                 .flatMap(CourseCommandService::facilityIdsFromComponentSignature)
@@ -385,16 +405,10 @@ public class CourseCommandService {
                 .filter(facilityId -> !alreadyCreditedTodayFacilityIds.contains(facilityId))
                 .count();
         if (newStopCount == 0) {
-            return;
+            return 0;
         }
 
-        // 코스는 특정 반려동물과 연결되지 않는 행동이라(시설 동선이지 반려동물 동행 기록이
-        // 아님), 반려동물 개별 경험치는 이 유저의 반려동물 전체에게 나눠준다.
-        List<Pet> pets = petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(userId);
-        gamificationService.grantXp(
-                userId, XpSourceType.COURSE_PUBLISHED, courseId, coursePublishedXp((int) newStopCount),
-                componentSignature, pets
-        );
+        return coursePublishedXp((int) newStopCount);
     }
 
     // 정렬된 facilityId를 콤마로 이어붙인 정규화 표현 — 스톱 순서가 달라도 구성이 같으면 항상

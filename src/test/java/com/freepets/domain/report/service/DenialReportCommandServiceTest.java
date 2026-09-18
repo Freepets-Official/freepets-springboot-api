@@ -27,7 +27,6 @@ import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
 import com.freepets.domain.pet.entity.Pet;
-import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.report.dto.DenialReportResponseDTO;
 import com.freepets.domain.report.entity.DenialReason;
 import com.freepets.domain.report.entity.FacilityReport;
@@ -49,9 +48,6 @@ class DenialReportCommandServiceTest {
 
     @Mock
     private UserRepository userRepository;
-
-    @Mock
-    private PetRepository petRepository;
 
     @Mock
     private DenialReportNotificationService denialReportNotificationService;
@@ -79,7 +75,7 @@ class DenialReportCommandServiceTest {
         });
         when(facilityReportRepository.countByFacility_FacilityIdAndIsRealtimeTrueAndCreatedAtAfter(eq(7L), any()))
                 .thenReturn(1L);
-        when(petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(1L)).thenReturn(List.of(pet));
+        when(gamificationService.allActivePetsOf(1L)).thenReturn(List.of(pet));
 
         DenialReportResponseDTO.Report result = denialReportCommandService.report(1L, 7L, DenialReason.WEIGHT);
 

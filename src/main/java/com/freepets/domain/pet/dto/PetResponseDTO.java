@@ -6,10 +6,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.pet.entity.BreedSize;
 import com.freepets.domain.pet.entity.Gender;
 import com.freepets.domain.pet.entity.Kind;
-import com.freepets.domain.petsatisfaction.dto.PetSatisfactionResponseDTO;
 
 public class PetResponseDTO {
 
@@ -50,7 +50,17 @@ public class PetResponseDTO {
             int level,
             long totalXp,
             Long xpToNextLevel,
-            List<PetSatisfactionResponseDTO.TopFacility> topFacilities
+            List<FavoriteFacility> favoriteFacilities
+    ) {}
+
+    // RegistrationCard 전용 "최애 장소" 항목. petsatisfaction 도메인의
+    // PetSatisfactionResponseDTO.TopFacility와 필드 구성은 같지만, pet 도메인의 응답 계약을
+    // 다른 도메인의 DTO 타입에 묶어두지 않으려고 따로 둔다 — PetConverter가 변환한다.
+    public record FavoriteFacility(
+            Long facilityId,
+            String facilityName,
+            FacilityCategory category,
+            float score
     ) {}
 
     public record PetList(

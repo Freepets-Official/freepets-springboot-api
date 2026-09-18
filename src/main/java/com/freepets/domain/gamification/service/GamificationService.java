@@ -5,17 +5,17 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.function.IntSupplier;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.freepets.domain.gamification.entity.PetXpEvent;
 import com.freepets.domain.gamification.entity.XpEvent;
 import com.freepets.domain.gamification.entity.XpSourceType;
-import com.freepets.domain.gamification.repository.PetXpEventRepository;
 import com.freepets.domain.gamification.repository.XpEventRepository;
 import com.freepets.domain.pet.entity.Pet;
+import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -44,8 +44,9 @@ public class GamificationService {
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 
     private final UserRepository userRepository;
+    private final PetRepository petRepository;
     private final XpEventRepository xpEventRepository;
-    private final PetXpEventRepository petXpEventRepository;
+    private final PetXpEventWriter petXpEventWriter;
     private final GamificationNotificationService gamificationNotificationService;
     private final BadgeEvaluationService badgeEvaluationService;
 
@@ -55,7 +56,7 @@ public class GamificationService {
             Long sourceId,
             int amount
     ) {
-        grantXp(userId, sourceType, sourceId, amount, null, List.of());
+        grantXp(userId, sourceType, sourceId, () -> amount, null, List.of());
     }
 
     /**
@@ -72,12 +73,12 @@ public class GamificationService {
             int amount,
             String componentSignature
     ) {
-        grantXp(userId, sourceType, sourceId, amount, componentSignature, List.of());
+        grantXp(userId, sourceType, sourceId, () -> amount, componentSignature, List.of());
     }
 
     /**
-     * 이 지급과 함께 반려동물에게도 개별 경험치를 나눠주고 싶은 호출부(판별·리뷰·제보·만족도·
-     * 코스) 전용 — componentSignature는 안 쓰는 호출부가 대부분이라 null로 고정한다.
+     * 이 지급과 함께 반려동물에게도 개별 경험치를 나눠주고 싶은 호출부(판별·리뷰·제보·만족도)
+     * 전용 — componentSignature는 안 쓰는 호출부가 대부분이라 null로 고정한다.
      */
     public void grantXp(
             Long userId,
@@ -86,23 +87,39 @@ public class GamificationService {
             int amount,
             List<Pet> petsToCredit
     ) {
-        grantXp(userId, sourceType, sourceId, amount, null, petsToCredit);
+        grantXp(userId, sourceType, sourceId, () -> amount, null, petsToCredit);
     }
 
     /**
-     * 캐노니컬 지급 진입점 — 나머지 오버로드는 전부 이 메서드로 위임한다.
-     *
-     * <p>{@code petsToCredit}는 User 지급이 실제로 성공했을 때만(사전 검사·잠금 후 재검사·DB
-     * 유니크 제약을 전부 통과해 XpEvent가 저장된 뒤에만) 반려동물별 개별 경험치로 이어진다 —
-     * 하루 상한·평생 1회 판정을 반려동물 쪽에 따로 만들지 않고, User 판정 하나에 편승시켜서
-     * 판정 로직이 두 곳으로 갈라지는 것을 막는다(반려동물이 자기 주인의 행동 상한과 다른
-     * 규칙으로 지급될 이유가 없다). 빈 리스트면 아무 일도 하지 않는다.
+     * componentSignature·반려동물 팬아웃이 둘 다 필요한 호출부(코스 공유 복사 등, 지급액이
+     * 미리 정해져 있는 경우) 전용.
      */
     public void grantXp(
             Long userId,
             XpSourceType sourceType,
             Long sourceId,
             int amount,
+            String componentSignature,
+            List<Pet> petsToCredit
+    ) {
+        grantXp(userId, sourceType, sourceId, () -> amount, componentSignature, petsToCredit);
+    }
+
+    /**
+     * 지급액을 User 행 잠금을 잡은 "뒤"에 계산해야 하는 호출부(코스 공개 등) 전용.
+     *
+     * <p>"오늘 이미 크레딧된 구성요소를 뺀 나머지로 금액을 계산"하는 경우, 그 계산을 잠금 밖에서
+     * 미리 해버리면 동시에 들어온 두 요청이 같은 구성요소를 똑같이 "아직 안 쓴 것"으로 보고
+     * 중복 계산할 수 있다 — 그래서 이 오버로드는 금액을 즉시 값으로 받지 않고 {@link IntSupplier}로
+     * 받아, 잠금을 잡고 사전 검사(하루 상한·평생 1회)를 통과한 뒤에야 호출한다. 0 이하를 반환하면
+     * "받을 자격이 없다"는 뜻으로 보고 지급 자체를 스킵한다(XpEvent도 안 남기고, 하루 상한 카운트도
+     * 건드리지 않는다).
+     */
+    public void grantXp(
+            Long userId,
+            XpSourceType sourceType,
+            Long sourceId,
+            IntSupplier amountSupplier,
             String componentSignature,
             List<Pet> petsToCredit
     ) {
@@ -132,6 +149,13 @@ public class GamificationService {
         if (isAlreadyGrantedForSource(userId, sourceType, sourceId)
                 || isAlreadyGrantedForComponentSignature(userId, sourceType, componentSignature)
                 || isDailyCapReached(userId, sourceType)) {
+            return;
+        }
+
+        // 잠금(직렬화)이 걸린 뒤에야 실제 지급액을 계산한다 — amountSupplier가 "오늘 이미 크레딧된
+        // 구성요소" 같은 걸 다시 조회하는 경우, 앞선 요청이 커밋한 결과가 이 시점엔 이미 보인다.
+        int amount = amountSupplier.getAsInt();
+        if (amount <= 0) {
             return;
         }
 
@@ -167,16 +191,35 @@ public class GamificationService {
         badgeEvaluationService.evaluateAfterXpEvent(user, sourceType);
 
         if (!petsToCredit.isEmpty()) {
-            creditPets(petsToCredit, sourceType, sourceId, amount, componentSignature);
+            creditPets(
+                    petsToCredit,
+                    sourceType,
+                    sourceId,
+                    amount,
+                    componentSignature
+            );
         }
+    }
+
+    /**
+     * 특정 반려동물과 연결되지 않는 행동(제보·코스 공개·코스 공유 복사 등)이 반려동물 개별
+     * 경험치를 이 유저의 반려동물 전체에게 나눠주고 싶을 때 쓰는 대상 목록 — 여러 호출부가
+     * 각자 PetRepository를 직접 물고 똑같은 조회를 반복하지 않도록 한 곳에 모아둔다. 삭제된
+     * 반려동물은 제외한다.
+     */
+    public List<Pet> allActivePetsOf(Long userId) {
+        return petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(userId);
     }
 
     /**
      * petsToCredit 각각에게 같은 금액을 그대로(나누지 않고) 지급한다. 반려동물 한 마리가
      * uk_pet_xp_events_pet_source(-_component_signature)에 걸려도 그 반려동물만 건너뛰고
      * 나머지는 계속 지급한다 — 그룹 판별처럼 여러 마리가 한 번에 걸리는 호출에서 한 마리의
-     * 중복이 다른 마리의 정상 지급까지 막으면 안 된다. 배지 재평가·레벨업 푸시는 반려동물
-     * 단위로는 아직 없다(카드 표시용 레벨·진행바만 필요한 범위라 의도적으로 뺐다).
+     * 중복이 다른 마리의 정상 지급까지 막으면 안 된다. petXpEventWriter.save가 별도
+     * 세이브포인트(NESTED)로 저장해서, 한 마리의 실패가 Postgres 트랜잭션 전체를 abort시켜
+     * 나머지 반려동물이나 이 메서드를 호출한 User XP 커밋까지 막는 걸 방지한다(PetXpEventWriter
+     * 참고). 배지 재평가·레벨업 푸시는 반려동물 단위로는 아직 없다(카드 표시용 레벨·진행바만
+     * 필요한 범위라 의도적으로 뺐다).
      */
     private void creditPets(
             List<Pet> petsToCredit,
@@ -187,14 +230,12 @@ public class GamificationService {
     ) {
         for (Pet pet : petsToCredit) {
             try {
-                petXpEventRepository.save(
-                        PetXpEvent.builder()
-                                .pet(pet)
-                                .sourceType(sourceType)
-                                .sourceId(sourceId)
-                                .amount(amount)
-                                .componentSignature(componentSignature)
-                                .build()
+                petXpEventWriter.save(
+                        pet,
+                        sourceType,
+                        sourceId,
+                        amount,
+                        componentSignature
                 );
             } catch (DataIntegrityViolationException e) {
                 log.warn(
@@ -238,21 +279,11 @@ public class GamificationService {
         return user.isLevelUpNotificationEnabled();
     }
 
-    /**
-     * 이 componentSignature로 이미 XP를 지급받은 적이 있는지 — "평생 1회"를 sourceId 단위가
-     * 아니라 실제 구성요소 조합(예: 코스의 스톱 집합) 단위로 판정하고 싶은 호출부
-     * (CourseCommandService)를 위한 조회 전용 진입점이다. 이 서비스는 componentSignature가
-     * 무엇을 가리키는지 모르므로(도메인 분리) 서명을 만드는 규칙 자체는 호출부 책임이다.
-     */
-    public boolean existsGrantedForComponentSignature(
-            Long userId,
-            XpSourceType sourceType,
-            String componentSignature
-    ) {
-        return isAlreadyGrantedForComponentSignature(userId, sourceType, componentSignature);
-    }
-
-    // 위와 같은 목적이되 오늘(KST) 지급분의 componentSignature 전체 — 당일 단위 중복 판단용.
+    // 오늘(KST) 지급분의 componentSignature 전체 — 당일 단위 중복 판단용(코스 공개의 "오늘 이미
+    // 쓴 스톱" 계산에 쓰인다). 평생 1회(componentSignature 완전 일치) 판정은 이 서비스 내부에서만
+    // 쓰고 호출부에 따로 안 열어준다 — grantXp 자체가 잠금 전/후로 이미 그 판정을 하기 때문에,
+    // 호출부가 grantXp 호출 전에 똑같은 판정을 미리 하면 잠금 밖에서 계산한 값이라 레이스에
+    // 취약해진다(IntSupplier 오버로드의 문서 참고).
     public List<String> findComponentSignaturesGrantedToday(
             Long userId,
             XpSourceType sourceType

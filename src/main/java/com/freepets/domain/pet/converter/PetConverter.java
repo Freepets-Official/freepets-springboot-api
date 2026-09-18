@@ -6,7 +6,6 @@ import com.freepets.domain.gamification.service.LevelCurve;
 import com.freepets.domain.pet.dto.PetRequestDTO;
 import com.freepets.domain.pet.dto.PetResponseDTO;
 import com.freepets.domain.pet.entity.Pet;
-import com.freepets.domain.petsatisfaction.dto.PetSatisfactionResponseDTO;
 import com.freepets.domain.user.entity.User;
 
 public class PetConverter {
@@ -55,7 +54,7 @@ public class PetConverter {
 
     public static PetResponseDTO.RegistrationCard toRegistrationCard(
             Pet pet,
-            List<PetSatisfactionResponseDTO.TopFacility> topFacilities
+            List<PetResponseDTO.FavoriteFacility> favoriteFacilities
     ) {
         Long xpToNextLevel = pet.getLevel() < LevelCurve.MAX_LEVEL
                 ? LevelCurve.xpToReachLevel(pet.getLevel() + 1) - pet.getTotalXp()
@@ -71,7 +70,7 @@ public class PetConverter {
                 pet.getLevel(),
                 pet.getTotalXp(),
                 xpToNextLevel,
-                topFacilities
+                favoriteFacilities
         );
     }
 

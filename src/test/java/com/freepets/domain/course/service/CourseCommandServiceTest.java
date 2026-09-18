@@ -32,7 +32,6 @@ import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
-import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.Provider;
@@ -63,9 +62,6 @@ class CourseCommandServiceTest {
 
     @Mock
     private ReviewRepository reviewRepository;
-
-    @Mock
-    private PetRepository petRepository;
 
     @InjectMocks
     private CourseCommandService courseCommandService;
@@ -107,8 +103,7 @@ class CourseCommandServiceTest {
 
         assertThat(result.isPublic()).isTrue();
         // 공개로 만들면 경험치가 지급되는지(게이미피케이션 훅) — 스톱 1개면 20(기본) + 5×1 = 25.
-        verify(gamificationService)
-                .grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(result.courseId()), eq(25), eq("1"), eq(List.of()));
+        verifyCoursePublishedGrant(result.courseId(), 25, "1");
     }
 
     @Test
@@ -192,7 +187,7 @@ class CourseCommandServiceTest {
         courseCommandService.updateCourse(1L, 10L, request);
 
         // 스톱 2개면 20(기본) + 5×2 = 30.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30), eq("1,2"), eq(List.of()));
+        verifyCoursePublishedGrant(10L, 30, "1,2");
     }
 
     @Test
@@ -254,7 +249,7 @@ class CourseCommandServiceTest {
 
         assertThat(result.isPublic()).isTrue();
         // 스톱 2개면 20(기본) + 5×2 = 30.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30), eq("1,2"), eq(List.of()));
+        verifyCoursePublishedGrant(10L, 30, "1,2");
     }
 
     @Test
@@ -270,11 +265,14 @@ class CourseCommandServiceTest {
         courseCommandService.updateVisibility(1L, 10L, true);
 
         // 시설2는 오늘 이미 다른 코스로 XP를 받았으니 제외, 새 스톱은 시설3 하나뿐 — 20 + 5×1 = 25.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(25), eq("2,3"), eq(List.of()));
+        verifyCoursePublishedGrant(10L, 25, "2,3");
     }
 
     @Test
     void 새_스톱이_하나도_없으면_기본_경험치도_지급되지_않는다() {
+        // "지급되지 않는다"는 이제 GamificationService의 책임(amountSupplier가 0을 반환하면
+        // 완전히 스킵 — GamificationServiceTest에서 검증)이라, 여기서는 CourseCommandService가
+        // 그 판정에 필요한 금액을 정확히 0으로 계산해 넘기는지만 확인한다.
         Course course = ownedCourseWithStops(2L, 3L);
 
         when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
@@ -285,25 +283,23 @@ class CourseCommandServiceTest {
 
         courseCommandService.updateVisibility(1L, 10L, true);
 
-        // 시설2·3 모두 오늘 이미 지급됐으니 새 스톱이 0개 — 지급 자체를 스킵한다.
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt(), any(), any());
+        // 시설2·3 모두 오늘 이미 지급됐으니 새 스톱이 0개 — 금액이 0으로 계산된다.
+        verifyCoursePublishedGrant(10L, 0, "2,3");
     }
 
     @Test
-    void 스톱_구성이_같으면_순서만_바꿔도_평생_1회만_지급된다() {
-        Course course = ownedCourseWithStops(2L, 1L); // 과거에 시설 1·2로 이미 받은 조합과 순서만 다름
+    void 스톱_순서가_달라도_componentSignature는_정규화되어_같다() {
+        // "같은 시설 구성이면 평생 1회만" 판정 자체는 이제 GamificationService의 책임
+        // (componentSignature 완전 일치 시 스킵 — GamificationServiceTest에서 검증)이라, 여기서는
+        // CourseCommandService가 스톱 순서와 무관하게 항상 같은 정규화된 서명을 넘기는지만 확인한다.
+        Course course = ownedCourseWithStops(2L, 1L); // 정렬하면 "1,2"와 같은 구성
 
         when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
         stubVerified(1L, 1L, 2L);
-        // 정규화된 서명("1,2")으로 과거에 이미 지급받은 적이 있다는 스냅샷 — 그 코스가 이후
-        // 수정·삭제됐더라도 이 값은 영향받지 않는다.
-        when(gamificationService.existsGrantedForComponentSignature(1L, XpSourceType.COURSE_PUBLISHED, "1,2"))
-                .thenReturn(true);
 
         courseCommandService.updateVisibility(1L, 10L, true);
 
-        // 순서만 다를 뿐 스톱 구성(시설 집합)이 완전히 같아 재지급되지 않는다.
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt(), any(), any());
+        verifyCoursePublishedGrant(10L, 30, "1,2");
     }
 
     @Test
@@ -599,6 +595,22 @@ class CourseCommandServiceTest {
 
         assertThatThrownBy(() -> courseCommandService.copySharedCourse(2L, "CRS-NOTFOUND1"))
                 .isInstanceOf(GeneralException.class);
+    }
+
+    // COURSE_PUBLISHED 지급은 이제 금액을 IntSupplier로 넘긴다(잠금을 잡은 뒤 계산하기 위함,
+    // GamificationService 참고) — eq(int)로 곧바로 비교할 수 없어 캡처한 뒤 직접 호출해본다.
+    private void verifyCoursePublishedGrant(
+            Long courseId,
+            int expectedAmount,
+            String expectedComponentSignature
+    ) {
+        ArgumentCaptor<java.util.function.IntSupplier> amountCaptor =
+                ArgumentCaptor.forClass(java.util.function.IntSupplier.class);
+        verify(gamificationService).grantXp(
+                eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(courseId),
+                amountCaptor.capture(), eq(expectedComponentSignature), eq(List.of())
+        );
+        assertThat(amountCaptor.getValue().getAsInt()).isEqualTo(expectedAmount);
     }
 
     // 공개 자격 검사(판별 기록 + 리뷰)를 통과시키는 스텁 — 넘긴 모든 facilityId에 대해 둘 다

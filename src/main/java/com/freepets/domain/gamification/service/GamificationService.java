@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.List;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -50,11 +51,29 @@ public class GamificationService {
             Long sourceId,
             int amount
     ) {
+        grantXp(userId, sourceType, sourceId, amount, null);
+    }
+
+    /**
+     * componentSignature가 있는 지급(코스 공개 등) 전용 — sourceId(예: courseId)는 대상을 새로
+     * 만들 때마다 값이 바뀌어서 "구성요소 조합(예: 스톱 시설 집합) 기준 평생 1회"를 sourceId
+     * 검사만으로는 못 지킨다. 그래서 sourceId 중복 검사에 더해 componentSignature 중복 검사를
+     * 하나 더 거친다 — 둘 중 하나라도 걸리면 지급하지 않는다. null이면 이 검사 자체를 건너뛰고
+     * 기존 sourceId 기준 평생 1회만 적용한다(호출부 대부분이 여기 해당).
+     */
+    public void grantXp(
+            Long userId,
+            XpSourceType sourceType,
+            Long sourceId,
+            int amount,
+            String componentSignature
+    ) {
         // 유저 행을 잠그기 전에 값싼 사전 검사부터 한다 — 이미 상한/중복으로 막힐 호출
         // (예: 판별을 하루에 10번 넘게 반복하는 흔한 케이스)이 매번 User row를 잠글 필요는
         // 없다. 그래도 이 사전 검사만으로는 두 요청이 동시에 통과해버릴 수 있어(아래 참고),
         // 잠금을 잡은 뒤 같은 검사를 한 번 더 한다.
-        if (isAlreadyGrantedForSource(userId, sourceType, sourceId)) {
+        if (isAlreadyGrantedForSource(userId, sourceType, sourceId)
+                || isAlreadyGrantedForComponentSignature(userId, sourceType, componentSignature)) {
             return;
         }
         if (isDailyCapReached(userId, sourceType)) {
@@ -72,7 +91,9 @@ public class GamificationService {
         }
         // 잠금을 잡기 전에 두 요청이 동시에 위 사전 검사를 통과했을 수 있으므로, 직렬화된
         // 상태에서 같은 검사를 다시 한다 — 여기서는 앞선 요청이 커밋한 결과가 보인다.
-        if (isAlreadyGrantedForSource(userId, sourceType, sourceId) || isDailyCapReached(userId, sourceType)) {
+        if (isAlreadyGrantedForSource(userId, sourceType, sourceId)
+                || isAlreadyGrantedForComponentSignature(userId, sourceType, componentSignature)
+                || isDailyCapReached(userId, sourceType)) {
             return;
         }
 
@@ -83,12 +104,17 @@ public class GamificationService {
                             .sourceType(sourceType)
                             .sourceId(sourceId)
                             .amount(amount)
+                            .componentSignature(componentSignature)
                             .build()
             );
         } catch (DataIntegrityViolationException e) {
-            // uk_xp_events_user_source가 막아준 마지막 방어선 — 두 검사 사이에도 남는 레이스를
-            // 여기서 잡는다. 원래 액션은 그대로 성공해야 하므로 예외를 올리지 않는다.
-            log.warn("이미 지급된 경험치라 스킵합니다 — userId={}, sourceType={}, sourceId={}", userId, sourceType, sourceId);
+            // uk_xp_events_user_source·uk_xp_events_user_source_type_component_signature가
+            // 막아준 마지막 방어선 — 두 검사 사이에도 남는 레이스를 여기서 잡는다. 원래 액션은
+            // 그대로 성공해야 하므로 예외를 올리지 않는다.
+            log.warn(
+                    "이미 지급된 경험치라 스킵합니다 — userId={}, sourceType={}, sourceId={}, componentSignature={}",
+                    userId, sourceType, sourceId, componentSignature
+            );
             return;
         }
 
@@ -131,6 +157,28 @@ public class GamificationService {
         return user.isLevelUpNotificationEnabled();
     }
 
+    /**
+     * 이 componentSignature로 이미 XP를 지급받은 적이 있는지 — "평생 1회"를 sourceId 단위가
+     * 아니라 실제 구성요소 조합(예: 코스의 스톱 집합) 단위로 판정하고 싶은 호출부
+     * (CourseCommandService)를 위한 조회 전용 진입점이다. 이 서비스는 componentSignature가
+     * 무엇을 가리키는지 모르므로(도메인 분리) 서명을 만드는 규칙 자체는 호출부 책임이다.
+     */
+    public boolean existsGrantedForComponentSignature(
+            Long userId,
+            XpSourceType sourceType,
+            String componentSignature
+    ) {
+        return isAlreadyGrantedForComponentSignature(userId, sourceType, componentSignature);
+    }
+
+    // 위와 같은 목적이되 오늘(KST) 지급분의 componentSignature 전체 — 당일 단위 중복 판단용.
+    public List<String> findComponentSignaturesGrantedToday(
+            Long userId,
+            XpSourceType sourceType
+    ) {
+        return xpEventRepository.findComponentSignaturesGrantedSince(userId, sourceType, startOfTodayInBusinessZone());
+    }
+
     private boolean isAlreadyGrantedForSource(
             Long userId,
             XpSourceType sourceType,
@@ -138,6 +186,15 @@ public class GamificationService {
     ) {
         return sourceId != null
                 && xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(userId, sourceType, sourceId);
+    }
+
+    private boolean isAlreadyGrantedForComponentSignature(
+            Long userId,
+            XpSourceType sourceType,
+            String componentSignature
+    ) {
+        return componentSignature != null
+                && xpEventRepository.existsByUser_IdAndSourceTypeAndComponentSignature(userId, sourceType, componentSignature);
     }
 
     private boolean isDailyCapReached(

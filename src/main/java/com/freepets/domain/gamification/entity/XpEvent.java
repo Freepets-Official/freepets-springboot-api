@@ -45,7 +45,15 @@ import lombok.NoArgsConstructor;
                 // 있음). sourceId가 있는 지급은 항상 그 값이 유일하게 발급되는 값(리뷰 id, 코스
                 // id 등)이라 정상 흐름에서는 절대 겹치지 않으므로, DB 제약으로 마지막 방어선을
                 // 둔다 — UserBadge의 uk_user_badges_user_badge와 같은 목적.
-                @UniqueConstraint(name = "uk_xp_events_user_source", columnNames = {"user_id", "source_type", "source_id"})
+                @UniqueConstraint(name = "uk_xp_events_user_source", columnNames = {"user_id", "source_type", "source_id"}),
+                // componentSignature가 있는 지급(코스 공개 등, 스톱 구성 단위 중복 방지)의 DB
+                // 레벨 마지막 방어선 — 위와 같은 이유. component_signature는 대부분의 sourceType엔
+                // null이고(예: 판별·리뷰), null끼리는 유니크 제약에서 서로 겹친 것으로 안 치므로
+                // 이 컬럼을 안 쓰는 sourceType들끼리는 서로 아무 영향이 없다.
+                @UniqueConstraint(
+                        name = "uk_xp_events_user_source_type_component_signature",
+                        columnNames = {"user_id", "source_type", "component_signature"}
+                )
         }
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -73,17 +81,29 @@ public class XpEvent extends BaseEntity {
     @Column(nullable = false)
     private int amount;
 
+    // 이 지급이 어떤 구성요소들(코스 공개의 스톱 시설 id 등)에 대한 것인지를 정렬된 id 목록
+    // 문자열로 담는다(예: "1,2,3") — sourceId(courseId)는 코스를 새로 만들 때마다 값이 바뀌어서
+    // "같은 구성요소 조합으로 이미 지급받았는지"를 못 걸러내는데, 이 값은 구성요소 자체가 바뀌지
+    // 않는 한 그대로라 스톱 구성(순서 무관) 기준 평생 1회 판정에 쓸 수 있다. Course 엔티티를 다시
+    // 조회하지 않아도 되도록 지급 시점 값을 그대로 굳혀서(스냅샷) 저장한다 — 이후 그 코스가
+    // 수정되거나 삭제돼도 이 값은 안 바뀐다. componentId 개념이 없는 대부분의 sourceType(판별·
+    // 리뷰 등)은 null을 그대로 둔다.
+    @Column(name = "component_signature", length = 300)
+    private String componentSignature;
+
     @Builder
     private XpEvent(
             User user,
             XpSourceType sourceType,
             Long sourceId,
-            int amount
+            int amount,
+            String componentSignature
     ) {
         this.user = user;
         this.sourceType = sourceType;
         this.sourceId = sourceId;
         this.amount = amount;
+        this.componentSignature = componentSignature;
     }
 
 }

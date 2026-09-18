@@ -1,11 +1,14 @@
 package com.freepets.domain.course.service;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,9 +49,10 @@ public class CourseCommandService {
     private final ReviewRepository reviewRepository;
 
     // 코스가 처음 공개(isPublic=true)로 전환된 시점에 지급하는 경험치 — 스톱이 많을수록(그만큼
-    // 판별·리뷰를 더 많이 실제로 남겨야 하므로) 조금씩 더 준다. 코스당 평생 1회만 지급되도록
-    // GamificationService의 sourceId 중복 검사에 courseId를 넘긴다 — 비공개로 돌렸다가 다시
-    // 공개해도 재지급되지 않는다.
+    // 판별·리뷰를 더 많이 실제로 남겨야 하므로) 조금씩 더 준다. courseId 자체는 매번 새로
+    // 발급되는 값이라(같은 시설 구성이라도 코스를 새로 만들면 새 courseId) 이것만으로는 "평생
+    // 1회"를 못 지킨다 — grantCoursePublishedXpIfEarned가 스톱 구성(시설 집합) 기준으로 한 번 더
+    // 걸러낸다.
     private static final int COURSE_PUBLISHED_BASE_XP = 20;
     private static final int COURSE_PUBLISHED_XP_PER_STOP = 5;
 
@@ -80,7 +84,7 @@ public class CourseCommandService {
         Course saved = courseRepository.save(course);
 
         if (saved.isPublic()) {
-            gamificationService.grantXp(userId, XpSourceType.COURSE_PUBLISHED, saved.getCourseId(), coursePublishedXp(stops.size()));
+            grantCoursePublishedXpIfEarned(userId, saved.getCourseId(), stops);
         }
 
         return CourseConverter.toMyCourse(saved);
@@ -104,7 +108,7 @@ public class CourseCommandService {
         course.updateVisibility(request.isPublic());
 
         if (!isPublicBeforeUpdate && course.isPublic()) {
-            gamificationService.grantXp(userId, XpSourceType.COURSE_PUBLISHED, course.getCourseId(), coursePublishedXp(stops.size()));
+            grantCoursePublishedXpIfEarned(userId, course.getCourseId(), stops);
         }
 
         return CourseConverter.toMyCourse(course);
@@ -138,21 +142,19 @@ public class CourseCommandService {
     ) {
         Course course = findOwnedCourse(userId, courseId);
         boolean isPublicBeforeUpdate = course.isPublic();
+        List<Facility> stops = course.getStops().stream()
+                .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
+                .map(CourseStop::getFacility)
+                .toList();
 
         if (isPublic) {
-            List<Facility> stops = course.getStops().stream()
-                    .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
-                    .map(CourseStop::getFacility)
-                    .toList();
             validateStopsEligibleForPublish(userId, stops);
         }
 
         course.updateVisibility(isPublic);
 
         if (!isPublicBeforeUpdate && course.isPublic()) {
-            gamificationService.grantXp(
-                    userId, XpSourceType.COURSE_PUBLISHED, course.getCourseId(), coursePublishedXp(course.getStops().size())
-            );
+            grantCoursePublishedXpIfEarned(userId, course.getCourseId(), stops);
         }
 
         return CourseConverter.toMyCourse(course);
@@ -331,8 +333,74 @@ public class CourseCommandService {
         }
     }
 
-    private int coursePublishedXp(int stopCount) {
-        return COURSE_PUBLISHED_BASE_XP + COURSE_PUBLISHED_XP_PER_STOP * stopCount;
+    private int coursePublishedXp(int newStopCount) {
+        return COURSE_PUBLISHED_BASE_XP + COURSE_PUBLISHED_XP_PER_STOP * newStopCount;
+    }
+
+    /**
+     * 코스 공개 XP를 스톱 구성 기준으로 다시 계산해 지급한다 — sourceId(courseId)만으로는 막지
+     * 못하는 두 가지 파밍을 여기서 막는다. 판정 기준은 {@link Course}의 "현재" 스톱이 아니라
+     * 지급 시점에 XpEvent에 함께 굳혀 저장한 componentSignature다 — 이후 그 코스가 수정되거나
+     * 삭제돼도 이미 지급된 이력은 그대로 남는다(코스를 다시 조회할 필요도, N+1도 없다).
+     *
+     * <ol>
+     *   <li>같은 시설 구성(순서 무관)으로 이미 XP를 받은 적이 있으면(과거 어느 날이든) 이번엔
+     *       완전히 스킵한다 — 재정렬만 해서 새 코스로 다시 올리는 패턴을 막는다.
+     *       componentSignature엔 DB 유니크 제약(uk_xp_events_user_source_type_component_signature)이
+     *       걸려있어, 동시에 서로 다른 courseId로 같은 스톱 구성을 공개해도 GamificationService의
+     *       grantXp가 DataIntegrityViolationException으로 한쪽을 마지막에 한 번 더 막는다.</li>
+     *   <li>오늘 다른 코스로 이미 XP를 받은 스톱은 이번 코스에서 다시 세지 않는다 — 스톱
+     *       하나짜리 차이만 두고 여러 코스를 만들어 하루 상한(5회)을 다 채우는 패턴을 막는다.
+     *       겹치지 않는 새 스톱이 하나도 없으면(전부 오늘 이미 쓴 시설) 기본 지급(20XP)도 없이
+     *       완전히 스킵한다.</li>
+     * </ol>
+     */
+    private void grantCoursePublishedXpIfEarned(
+            Long userId,
+            Long courseId,
+            List<Facility> stops
+    ) {
+        Set<Long> currentFacilityIds = stops.stream()
+                .map(Facility::getFacilityId)
+                .collect(Collectors.toSet());
+        String componentSignature = componentSignatureOf(currentFacilityIds);
+
+        if (gamificationService.existsGrantedForComponentSignature(userId, XpSourceType.COURSE_PUBLISHED, componentSignature)) {
+            return;
+        }
+
+        Set<Long> alreadyCreditedTodayFacilityIds = gamificationService
+                .findComponentSignaturesGrantedToday(userId, XpSourceType.COURSE_PUBLISHED).stream()
+                .flatMap(CourseCommandService::facilityIdsFromComponentSignature)
+                .collect(Collectors.toSet());
+
+        long newStopCount = currentFacilityIds.stream()
+                .filter(facilityId -> !alreadyCreditedTodayFacilityIds.contains(facilityId))
+                .count();
+        if (newStopCount == 0) {
+            return;
+        }
+
+        gamificationService.grantXp(
+                userId, XpSourceType.COURSE_PUBLISHED, courseId, coursePublishedXp((int) newStopCount), componentSignature
+        );
+    }
+
+    // 정렬된 facilityId를 콤마로 이어붙인 정규화 표현 — 스톱 순서가 달라도 구성이 같으면 항상
+    // 같은 문자열이 나와야, 이 값 하나로 "같은 시설 구성" 여부를 DB 유니크 제약까지 포함해
+    // 그대로 판정할 수 있다.
+    private static String componentSignatureOf(Set<Long> facilityIds) {
+        return facilityIds.stream()
+                .sorted()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+    }
+
+    private static Stream<Long> facilityIdsFromComponentSignature(String componentSignature) {
+        if (componentSignature.isEmpty()) {
+            return Stream.empty();
+        }
+        return Arrays.stream(componentSignature.split(",")).map(Long::valueOf);
     }
 
     private List<Facility> findFacilitiesInOrder(List<Long> stopIds) {

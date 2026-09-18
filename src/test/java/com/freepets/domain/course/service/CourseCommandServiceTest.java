@@ -82,7 +82,7 @@ class CourseCommandServiceTest {
 
         assertThat(result.stopIds()).containsExactly(1L, 2L);
         // 비공개로 만들면 경험치가 지급되지 않는다(게이미피케이션 결정: 공개해야 지급).
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        org.mockito.Mockito.verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -103,7 +103,8 @@ class CourseCommandServiceTest {
 
         assertThat(result.isPublic()).isTrue();
         // 공개로 만들면 경험치가 지급되는지(게이미피케이션 훅) — 스톱 1개면 20(기본) + 5×1 = 25.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(result.courseId()), eq(25));
+        verify(gamificationService)
+                .grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(result.courseId()), eq(25), eq("1"));
     }
 
     @Test
@@ -123,7 +124,7 @@ class CourseCommandServiceTest {
         assertThatThrownBy(() -> courseCommandService.createCourse(1L, request))
                 .isInstanceOf(GeneralException.class);
         verify(courseRepository, never()).save(any());
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        org.mockito.Mockito.verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -187,7 +188,7 @@ class CourseCommandServiceTest {
         courseCommandService.updateCourse(1L, 10L, request);
 
         // 스톱 2개면 20(기본) + 5×2 = 30.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30), eq("1,2"));
     }
 
     @Test
@@ -208,7 +209,7 @@ class CourseCommandServiceTest {
 
         courseCommandService.updateCourse(1L, 10L, request);
 
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        org.mockito.Mockito.verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -249,7 +250,56 @@ class CourseCommandServiceTest {
 
         assertThat(result.isPublic()).isTrue();
         // 스톱 2개면 20(기본) + 5×2 = 30.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(30), eq("1,2"));
+    }
+
+    @Test
+    void 오늘_이미_다른_코스로_쓴_스톱은_보너스에서_제외된다() {
+        Course course = ownedCourseWithStops(2L, 3L);
+
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        stubVerified(1L, 2L, 3L);
+        // 오늘 다른 코스(시설 1·2 조합)로 이미 XP를 받은 적 있다는 스냅샷.
+        when(gamificationService.findComponentSignaturesGrantedToday(1L, XpSourceType.COURSE_PUBLISHED))
+                .thenReturn(List.of("1,2"));
+
+        courseCommandService.updateVisibility(1L, 10L, true);
+
+        // 시설2는 오늘 이미 다른 코스로 XP를 받았으니 제외, 새 스톱은 시설3 하나뿐 — 20 + 5×1 = 25.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(10L), eq(25), eq("2,3"));
+    }
+
+    @Test
+    void 새_스톱이_하나도_없으면_기본_경험치도_지급되지_않는다() {
+        Course course = ownedCourseWithStops(2L, 3L);
+
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        stubVerified(1L, 2L, 3L);
+        // 오늘 다른 코스(시설 1·2·3·4 조합)로 이미 이 코스의 스톱을 전부 포함해 XP를 받은 적 있다.
+        when(gamificationService.findComponentSignaturesGrantedToday(1L, XpSourceType.COURSE_PUBLISHED))
+                .thenReturn(List.of("1,2,3,4"));
+
+        courseCommandService.updateVisibility(1L, 10L, true);
+
+        // 시설2·3 모두 오늘 이미 지급됐으니 새 스톱이 0개 — 지급 자체를 스킵한다.
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt(), any());
+    }
+
+    @Test
+    void 스톱_구성이_같으면_순서만_바꿔도_평생_1회만_지급된다() {
+        Course course = ownedCourseWithStops(2L, 1L); // 과거에 시설 1·2로 이미 받은 조합과 순서만 다름
+
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        stubVerified(1L, 1L, 2L);
+        // 정규화된 서명("1,2")으로 과거에 이미 지급받은 적이 있다는 스냅샷 — 그 코스가 이후
+        // 수정·삭제됐더라도 이 값은 영향받지 않는다.
+        when(gamificationService.existsGrantedForComponentSignature(1L, XpSourceType.COURSE_PUBLISHED, "1,2"))
+                .thenReturn(true);
+
+        courseCommandService.updateVisibility(1L, 10L, true);
+
+        // 순서만 다를 뿐 스톱 구성(시설 집합)이 완전히 같아 재지급되지 않는다.
+        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt(), any());
     }
 
     @Test
@@ -261,7 +311,7 @@ class CourseCommandServiceTest {
         CourseResponseDTO.MyCourse result = courseCommandService.updateVisibility(1L, 10L, false);
 
         assertThat(result.isPublic()).isFalse();
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        org.mockito.Mockito.verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -272,7 +322,7 @@ class CourseCommandServiceTest {
 
         assertThatThrownBy(() -> courseCommandService.updateVisibility(1L, 10L, true))
                 .isInstanceOf(GeneralException.class);
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        org.mockito.Mockito.verifyNoInteractions(gamificationService);
     }
 
     @Test

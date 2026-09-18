@@ -32,7 +32,12 @@ import lombok.NoArgsConstructor;
         name = "xp_events",
         indexes = {
                 // 하루 상한 조회(user_id + source_type + createdAt 범위)가 이 인덱스를 탄다.
-                @Index(name = "idx_xp_events_user_source_created", columnList = "user_id, source_type, created_at")
+                @Index(name = "idx_xp_events_user_source_created", columnList = "user_id, source_type, created_at"),
+                // 오늘의 퀘스트 조회(GamificationQueryService.getTodayQuests)는 source_type 없이
+                // user_id + createdAt 범위만으로 전체 소스타입을 한 번에 그룹핑한다 — 위 인덱스는
+                // source_type이 중간에 끼어있어 source_type 조건이 없으면 createdAt 범위를 못
+                // 타므로, 그 유저의 XpEvent 전체를 훑게 된다. 그래서 이 조회 전용으로 따로 둔다.
+                @Index(name = "idx_xp_events_user_created", columnList = "user_id, created_at")
         },
         uniqueConstraints = {
                 // GamificationService가 저장 전에 existsBy...로 중복 지급을 걸러내지만, 그 확인과

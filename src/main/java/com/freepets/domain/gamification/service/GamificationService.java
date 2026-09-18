@@ -153,8 +153,13 @@ public class GamificationService {
      * "오늘 자정"을 KST 기준으로 계산해, {@code createdAt}(서버가 항상 UTC로 고정해 저장하는
      * naive LocalDateTime)과 같은 좌표로 맞춰 돌려준다. 서버 프로세스 타임존(UTC)을 그대로
      * 썼다면 하루 상한이 자정이 아니라 오전 9시(KST)에 풀렸을 것이다.
+     *
+     * <p>인스턴스 상태를 안 쓰는 순수 계산이라 static이다 — GamificationQueryService(오늘의
+     * 퀘스트 조회)도 이 메소드를 그대로 쓴다. "오늘"의 기준(하루 상한 판단·퀘스트 표시)이
+     * 두 클래스에 따로 있으면 한쪽만 고쳤을 때 지급 여부와 화면 표시가 어긋날 수 있어, 상한을
+     * 실제로 적용하는 이 클래스가 기준을 소유하고 조회 쪽은 가져다 쓰기만 한다.
      */
-    private LocalDateTime startOfTodayInBusinessZone() {
+    static LocalDateTime startOfTodayInBusinessZone() {
         return LocalDate.now(BUSINESS_ZONE)
                 .atStartOfDay(BUSINESS_ZONE)
                 .withZoneSameInstant(ZoneOffset.UTC)

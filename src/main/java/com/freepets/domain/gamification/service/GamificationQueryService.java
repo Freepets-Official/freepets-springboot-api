@@ -1,9 +1,6 @@
 package com.freepets.domain.gamification.service;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -31,11 +28,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class GamificationQueryService {
-
-    // 서버 프로세스는 항상 UTC로 고정돼 있다(FreepetsServerApplication의 static 블록) — "하루"의
-    // 경계는 서버 타임존이 아니라 실제 사용자가 있는 KST 기준이어야 한다. GamificationService의
-    // 하루 상한 계산과 정확히 같은 기준이어야 퀘스트 진행률이 실제 지급 여부와 어긋나지 않는다.
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 
     private final UserRepository userRepository;
     private final UserBadgeRepository userBadgeRepository;
@@ -86,23 +78,13 @@ public class GamificationQueryService {
             throw new GeneralException(ErrorStatus.MEMBER4005);
         }
 
-        LocalDateTime startOfToday = startOfTodayInBusinessZone();
+        // GamificationService.startOfTodayInBusinessZone()을 그대로 쓴다 — 하루 상한 판단(지급
+        // 시점)과 퀘스트 진행률(조회 시점)이 정확히 같은 "오늘" 기준을 봐야 하고, 그 기준을
+        // 실제로 상한에 적용하는 클래스가 소유하는 게 맞다(GamificationService 쪽 주석 참고).
+        LocalDateTime startOfToday = GamificationService.startOfTodayInBusinessZone();
         List<XpEventRepository.SourceTypeDailyStats> todayStats =
                 xpEventRepository.countAndSumGroupedByUser_IdSince(userId, startOfToday);
 
         return GamificationConverter.toQuestList(startOfToday.plusDays(1), todayStats);
-    }
-
-    /**
-     * "오늘 자정"을 KST 기준으로 계산해, {@code createdAt}(서버가 항상 UTC로 고정해 저장하는
-     * naive LocalDateTime)과 같은 좌표로 맞춰 돌려준다. GamificationService의 동명 메소드와
-     * 완전히 같은 계산이다 — 하루 상한 판단(지급 시점)과 퀘스트 진행률(조회 시점)이 정확히
-     * 같은 "오늘"을 봐야 하기 때문이다.
-     */
-    private LocalDateTime startOfTodayInBusinessZone() {
-        return LocalDate.now(BUSINESS_ZONE)
-                .atStartOfDay(BUSINESS_ZONE)
-                .withZoneSameInstant(ZoneOffset.UTC)
-                .toLocalDateTime();
     }
 }

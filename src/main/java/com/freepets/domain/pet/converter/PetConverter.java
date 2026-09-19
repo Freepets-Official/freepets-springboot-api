@@ -1,5 +1,7 @@
 package com.freepets.domain.pet.converter;
 
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.List;
 
 import com.freepets.domain.gamification.service.LevelCurve;
@@ -59,6 +61,9 @@ public class PetConverter {
         Long xpToNextLevel = pet.getLevel() < LevelCurve.MAX_LEVEL
                 ? LevelCurve.xpToReachLevel(pet.getLevel() + 1) - pet.getTotalXp()
                 : null;
+        Integer age = pet.getBirthDate() != null
+                ? Period.between(pet.getBirthDate(), LocalDate.now()).getYears()
+                : null;
 
         return new PetResponseDTO.RegistrationCard(
                 pet.getPetId(),
@@ -66,6 +71,7 @@ public class PetConverter {
                 pet.getGender(),
                 pet.getSpecies(),
                 pet.getBirthDate(),
+                age,
                 pet.getCreatedAt(),
                 pet.getLevel(),
                 pet.getTotalXp(),

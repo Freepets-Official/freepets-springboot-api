@@ -1,5 +1,6 @@
 package com.freepets.domain.user.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -71,4 +72,50 @@ public interface UserRepository extends JpaRepository<User, Long> {
      */
     @Query("select u.role from User u where u.id = :id and u.deletedAt is null")
     Optional<Role> findActiveRoleById(@Param("id") Long id);
+
+    /**
+     * 전국 랭킹의 참여자 수(GamificationRanking) — 지금은 전국 단일 스코프뿐이라 "활성 계정
+     * 전체"가 곧 참여자 수다. 지역 스코프가 생기면 지역 필터가 추가된 버전이 따로 필요하다.
+     */
+    long countByDeletedAtIsNull();
+
+    /**
+     * 내 순위 계산용 — "나보다 totalXp가 많은 활성 계정 수 + 1"이 곧 내 순위다. 동점은 같은
+     * 순위를 받아야 해서(1,1,3) "많거나 같은 수"가 아니라 "많은 수"만 센다.
+     */
+    long countByDeletedAtIsNullAndTotalXpGreaterThan(long totalXp);
+
+    /**
+     * 전국 랭킹 상위 목록 — RANK() 윈도우 함수로 동점자는 같은 순위를 받고 다음 순위가
+     * 건너뛰어지게(1,1,3) DB에서 직접 계산한다. 애플리케이션에서 "몇 번째 행인지"로 순위를
+     * 매기면 동점 구간에서 실제 순위와 어긋난다. 동점자끼리는 id 오름차순(먼저 가입한 순)으로
+     * 안정적인 순서를 준다 — "먼저 도달한 사람이 앞"을 정확히 재현할 별도 시각 기록이 아직
+     * 없어서 쓰는 근사치다.
+     */
+    @Query(value = """
+            SELECT * FROM (
+                SELECT id, nickname, total_xp AS totalXp, level,
+                       RANK() OVER (ORDER BY total_xp DESC) AS rnk
+                FROM freepets.users
+                WHERE deleted_at IS NULL
+            ) ranked
+            ORDER BY rnk ASC, id ASC
+            LIMIT :size OFFSET :offset
+            """, nativeQuery = true)
+    List<RankingRow> findNationalRanking(
+            @Param("size") int size,
+            @Param("offset") long offset
+    );
+
+    interface RankingRow {
+        Long getId();
+
+        String getNickname();
+
+        long getTotalXp();
+
+        int getLevel();
+
+        long getRnk();
+    }
 }

@@ -92,4 +92,50 @@ public class GamificationResponseDTO {
             long earnedXpToday
     ) {}
 
+    // GET /api/v1/gamification/ranking 응답. 지금은 scope가 항상 "NATION"이다 — 시/도·시/군/구
+    // 스코프는 유저 단위로 "어느 지역 활동인지"를 아직 기록하지 않아서 이번 범위 밖이다(활동
+    // 지역 기반으로 가려면 XP 적립 시점에 시설의 지역 코드를 XpEvent에 같이 남겨야 한다).
+    // updatedAt은 스냅샷이 아니라 조회 시점 그대로다 — 실시간 계산이라 항상 "지금 기준"이다.
+    public record RankingResult(
+            String scope,
+
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            MyRanking me,
+            List<RankingItem> items,
+            long total,
+            LocalDateTime updatedAt
+    ) {}
+
+    /**
+     * @param rank              1부터. 참여자가 너무 적으면(ranked=false) 순위 자체를 감춰야
+     *                          해서 키가 생략된다 — GamificationRankingQueryService의 최소
+     *                          인원 기준 참고
+     * @param participantCount  이 스코프의 전체 참여자 수 — "340명 중 12번째" 문장에 그대로 쓴다
+     * @param ranked            participantCount가 너무 적어 순위 공개가 무의미하거나(1명)
+     *                          참여자 특정이 쉬워지면(2명) false — 이때 rank는 생략된다
+     */
+    public record MyRanking(
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            Long rank,
+            long participantCount,
+            long xp,
+            int level,
+            PawAnimal tierAnimal,
+            PawFinish tierFinish,
+            PawColor tierColor,
+            boolean ranked
+    ) {}
+
+    public record RankingItem(
+            long rank,
+            Long userId,
+            String nickname,
+            long xp,
+            int level,
+            PawAnimal tierAnimal,
+            PawFinish tierFinish,
+            PawColor tierColor,
+            boolean isMe
+    ) {}
+
 }

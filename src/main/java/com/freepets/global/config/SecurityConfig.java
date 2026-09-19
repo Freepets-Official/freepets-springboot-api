@@ -2,6 +2,7 @@ package com.freepets.global.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -52,22 +53,35 @@ public class SecurityConfig {
             "/api/v1/auth/refresh",
             // 동반 출입증 QR이 가리키는 공개 웹페이지 — 스캔하는 시설 직원은 앱 계정이 없다.
             "/verify/**",
-            // 게스트 모드 — 로그인 없이도 시설을 탐색할 수 있어야 한다. 토큰이 있으면 각 서비스가
-            // @AuthenticationPrincipal로 받은 userId로 개인화(내 리뷰·반려동물 궁합 등)를 얹고,
-            // 없으면 공개 데이터만 내려준다. 리뷰·거부 제보 작성 등 쓰기 API는 대상이 아니다.
-            //
-            // {facilityId}는 숫자로 제한해서 연다 — "*"로 열면 같은 depth의 /facilities/regions
-            // (인증 필요, 이번 범위 밖)까지 같이 열려버린다.
-            "/api/v1/facilities/search",
-            "/api/v1/facilities/ranking",
-            "/api/v1/facilities/{facilityId:[0-9]+}",
-            "/api/v1/facilities/*/reviews",
-            "/api/v1/facilities/*/denial-reports/recent",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
             "/h2-console/**"
     };
+
+    /**
+     * 게스트 모드 — 로그인 없이도 시설을 탐색할 수 있어야 한다. 토큰이 있으면 각 서비스가
+     * {@code @AuthenticationPrincipal}로 받은 userId로 개인화(내 리뷰·반려동물 궁합 등)를 얹고,
+     * 없으면 공개 데이터만 내려준다. 리뷰·거부 제보 작성 등 쓰기 API는 대상이 아니다.
+     *
+     * <p>그래서 경로가 아니라 GET에만 연다 — 경로만으로 열면 같은 경로에 걸린 쓰기 API까지
+     * 같이 열린다. 실제로 {@code POST /facilities/{facilityId}/reviews}(리뷰 작성)가 목록
+     * 조회와 경로가 같아서 함께 열려 있었고, 토큰이 없거나 만료된 요청이 401 대신 userId가
+     * null인 채로 컨트롤러까지 들어갔다.
+     *
+     * <p>{@code {facilityId}}는 숫자로 제한해서 연다 — {@code "*"}로 열면 같은 depth의
+     * {@code /facilities/regions}(인증 필요, 이번 범위 밖)까지 같이 열려버린다.
+     */
+    private static final String[] GUEST_GET_PATTERNS = {
+            "/api/v1/facilities/ranking",
+            "/api/v1/facilities/{facilityId:[0-9]+}",
+            "/api/v1/facilities/*/reviews",
+            "/api/v1/facilities/*/denial-reports/recent"
+    };
+
+    // 시설 검색도 같은 게스트 모드 읽기 API지만, 조건이 많아 본문으로 받느라 POST다
+    // (FacilityController 참고) — GET 목록에 넣을 수 없어 따로 연다.
+    private static final String FACILITY_SEARCH_PATTERN = "/api/v1/facilities/search";
 
     // 운영자 전용 API. 관리자 판정은 이 규칙 한 곳에만 둔다 — 나중에 관리자 계정을 분리하더라도
     // 여기만 바꾸면 된다.
@@ -88,6 +102,8 @@ public class SecurityConfig {
                 .headers(headers -> headers.frameOptions(FrameOptionsConfig::sameOrigin))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(PERMIT_ALL_PATTERNS).permitAll()
+                        .requestMatchers(HttpMethod.GET, GUEST_GET_PATTERNS).permitAll()
+                        .requestMatchers(HttpMethod.POST, FACILITY_SEARCH_PATTERN).permitAll()
                         .requestMatchers(ADMIN_PATTERN).access(requireAdminRole())
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception

@@ -87,8 +87,9 @@ class PetCheckCommandServiceTest {
         assertThat(result.verdicts()).hasSize(1);
         // 중복 제거된 [5]로만 조회했는지 확인 — [5, 5] 그대로 넘겼다면 이 스텁이 안 맞아 실패한다.
         verify(petRepository).findAllByPetIdInAndDeletedAtIsNull(List.of(5L));
-        // 판별 요청 1회당 경험치가 지급되는지(게이미피케이션 훅).
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.PETCHECK), any(), eq(5));
+        // 판별 요청 1회당 경험치가 지급되는지(게이미피케이션 훅) — 그룹에 참여한 반려동물
+        // 각자에게도 개별 경험치가 나가야 한다.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.PETCHECK), any(), eq(5), eq(List.of(pet)));
     }
 
     @Test

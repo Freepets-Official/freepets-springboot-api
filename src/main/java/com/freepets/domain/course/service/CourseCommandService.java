@@ -1,11 +1,14 @@
 package com.freepets.domain.course.service;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +25,7 @@ import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
+import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.User;
@@ -46,9 +50,10 @@ public class CourseCommandService {
     private final ReviewRepository reviewRepository;
 
     // 코스가 처음 공개(isPublic=true)로 전환된 시점에 지급하는 경험치 — 스톱이 많을수록(그만큼
-    // 판별·리뷰를 더 많이 실제로 남겨야 하므로) 조금씩 더 준다. 코스당 평생 1회만 지급되도록
-    // GamificationService의 sourceId 중복 검사에 courseId를 넘긴다 — 비공개로 돌렸다가 다시
-    // 공개해도 재지급되지 않는다.
+    // 판별·리뷰를 더 많이 실제로 남겨야 하므로) 조금씩 더 준다. courseId 자체는 매번 새로
+    // 발급되는 값이라(같은 시설 구성이라도 코스를 새로 만들면 새 courseId) 이것만으로는 "평생
+    // 1회"를 못 지킨다 — grantCoursePublishedXpIfEarned가 스톱 구성(시설 집합) 기준으로 한 번 더
+    // 걸러낸다.
     private static final int COURSE_PUBLISHED_BASE_XP = 20;
     private static final int COURSE_PUBLISHED_XP_PER_STOP = 5;
 
@@ -80,7 +85,7 @@ public class CourseCommandService {
         Course saved = courseRepository.save(course);
 
         if (saved.isPublic()) {
-            gamificationService.grantXp(userId, XpSourceType.COURSE_PUBLISHED, saved.getCourseId(), coursePublishedXp(stops.size()));
+            grantCoursePublishedXpIfEarned(userId, saved.getCourseId(), stops);
         }
 
         return CourseConverter.toMyCourse(saved);
@@ -104,7 +109,7 @@ public class CourseCommandService {
         course.updateVisibility(request.isPublic());
 
         if (!isPublicBeforeUpdate && course.isPublic()) {
-            gamificationService.grantXp(userId, XpSourceType.COURSE_PUBLISHED, course.getCourseId(), coursePublishedXp(stops.size()));
+            grantCoursePublishedXpIfEarned(userId, course.getCourseId(), stops);
         }
 
         return CourseConverter.toMyCourse(course);
@@ -139,20 +144,22 @@ public class CourseCommandService {
         Course course = findOwnedCourse(userId, courseId);
         boolean isPublicBeforeUpdate = course.isPublic();
 
+        // 아래 두 곳 모두 공개 전환(isPublic=true) 경로에서만 쓰인다 — 비공개 전환에서는
+        // 스톱을 정렬·순회할 필요가 없으니 그 경로에서는 아예 계산하지 않는다.
         if (isPublic) {
             List<Facility> stops = course.getStops().stream()
                     .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
                     .map(CourseStop::getFacility)
                     .toList();
             validateStopsEligibleForPublish(userId, stops);
-        }
 
-        course.updateVisibility(isPublic);
+            course.updateVisibility(true);
 
-        if (!isPublicBeforeUpdate && course.isPublic()) {
-            gamificationService.grantXp(
-                    userId, XpSourceType.COURSE_PUBLISHED, course.getCourseId(), coursePublishedXp(course.getStops().size())
-            );
+            if (!isPublicBeforeUpdate) {
+                grantCoursePublishedXpIfEarned(userId, course.getCourseId(), stops);
+            }
+        } else {
+            course.updateVisibility(false);
         }
 
         return CourseConverter.toMyCourse(course);
@@ -272,11 +279,24 @@ public class CourseCommandService {
         // 매번 새 courseId로 XP를 받아갈 수 있다(하루 상한만으로는 완전히 막지 못한다) —
         // 원 소유자 본인이 복사한 경우는 지급하지 않는다.
         if (!original.getUser().getId().equals(userId)) {
+            Long originalOwnerId = original.getUser().getId();
+            // 반려동물 개별 경험치도 원 소유자 기준이다 — 복사한 사람(userId)의 반려동물이 아니다.
+            List<Pet> originalOwnerPets = gamificationService.allActivePetsOf(originalOwnerId);
+            // sourceId(복사본 courseId)는 복사할 때마다 새로 발급돼 반복 복사를 못 막는다 —
+            // 같은 사람이 같은 원본을 계속 복사하면 매번 다른 sourceId라 "평생 1회" sourceId
+            // 검사를 그대로 통과해버린다. "원본 courseId + 복사한 사람" 조합을 componentSignature로
+            // 묶어, 같은 사람이 같은 원본을 아무리 여러 번 복사해도 원 소유자에게는 평생 한 번만
+            // 지급되게 한다 — 일일 상한(10회)에만 기대면 알트 계정으로 하루 안에 반복 파밍하는
+            // 걸 못 막는다. 서로 다른 실제 유저가 같은 코스를 각자 복사하면 각자 여전히
+            // 지급되므로, 의도된 "인기 코스 리워드" 신호는 그대로 유지된다.
+            String componentSignature = originalCourseCopierSignature(original.getCourseId(), userId);
             gamificationService.grantXp(
-                    original.getUser().getId(),
+                    originalOwnerId,
                     XpSourceType.COURSE_SHARED_COPY,
                     saved.getCourseId(),
-                    COURSE_SHARED_COPY_XP
+                    COURSE_SHARED_COPY_XP,
+                    componentSignature,
+                    originalOwnerPets
             );
         }
 
@@ -331,8 +351,106 @@ public class CourseCommandService {
         }
     }
 
-    private int coursePublishedXp(int stopCount) {
-        return COURSE_PUBLISHED_BASE_XP + COURSE_PUBLISHED_XP_PER_STOP * stopCount;
+    private int coursePublishedXp(int newStopCount) {
+        return COURSE_PUBLISHED_BASE_XP + COURSE_PUBLISHED_XP_PER_STOP * newStopCount;
+    }
+
+    /**
+     * 코스 공개 XP를 스톱 구성 기준으로 다시 계산해 지급한다 — sourceId(courseId)만으로는 막지
+     * 못하는 두 가지 파밍을 여기서 막는다. 판정 기준은 {@link Course}의 "현재" 스톱이 아니라
+     * 지급 시점에 XpEvent에 함께 굳혀 저장한 componentSignature다 — 이후 그 코스가 수정되거나
+     * 삭제돼도 이미 지급된 이력은 그대로 남는다(코스를 다시 조회할 필요도, N+1도 없다).
+     *
+     * <ol>
+     *   <li>같은 시설 구성(순서 무관)으로 이미 XP를 받은 적이 있으면(과거 어느 날이든) 이번엔
+     *       완전히 스킵한다 — 재정렬만 해서 새 코스로 다시 올리는 패턴을 막는다. 이 판정은
+     *       componentSignature를 인자로 넘기기만 하면 GamificationService.grantXp가 잠금
+     *       전/후로 이미 두 번 해주므로 여기서 따로 미리 확인하지 않는다.</li>
+     *   <li>과거 어느 날이든 다른 코스로 이미 XP를 받은 스톱은 이번 코스에서 다시 세지 않는다
+     *       — 스톱 하나짜리 차이만 두고 여러 코스를 만들어 하루 상한(5회)을 다 채우는 패턴은
+     *       물론, 하루 지나 반복하며 매일 거의 풀 XP를 다시 받아가는 패턴까지 막는다("오늘"로만
+     *       좁히면 어제 쓴 시설 9개 + 새 시설 1개로 오늘 다시 공개했을 때 9개가 전부 "새
+     *       스톱"으로 잡혀 그대로 뚫린다). 겹치지 않는 새 스톱이 하나도 없으면(전부 이미 쓴
+     *       시설) 기본 지급(20XP)도 없이 완전히 스킵한다. 이 계산은 "이미 쓴 스톱"을 다시
+     *       조회해야 해서, 미리 계산해 고정값으로 넘기지 않고
+     *       {@link java.util.function.IntSupplier}로 넘긴다 — 그래야
+     *       GamificationService가 User 행 잠금을 잡아 동시 요청을 직렬화한 뒤에야 이 계산이
+     *       실행된다. 잠금 밖에서 미리 계산해버리면, 겹치는 스톱을 가진 두 코스를 거의 동시에
+     *       공개했을 때 둘 다 같은 스톱을 "아직 안 쓴 것"으로 보고 중복 지급하는 레이스가 남는다.</li>
+     * </ol>
+     */
+    private void grantCoursePublishedXpIfEarned(
+            Long userId,
+            Long courseId,
+            List<Facility> stops
+    ) {
+        Set<Long> currentFacilityIds = stops.stream()
+                .map(Facility::getFacilityId)
+                .collect(Collectors.toSet());
+        String componentSignature = componentSignatureOf(currentFacilityIds);
+
+        // 코스는 특정 반려동물과 연결되지 않는 행동이라(시설 동선이지 반려동물 동행 기록이
+        // 아님), 반려동물 개별 경험치는 이 유저의 반려동물 전체에게 나눠준다.
+        List<Pet> pets = gamificationService.allActivePetsOf(userId);
+
+        gamificationService.grantXp(
+                userId,
+                XpSourceType.COURSE_PUBLISHED,
+                courseId,
+                () -> resolveCoursePublishedXp(userId, currentFacilityIds),
+                componentSignature,
+                pets
+        );
+    }
+
+    // "과거 어느 날이든 다른 코스로 이미 XP를 받은 스톱"을 뺀 나머지 스톱 수로 금액을 계산한다.
+    // 새 스톱이 0개면 0을 돌려줘 GamificationService가 기본 지급(20XP)도 없이 완전히 스킵하게
+    // 한다 — coursePublishedXp(0)을 그대로 넘기면 기본 XP만큼은 새어나간다.
+    // grantCoursePublishedXpIfEarned의 IntSupplier가 GamificationService의 잠금을 잡은 뒤에
+    // 호출하는 메서드라, 매번 새로 조회해야 정확하다(호출 시점에 값을 캐싱해서 넘기면 안 된다).
+    private int resolveCoursePublishedXp(
+            Long userId,
+            Set<Long> currentFacilityIds
+    ) {
+        Set<Long> alreadyCreditedFacilityIds = gamificationService
+                .findAllComponentSignaturesGranted(userId, XpSourceType.COURSE_PUBLISHED).stream()
+                .flatMap(CourseCommandService::facilityIdsFromComponentSignature)
+                .collect(Collectors.toSet());
+
+        long newStopCount = currentFacilityIds.stream()
+                .filter(facilityId -> !alreadyCreditedFacilityIds.contains(facilityId))
+                .count();
+        if (newStopCount == 0) {
+            return 0;
+        }
+
+        return coursePublishedXp((int) newStopCount);
+    }
+
+    // "이 원본 코스를 이 사람이 복사했다"를 나타내는 정규화 표현 — 원 소유자 기준
+    // (originalOwnerId, COURSE_SHARED_COPY, 이 값) 조합이 평생 1회만 지급되게 묶는 키다.
+    private static String originalCourseCopierSignature(
+            Long originalCourseId,
+            Long copierId
+    ) {
+        return originalCourseId + ":" + copierId;
+    }
+
+    // 정렬된 facilityId를 콤마로 이어붙인 정규화 표현 — 스톱 순서가 달라도 구성이 같으면 항상
+    // 같은 문자열이 나와야, 이 값 하나로 "같은 시설 구성" 여부를 DB 유니크 제약까지 포함해
+    // 그대로 판정할 수 있다.
+    private static String componentSignatureOf(Set<Long> facilityIds) {
+        return facilityIds.stream()
+                .sorted()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+    }
+
+    private static Stream<Long> facilityIdsFromComponentSignature(String componentSignature) {
+        if (componentSignature.isEmpty()) {
+            return Stream.empty();
+        }
+        return Arrays.stream(componentSignature.split(",")).map(Long::valueOf);
     }
 
     private List<Facility> findFacilitiesInOrder(List<Long> stopIds) {

@@ -29,6 +29,7 @@ import com.freepets.domain.report.repository.FacilityDenialReportCount;
 import com.freepets.domain.report.repository.FacilityReportRepository;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.repository.ReviewRepository;
+import com.freepets.global.util.BusinessZone;
 
 import lombok.RequiredArgsConstructor;
 
@@ -47,9 +48,7 @@ import lombok.RequiredArgsConstructor;
 @Transactional(readOnly = true)
 public class OwnerFacilityQueryService {
 
-    // 서버 프로세스는 항상 UTC로 고정돼 있다(FreepetsServerApplication의 static 블록) — "이번 주"의
-    // 경계는 서버 타임존이 아니라 실제 사용자가 있는 KST 기준이어야 한다(GamificationService와 같다).
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
+    private static final ZoneId BUSINESS_ZONE = BusinessZone.ZONE;
 
     private final FacilityOwnerClaimRepository facilityOwnerClaimRepository;
     private final FacilityReportRepository facilityReportRepository;

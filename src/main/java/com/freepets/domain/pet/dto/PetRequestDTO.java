@@ -5,6 +5,7 @@ import java.time.LocalDate;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.freepets.domain.pet.entity.BreedSize;
+import com.freepets.domain.pet.entity.Gender;
 import com.freepets.domain.pet.entity.Kind;
 
 import jakarta.validation.constraints.DecimalMin;
@@ -65,6 +66,12 @@ public class PetRequestDTO {
         public void setIsVaccinated(boolean isVaccinated) {
             this.isVaccinated = isVaccinated;
         }
+
+        // 성별·생년월일은 선택 입력 — 반려동물 등록증 카드 표시용으로 뒤늦게 추가됐다.
+        private Gender gender;
+
+        @PastOrPresent(message = "생년월일은 오늘 이전 날짜여야 합니다.")
+        private LocalDate birthDate;
     }
 
     @Getter
@@ -107,5 +114,11 @@ public class PetRequestDTO {
         public void setIsVaccinated(boolean isVaccinated) {
             this.isVaccinated = isVaccinated;
         }
+
+        // 성별·생년월일은 선택 입력 — 반려동물 등록증 카드 표시용으로 뒤늦게 추가됐다.
+        private Gender gender;
+
+        @PastOrPresent(message = "생년월일은 오늘 이전 날짜여야 합니다.")
+        private LocalDate birthDate;
     }
 }

@@ -4,13 +4,18 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+
+import javax.crypto.SecretKey;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +24,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import io.jsonwebtoken.Jwts;
 
 import com.freepets.domain.auth.controller.AuthController;
 import com.freepets.domain.auth.dto.AuthResponseDTO;
@@ -66,6 +74,10 @@ class SecurityFilterChainTest {
 
     @Autowired
     private JwtProvider jwtProvider;
+
+    private static final String REVIEW_REQUEST_BODY = """
+            {"petIds":[1],"ratingSpace":5,"ratingStaff":5,"ratingAmenity":5,"content":"좋았어요"}
+            """;
 
     @MockitoBean
     private UserCommandService userCommandService;
@@ -300,6 +312,58 @@ class SecurityFilterChainTest {
         mockMvc.perform(get("/api/v1/facilities/1/denial-reports/recent"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    // 프론트 라이브 제보 — 토큰 없이 리뷰를 작성해도 401이 아니었다. 게스트 모드로 연 건 같은
+    // 경로의 목록 조회(GET)뿐인데 permitAll이 메소드를 가리지 않아 POST까지 같이 열려 있었고,
+    // userId가 null인 채로 컨트롤러까지 들어갔다.
+    @Test
+    void 토큰없이_리뷰_작성_요청시_401과_COMMON401을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/facilities/1/reviews")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REVIEW_REQUEST_BODY))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("COMMON401"));
+    }
+
+    // 멀티파트 경로도 같은 경로에 걸려 있으므로 함께 막혀야 한다.
+    @Test
+    void 토큰없이_멀티파트_리뷰_작성_요청시_401을_반환한다() throws Exception {
+        mockMvc.perform(multipart("/api/v1/facilities/1/reviews")
+                        .param("petIds", "1")
+                        .param("ratingSpace", "5")
+                        .param("ratingStaff", "5")
+                        .param("ratingAmenity", "5")
+                        .param("content", "좋았어요"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("COMMON401"));
+    }
+
+    // 만료된 토큰은 앱이 재발급으로 가야 해서 TOKEN4002로 내려가야 한다 — 경로가 열려 있으면
+    // 필터가 기록해둔 이 코드가 쓰이지 못하고 요청이 그냥 통과해버린다.
+    @Test
+    void 만료된_토큰으로_리뷰_작성_요청시_401과_TOKEN4002를_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/facilities/1/reviews")
+                        .header("Authorization", "Bearer " + expiredAccessToken(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REVIEW_REQUEST_BODY))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("TOKEN4002"));
+    }
+
+    private String expiredAccessToken(Long userId) {
+        SecretKey signingKey = (SecretKey) ReflectionTestUtils.getField(jwtProvider, "signingKey");
+        Date expiry = new Date(System.currentTimeMillis() - Duration.ofMinutes(1).toMillis());
+
+        return Jwts.builder()
+                .subject(String.valueOf(userId))
+                .claim("tokenType", "ACCESS")
+                .issuedAt(new Date(expiry.getTime() - Duration.ofHours(2).toMillis()))
+                .expiration(expiry)
+                .signWith(signingKey)
+                .compact();
     }
 
     // {facilityId}를 숫자 전용 패턴으로 열었기 때문에 같은 depth의 문자열 경로(regions)까지

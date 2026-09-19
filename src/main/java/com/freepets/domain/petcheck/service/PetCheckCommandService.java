@@ -73,7 +73,7 @@ public class PetCheckCommandService {
 
         PetCheck savedPetCheck = petCheckRepository.save(petCheck);
 
-        gamificationService.grantXp(userId, XpSourceType.PETCHECK, savedPetCheck.getCheckId(), PETCHECK_XP);
+        gamificationService.grantXp(userId, XpSourceType.PETCHECK, savedPetCheck.getCheckId(), PETCHECK_XP, pets);
 
         return PetCheckConverter.toCheckResult(savedPetCheck);
     }

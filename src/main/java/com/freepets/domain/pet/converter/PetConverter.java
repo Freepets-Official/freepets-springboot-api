@@ -1,13 +1,20 @@
 package com.freepets.domain.pet.converter;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
+import com.freepets.domain.gamification.service.LevelCurve;
 import com.freepets.domain.pet.dto.PetRequestDTO;
 import com.freepets.domain.pet.dto.PetResponseDTO;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.user.entity.User;
+import com.freepets.global.util.BusinessZone;
 
 public class PetConverter {
+
+    private static final ZoneId BUSINESS_ZONE = BusinessZone.ZONE;
 
     private PetConverter() {}
 
@@ -27,6 +34,8 @@ public class PetConverter {
                 .vaccinationDate(request.getVaccinationDate())
                 .nextVaccinationDate(request.getNextVaccinationDate())
                 .isVaccinated(request.isVaccinated())
+                .gender(request.getGender())
+                .birthDate(request.getBirthDate())
                 .build();
     }
 
@@ -36,6 +45,8 @@ public class PetConverter {
                 pet.getName(),
                 pet.getKind(),
                 pet.getSpecies(),
+                pet.getGender(),
+                pet.getBirthDate(),
                 pet.getWeight(),
                 pet.getBreedSize(),
                 pet.getProfile(),
@@ -44,6 +55,32 @@ public class PetConverter {
                 pet.isVaccinated(),
                 pet.getCreatedAt(),
                 pet.getUpdatedAt()
+        );
+    }
+
+    public static PetResponseDTO.RegistrationCard toRegistrationCard(
+            Pet pet,
+            List<PetResponseDTO.FavoriteFacility> favoriteFacilities
+    ) {
+        Long xpToNextLevel = pet.getLevel() < LevelCurve.MAX_LEVEL
+                ? LevelCurve.xpToReachLevel(pet.getLevel() + 1) - pet.getTotalXp()
+                : null;
+        Integer age = pet.getBirthDate() != null
+                ? (int) ChronoUnit.YEARS.between(pet.getBirthDate(), LocalDate.now(BUSINESS_ZONE))
+                : null;
+
+        return new PetResponseDTO.RegistrationCard(
+                pet.getPetId(),
+                pet.getName(),
+                pet.getGender(),
+                pet.getSpecies(),
+                pet.getBirthDate(),
+                age,
+                pet.getCreatedAt(),
+                pet.getLevel(),
+                pet.getTotalXp(),
+                xpToNextLevel,
+                favoriteFacilities
         );
     }
 

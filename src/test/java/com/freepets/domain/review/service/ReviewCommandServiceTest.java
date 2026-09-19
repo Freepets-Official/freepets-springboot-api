@@ -3,13 +3,13 @@ package com.freepets.domain.review.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -153,6 +153,36 @@ class ReviewCommandServiceTest {
         return request;
     }
 
+    // 인증 경계가 뚫려 있으면(경로가 permitAll에 잘못 걸리는 등) userId가 null로 들어온다 —
+    // 예전에는 그대로 findById(null)까지 가서 IllegalArgumentException으로 500이 됐다.
+    // 마지막 방어선으로 여기서 401로 끊는지 확인한다.
+    @Test
+    void upsertReview_userId가_null이면_401을_던지고_조회를_시도하지_않는다() {
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.upsertReview(null, 7L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON401);
+        verify(userRepository, never()).findById(any());
+        verify(facilityRepository, never()).findById(any());
+    }
+
+    @Test
+    void updateReview_userId가_null이면_401을_던진다() {
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.updateReview(null, 3L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON401);
+        verify(reviewRepository, never()).findByReviewIdAndDeletedAtIsNull(any());
+    }
+
     @Test
     void upsertReview_신규_리뷰를_생성한다() {
         Facility facility = createFacility(7L);
@@ -174,8 +204,8 @@ class ReviewCommandServiceTest {
         assertThat(result.petIds()).containsExactlyInAnyOrder(1L, 2L);
         assertThat(result.ratingSpace()).isEqualTo(5);
         assertThat(result.tags()).containsExactlyInAnyOrder(Tag.SPACIOUS, Tag.WATER_BOWL);
-        // 신규 작성에만 경험치가 지급되는지(게이미피케이션 훅).
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20));
+        // 신규 작성에만 경험치가 지급되는지(게이미피케이션 훅) — 태그된 반려동물 각자에게도 지급.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq(List.of(pet1, pet2)));
     }
 
     @Test
@@ -336,7 +366,7 @@ class ReviewCommandServiceTest {
         // 요청에 visitedAt을 안 보내면 기존 방문일을 그대로 유지해야 한다.
         assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
         // 수정은 경험치를 지급하지 않는다(게이미피케이션 결정).
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -561,7 +591,7 @@ class ReviewCommandServiceTest {
         assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
         verify(facilityGradeCacheService).refresh(7L);
         // 새 리뷰가 아니라 경험치는 지급되지 않는다.
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        verifyNoInteractions(gamificationService);
     }
 
     @Test

@@ -62,7 +62,9 @@ public class PetCommandService {
                 profileUrl,
                 request.getVaccinationDate(),
                 request.getNextVaccinationDate(),
-                request.isVaccinated()
+                request.isVaccinated(),
+                request.getGender(),
+                request.getBirthDate()
         );
 
         if (isNewProfilePresent(request.getProfile()) && previousProfileUrl != null) {

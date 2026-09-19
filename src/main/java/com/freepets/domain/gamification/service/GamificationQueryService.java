@@ -1,5 +1,6 @@
 package com.freepets.domain.gamification.service;
 
+import java.time.LocalDateTime;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -67,5 +68,23 @@ public class GamificationQueryService {
             counts.put(family, count);
         }
         return counts;
+    }
+
+    // GET /api/v1/me/gamification/quests — 오늘(KST) 기준 6개 퀘스트 진행률. target은
+    // XpSourceType.getDailyCap()과 같은 값이라, completed는 실제 지급 상한과 같은 기준으로
+    // 세므로 target을 넘어오지 않는다.
+    public GamificationResponseDTO.QuestList getTodayQuests(Long userId) {
+        if (!userRepository.existsById(userId)) {
+            throw new GeneralException(ErrorStatus.MEMBER4005);
+        }
+
+        // GamificationService.startOfTodayInBusinessZone()을 그대로 쓴다 — 하루 상한 판단(지급
+        // 시점)과 퀘스트 진행률(조회 시점)이 정확히 같은 "오늘" 기준을 봐야 하고, 그 기준을
+        // 실제로 상한에 적용하는 클래스가 소유하는 게 맞다(GamificationService 쪽 주석 참고).
+        LocalDateTime startOfToday = GamificationService.startOfTodayInBusinessZone();
+        List<XpEventRepository.SourceTypeDailyStats> todayStats =
+                xpEventRepository.countAndSumGroupedByUser_IdSince(userId, startOfToday);
+
+        return GamificationConverter.toQuestList(startOfToday.plusDays(1), todayStats);
     }
 }

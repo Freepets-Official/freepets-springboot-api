@@ -2,6 +2,12 @@ package com.freepets.domain.gamification.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -141,5 +147,84 @@ class GamificationQueryServiceTest {
                 .isInstanceOf(GeneralException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorStatus.MEMBER4005);
+    }
+
+    private XpEventRepository.SourceTypeDailyStats dailyStatsRow(
+            XpSourceType sourceType,
+            long count,
+            long totalAmount
+    ) {
+        // SourceTypeDailyStats가 SourceTypeCount를 상속하므로 getSourceType()/getCount()는
+        // countRow가 이미 만든 값에 위임하고, 이 헬퍼는 getTotalAmount()만 더한다.
+        XpEventRepository.SourceTypeCount base = countRow(sourceType, count);
+        return new XpEventRepository.SourceTypeDailyStats() {
+            @Override
+            public XpSourceType getSourceType() {
+                return base.getSourceType();
+            }
+
+            @Override
+            public long getCount() {
+                return base.getCount();
+            }
+
+            @Override
+            public long getTotalAmount() {
+                return totalAmount;
+            }
+        };
+    }
+
+    @Test
+    void 오늘의_퀘스트는_6개_소스타입을_전부_target과_함께_내려준다() {
+        setUpService();
+        when(userRepository.existsById(1L)).thenReturn(true);
+        when(xpEventRepository.countAndSumGroupedByUser_IdSince(eq(1L), any()))
+                .thenReturn(List.of(dailyStatsRow(XpSourceType.PETCHECK, 3L, 15L)));
+
+        GamificationResponseDTO.QuestList result = gamificationQueryService.getTodayQuests(1L);
+
+        assertThat(result.quests()).hasSize(6);
+
+        GamificationResponseDTO.Quest petcheck = result.quests().stream()
+                .filter(quest -> quest.sourceType() == XpSourceType.PETCHECK)
+                .findFirst()
+                .orElseThrow();
+        assertThat(petcheck.completed()).isEqualTo(3L);
+        assertThat(petcheck.earnedXpToday()).isEqualTo(15L);
+        assertThat(petcheck.target()).isEqualTo(XpSourceType.PETCHECK.getDailyCap());
+
+        // 오늘 한 번도 지급받지 않은 소스타입(REVIEW)은 0으로 채워져야 한다.
+        GamificationResponseDTO.Quest review = result.quests().stream()
+                .filter(quest -> quest.sourceType() == XpSourceType.REVIEW)
+                .findFirst()
+                .orElseThrow();
+        assertThat(review.completed()).isZero();
+        assertThat(review.earnedXpToday()).isZero();
+        assertThat(review.target()).isEqualTo(XpSourceType.REVIEW.getDailyCap());
+    }
+
+    @Test
+    void 오늘의_퀘스트_조회는_그룹_쿼리를_한_번만_부른다() {
+        setUpService();
+        when(userRepository.existsById(1L)).thenReturn(true);
+        when(xpEventRepository.countAndSumGroupedByUser_IdSince(eq(1L), any())).thenReturn(List.of());
+
+        gamificationQueryService.getTodayQuests(1L);
+
+        verify(xpEventRepository, times(1)).countAndSumGroupedByUser_IdSince(eq(1L), any());
+        verifyNoInteractions(userBadgeRepository, reviewQueryService);
+    }
+
+    @Test
+    void 존재하지_않는_유저의_퀘스트를_조회하면_예외를_던진다() {
+        setUpService();
+        when(userRepository.existsById(1L)).thenReturn(false);
+
+        assertThatThrownBy(() -> gamificationQueryService.getTodayQuests(1L))
+                .isInstanceOf(GeneralException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorStatus.MEMBER4005);
+        verify(xpEventRepository, never()).countAndSumGroupedByUser_IdSince(any(), any());
     }
 }

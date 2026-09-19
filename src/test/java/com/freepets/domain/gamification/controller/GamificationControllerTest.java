@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +24,7 @@ import com.freepets.domain.gamification.dto.GamificationResponseDTO;
 import com.freepets.domain.gamification.entity.PawAnimal;
 import com.freepets.domain.gamification.entity.PawColor;
 import com.freepets.domain.gamification.entity.PawFinish;
+import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationQueryService;
 import com.freepets.domain.gamification.service.GamificationService;
 
@@ -102,5 +104,34 @@ class GamificationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("오늘의 퀘스트 조회에 성공하면 200을 반환한다")
+    void 오늘의_퀘스트_조회에_성공하면_200을_반환한다() throws Exception {
+        when(gamificationQueryService.getTodayQuests(isNull())).thenReturn(
+                new GamificationResponseDTO.QuestList(
+                        LocalDateTime.of(2026, 9, 18, 15, 0, 0),
+                        List.of(
+                                new GamificationResponseDTO.Quest(XpSourceType.PETCHECK, "판별하기", 3L, 10, 15L),
+                                new GamificationResponseDTO.Quest(XpSourceType.REVIEW, "리뷰 남기기", 0L, 5, 0L)
+                        )
+                )
+        );
+
+        // resetsAt의 "Z" 접미사는 JacksonConfig가 붙이는데, 그 빈은 @WebMvcTest 슬라이스에
+        // 로드되지 않아 여기서는 접미사 없는 순수 LocalDateTime.toString()으로 나간다(다른
+        // 컨트롤러 테스트들도 LocalDateTime 필드의 "Z" 접미사는 검증하지 않는 이유와 같다).
+        // 실제 운영 환경(전체 컨텍스트)에서는 JacksonConfig가 로드돼 "Z"가 붙는다.
+        mockMvc.perform(get("/api/v1/me/gamification/quests"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.resetsAt").value("2026-09-18T15:00:00"))
+                .andExpect(jsonPath("$.result.quests[0].sourceType").value("PETCHECK"))
+                .andExpect(jsonPath("$.result.quests[0].label").value("판별하기"))
+                .andExpect(jsonPath("$.result.quests[0].completed").value(3))
+                .andExpect(jsonPath("$.result.quests[0].target").value(10))
+                .andExpect(jsonPath("$.result.quests[0].earnedXpToday").value(15))
+                .andExpect(jsonPath("$.result.quests[1].sourceType").value("REVIEW"))
+                .andExpect(jsonPath("$.result.quests[1].completed").value(0));
     }
 }

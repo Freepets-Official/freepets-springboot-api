@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.freepets.domain.gamification.entity.PawAnimal;
 import com.freepets.domain.gamification.entity.PawColor;
 import com.freepets.domain.gamification.entity.PawFinish;
+import com.freepets.domain.gamification.entity.XpSourceType;
 
 public class GamificationResponseDTO {
 
@@ -68,6 +69,27 @@ public class GamificationResponseDTO {
 
     public record NotificationResult(
             boolean levelUpNotificationEnabled
+    ) {}
+
+    // GET /api/v1/me/gamification/quests 응답. resetsAt은 다른 모든 타임스탬프처럼
+    // LocalDateTime(UTC)+"Z"로 직렬화된다(JacksonConfig 참고) — 다음 KST 자정을 UTC로 환산한 값.
+    public record QuestList(
+            LocalDateTime resetsAt,
+            List<Quest> quests
+    ) {}
+
+    /**
+     * @param completed     오늘 이 sourceType으로 XP를 받은 횟수
+     * @param target        이 sourceType의 하루 상한({@link XpSourceType#getDailyCap()}과 동일) —
+     *                      completed는 실제 지급 상한과 같은 기준으로 세므로 target을 넘을 수 없다
+     * @param earnedXpToday 오늘 이 sourceType으로 실제 지급된 XP 합계
+     */
+    public record Quest(
+            XpSourceType sourceType,
+            String label,
+            long completed,
+            int target,
+            long earnedXpToday
     ) {}
 
 }

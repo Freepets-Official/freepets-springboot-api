@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.freepets.domain.facility.dto.FacilityRequestDTO;
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
+import com.freepets.domain.facility.service.FacilityListQueryService;
 import com.freepets.domain.facility.service.FacilityQueryService;
 import com.freepets.global.apiPayload.ApiResponse;
 
@@ -32,6 +33,32 @@ import lombok.RequiredArgsConstructor;
 public class FacilityController {
 
     private final FacilityQueryService facilityQueryService;
+    private final FacilityListQueryService facilityListQueryService;
+
+    /**
+     * 조건에 맞는 전체 시설 목록을 이름순으로 조회한다.
+     *
+     * <p>목록은 관광공사에서 요청마다 실시간으로 받아오고, 우리 DB는 발자국 점수·리뷰 수·동반
+     * 가능 여부를 붙이는 데 쓴다({@code FacilityListQueryService} 참고).
+     *
+     * <p>지역은 시군구까지 필수다. 관광공사에서 조건에 맞는 전량을 한 번에 받아오는 구조라,
+     * 시도만 받으면 한 요청에 9천 건이 넘게 딸려 온다. 하위 시군구 행이 없는 시도만 시군구를
+     * 비울 수 있는데, 세종특별자치시도 시군구 코드가 시도와 같은 {@code 36110}으로 내려와
+     * 지금 데이터에서는 예외가 없다.
+     *
+     * <p>좌표를 받지 않는다. 거리순이 아니라 이름순이라 필요가 없고, 덕분에 개인위치정보가
+     * 액세스 로그에 남지 않아 GET으로 받아도 된다.
+     *
+     * <p>게스트(토큰 없음)도 호출할 수 있다. 개인화 없이 공개 데이터만 내려간다.
+     */
+    @GetMapping
+    public ApiResponse<FacilityResponseDTO.FacilityListResult> getFacilityList(
+            @Valid @ModelAttribute FacilityRequestDTO.FacilityListRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                facilityListQueryService.getFacilityList(request)
+        );
+    }
 
     /**
      * 조건에 맞는 시설 목록을 거리순으로 조회한다.

@@ -73,6 +73,7 @@ public class SecurityConfig {
      * {@code /facilities/regions}(인증 필요, 이번 범위 밖)까지 같이 열려버린다.
      */
     private static final String[] GUEST_GET_PATTERNS = {
+            "/api/v1/facilities",
             "/api/v1/facilities/ranking",
             "/api/v1/facilities/{facilityId:[0-9]+}",
             "/api/v1/facilities/*/reviews",

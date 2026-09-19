@@ -27,4 +27,12 @@ public interface RegionRepository extends JpaRepository<Region, Long> {
             String sigunguCode
     );
 
+    /**
+     * 그 시도에 하위 시군구가 있는지 본다.
+     *
+     * <p>전체 시설 목록이 시군구를 필수로 받는데, 하위 시군구 행이 없는 시도까지 막으면 그 지역은
+     * 아예 조회할 수 없어진다.
+     */
+    boolean existsBySidoCodeAndSigunguCodeIsNotNull(String sidoCode);
+
 }

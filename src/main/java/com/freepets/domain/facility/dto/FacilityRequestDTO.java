@@ -8,6 +8,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
@@ -128,5 +129,42 @@ public class FacilityRequestDTO {
         public boolean isCoordinateGiven() {
             return latitude != null && longitude != null;
         }
+    }
+
+    /**
+     * 전체 시설 목록 조회 조건.
+     *
+     * <p>랭킹 조건에서 좌표와 반경을 뺀 형태다. 거리순이 아니라 이름순으로 내려가므로 좌표가
+     * 필요 없고, 좌표를 안 받으니 개인위치정보가 쿼리 스트링에 실릴 일도 없다.
+     *
+     * <p>지역을 필수로 받는 이유는 관광공사에서 조건에 맞는 전량을 한 번에 받아오기 때문이다.
+     * 시군구까지 좁히면 최대 700여 건이지만 시도만 지정하면 9천 건이 넘고, 전국은 5만 건에 가깝다.
+     *
+     * <p>하위 시군구 행이 없는 시도만 {@code sigunguCode}를 비울 수 있다. 그 판단은 지역 테이블을
+     * 봐야 해서 {@code FacilityListQueryService}가 한다. 세종특별자치시는 시군구 코드가 시도와 같은
+     * {@code 36110}으로 내려오므로 그대로 채워 보내면 된다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class FacilityListRequest {
+
+        @NotBlank(message = "시도 코드는 필수입니다.")
+        @Size(max = 10, message = "시도 코드는 10자 이하여야 합니다.")
+        private String sidoCode;
+
+        @Size(max = 10, message = "시군구 코드는 10자 이하여야 합니다.")
+        private String sigunguCode;
+
+        private FacilityCategory category;
+
+        private PetAllowed petAllowed;
+
+        @Min(value = 0, message = "페이지 번호는 0 이상이어야 합니다.")
+        private int page = 0;
+
+        @Min(value = 1, message = "페이지 크기는 1 이상이어야 합니다.")
+        @Max(value = 100, message = "페이지 크기는 100 이하여야 합니다.")
+        private int size = 15;
     }
 }

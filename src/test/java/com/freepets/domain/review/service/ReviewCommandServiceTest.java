@@ -153,6 +153,36 @@ class ReviewCommandServiceTest {
         return request;
     }
 
+    // 인증 경계가 뚫려 있으면(경로가 permitAll에 잘못 걸리는 등) userId가 null로 들어온다 —
+    // 예전에는 그대로 findById(null)까지 가서 IllegalArgumentException으로 500이 됐다.
+    // 마지막 방어선으로 여기서 401로 끊는지 확인한다.
+    @Test
+    void upsertReview_userId가_null이면_401을_던지고_조회를_시도하지_않는다() {
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.upsertReview(null, 7L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON401);
+        verify(userRepository, never()).findById(any());
+        verify(facilityRepository, never()).findById(any());
+    }
+
+    @Test
+    void updateReview_userId가_null이면_401을_던진다() {
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.updateReview(null, 3L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON401);
+        verify(reviewRepository, never()).findByReviewIdAndDeletedAtIsNull(any());
+    }
+
     @Test
     void upsertReview_신규_리뷰를_생성한다() {
         Facility facility = createFacility(7L);

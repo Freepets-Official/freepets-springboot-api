@@ -76,10 +76,11 @@ public class ReviewCommandService {
             Long facilityId,
             ReviewRequestDTO.UpsertRequest request
     ) {
+        requireAuthenticated(userId);
+
         Facility facility = facilityRepository.findById(facilityId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.FACILITY4041));
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
+        User user = findUser(userId);
 
         validateFacilityEligibility(userId, facilityId);
 
@@ -171,6 +172,8 @@ public class ReviewCommandService {
             Long reviewId,
             ReviewRequestDTO.UpsertRequest request
     ) {
+        requireAuthenticated(userId);
+
         Review review = findOwnedReview(userId, reviewId);
         List<Pet> pets = findOwnedPets(userId, request.getPetIds());
         List<Tag> tags = distinctTags(request.getTags());
@@ -279,6 +282,8 @@ public class ReviewCommandService {
             Long userId,
             Long reviewId
     ) {
+        requireAuthenticated(userId);
+
         Review review = findOwnedReview(userId, reviewId);
         review.delete();
 
@@ -292,10 +297,11 @@ public class ReviewCommandService {
             Long reviewId,
             ReviewRequestDTO.ReportRequest request
     ) {
+        requireAuthenticated(userId);
+
         Review review = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
+        User user = findUser(userId);
 
         if (reviewReportRepository.existsByReviewReviewIdAndUserId(reviewId, userId)) {
             throw new GeneralException(ErrorStatus.REVIEW4003);
@@ -324,6 +330,8 @@ public class ReviewCommandService {
             Long userId,
             Long reviewId
     ) {
+        requireAuthenticated(userId);
+
         Review review = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
 
@@ -332,9 +340,7 @@ public class ReviewCommandService {
         }
 
         if (!reviewHelpfulRepository.existsByReviewReviewIdAndUserId(reviewId, userId)) {
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
-            recordHelpfulIfAbsent(review, user);
+            recordHelpfulIfAbsent(review, findUser(userId));
         }
 
         // incrementHelpfulCount는 영속성 컨텍스트를 거치지 않는 벌크 업데이트라(ReviewRepository
@@ -357,6 +363,8 @@ public class ReviewCommandService {
             Long userId,
             Long reviewId
     ) {
+        requireAuthenticated(userId);
+
         Review review = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
 
@@ -442,5 +450,26 @@ public class ReviewCommandService {
         }
 
         return review;
+    }
+
+    /**
+     * 인증되지 않은 요청에서 {@code @AuthenticationPrincipal}은 userId를 null로 넘긴다. 경로가
+     * 실수로 열려 있으면(리뷰 작성 POST가 목록 조회와 경로가 같아 실제로 그랬다 — SecurityConfig
+     * 참고) 그대로 여기까지 들어오는데, 그러면 {@code findById(null)}이 던지는
+     * IllegalArgumentException 때문에 원인을 알 수 없는 500이나, 본문 검증에 먼저 걸린 400이
+     * 나간다. 앱이 재로그인·토큰 재발급으로 갈 수 있게 쓰기 로직에 들어가기 전에 401로 끊는다.
+     *
+     * <p>만료·위조 토큰의 구분(TOKEN4002 등)은 인증 단계에서 이미 끝난다 — 여기까지 온 건
+     * 토큰이 아예 없는 요청이므로 COMMON401로 내린다.
+     */
+    private void requireAuthenticated(Long userId) {
+        if (userId == null) {
+            throw new GeneralException(ErrorStatus.COMMON401);
+        }
+    }
+
+    private User findUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
     }
 }

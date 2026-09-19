@@ -5,18 +5,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.function.IntSupplier;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.gamification.entity.XpEvent;
@@ -136,7 +141,7 @@ class GamificationServiceTest {
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.REVIEW, 100L))
                 .thenReturn(false);
         when(xpEventRepository.save(any(XpEvent.class)))
-                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("uk_xp_events_user_source"));
+                .thenThrow(new DataIntegrityViolationException("uk_xp_events_user_source"));
 
         gamificationService.grantXp(1L, XpSourceType.REVIEW, 100L, 150);
 
@@ -256,7 +261,7 @@ class GamificationServiceTest {
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.PETCHECK, 100L))
                 .thenReturn(false);
 
-        gamificationService.grantXp(1L, XpSourceType.PETCHECK, 100L, 5, java.util.List.of(petA, petB));
+        gamificationService.grantXp(1L, XpSourceType.PETCHECK, 100L, 5, List.of(petA, petB));
 
         // 나눠주지 않고 두 마리 모두 5XP씩 그대로 — 스톱/아이 수와 무관하게 전액.
         assertThat(petA.getTotalXp()).isEqualTo(5);
@@ -274,7 +279,7 @@ class GamificationServiceTest {
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.REVIEW, 100L))
                 .thenReturn(false);
 
-        gamificationService.grantXp(1L, XpSourceType.REVIEW, 100L, 20, java.util.List.of());
+        gamificationService.grantXp(1L, XpSourceType.REVIEW, 100L, 20, List.of());
 
         verifyNoInteractions(petXpEventWriter);
     }
@@ -292,10 +297,10 @@ class GamificationServiceTest {
         // NESTED 세이브포인트로 저장하는 PetXpEventWriter가 이 반려동물만 유니크 제약에 걸려
         // 실패했다고 가정한다 — 실제로는 세이브포인트 롤백 후 호출부(creditPets)로 예외가
         // 전파되는데, Mockito 목에서는 그 저장 시점 예외만 그대로 재현하면 된다.
-        org.mockito.Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException("uk_pet_xp_events_pet_source"))
+        doThrow(new DataIntegrityViolationException("uk_pet_xp_events_pet_source"))
                 .when(petXpEventWriter).save(eq(alreadyCredited), any(), any(), anyInt(), any());
 
-        gamificationService.grantXp(1L, XpSourceType.PETCHECK, 100L, 5, java.util.List.of(alreadyCredited, fresh));
+        gamificationService.grantXp(1L, XpSourceType.PETCHECK, 100L, 5, List.of(alreadyCredited, fresh));
 
         // 첫 번째 반려동물이 유니크 제약에 걸려도 두 번째 반려동물은 그대로 지급된다.
         assertThat(alreadyCredited.getTotalXp()).isZero();
@@ -313,7 +318,7 @@ class GamificationServiceTest {
                 eq(1L), eq(XpSourceType.PETCHECK), any(LocalDateTime.class)
         )).thenReturn(10L); // PETCHECK 하루 상한(10) 도달
 
-        gamificationService.grantXp(1L, XpSourceType.PETCHECK, 555L, 5, java.util.List.of(pet));
+        gamificationService.grantXp(1L, XpSourceType.PETCHECK, 555L, 5, List.of(pet));
 
         assertThat(pet.getTotalXp()).isZero();
         verifyNoInteractions(petXpEventWriter);
@@ -342,7 +347,7 @@ class GamificationServiceTest {
         // 계산하면 동시 요청이 같은 스톱을 똑같이 "아직 안 쓴 것"으로 보는 레이스가 생긴다.
         setUpService();
         User user = newUser();
-        java.util.List<String> callOrder = new java.util.ArrayList<>();
+        List<String> callOrder = new ArrayList<>();
 
         when(userRepository.findByIdForUpdate(1L)).thenAnswer(invocation -> {
             callOrder.add("lock");
@@ -351,12 +356,12 @@ class GamificationServiceTest {
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.COURSE_PUBLISHED, 30L))
                 .thenReturn(false);
 
-        java.util.function.IntSupplier amountSupplier = () -> {
+        IntSupplier amountSupplier = () -> {
             callOrder.add("amount");
             return 25;
         };
 
-        gamificationService.grantXp(1L, XpSourceType.COURSE_PUBLISHED, 30L, amountSupplier, null, java.util.List.of());
+        gamificationService.grantXp(1L, XpSourceType.COURSE_PUBLISHED, 30L, amountSupplier, null, List.of());
 
         assertThat(callOrder).containsExactly("lock", "amount");
         assertThat(user.getTotalXp()).isEqualTo(25);
@@ -373,7 +378,7 @@ class GamificationServiceTest {
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.COURSE_PUBLISHED, 40L))
                 .thenReturn(false);
 
-        gamificationService.grantXp(1L, XpSourceType.COURSE_PUBLISHED, 40L, () -> 0, "1,2", java.util.List.of());
+        gamificationService.grantXp(1L, XpSourceType.COURSE_PUBLISHED, 40L, () -> 0, "1,2", List.of());
 
         assertThat(user.getTotalXp()).isZero();
         verify(xpEventRepository, never()).save(any());
@@ -385,10 +390,23 @@ class GamificationServiceTest {
     void allActivePetsOf는_삭제되지_않은_반려동물만_petId_오름차순으로_돌려준다() {
         setUpService();
         Pet pet = newPet(1L);
-        when(petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(1L)).thenReturn(java.util.List.of(pet));
+        when(petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(1L)).thenReturn(List.of(pet));
 
-        java.util.List<Pet> result = gamificationService.allActivePetsOf(1L);
+        List<Pet> result = gamificationService.allActivePetsOf(1L);
 
         assertThat(result).containsExactly(pet);
+    }
+
+    @Test
+    void findAllComponentSignaturesGranted는_오늘로_기간을_제한하지_않는다() {
+        // "오늘"로 좁히면 스톱 하나만 바꿔가며 하루 지나서 반복하는 코스 공개 파밍을 못 막는다
+        // (CourseCommandService.resolveCoursePublishedXp 참고) — 이 조회는 기간 제한이 아예
+        // 없어야 한다. 리포지토리 자체가 시간 필터를 갖고 있으니, 여기서는 그 필터에
+        // LocalDateTime.MIN(사실상 무제한)이 넘어가는지만 확인한다.
+        setUpService();
+
+        gamificationService.findAllComponentSignaturesGranted(1L, XpSourceType.COURSE_PUBLISHED);
+
+        verify(xpEventRepository).findComponentSignaturesGrantedSince(1L, XpSourceType.COURSE_PUBLISHED, LocalDateTime.MIN);
     }
 }

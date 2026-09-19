@@ -3,10 +3,10 @@ package com.freepets.domain.petsatisfaction.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -153,7 +153,7 @@ class PetSatisfactionCommandServiceTest {
         assertThat(result.score()).isEqualTo(7.1f);
         assertThat(existing.getScore()).isEqualTo(7.1f);
         // 재평가(수정)는 경험치를 지급하지 않는다(게이미피케이션 결정).
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        verifyNoInteractions(gamificationService);
     }
 
     @Test

@@ -3,15 +3,17 @@ package com.freepets.domain.course.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.IntSupplier;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -82,7 +84,7 @@ class CourseCommandServiceTest {
 
         assertThat(result.stopIds()).containsExactly(1L, 2L);
         // 비공개로 만들면 경험치가 지급되지 않는다(게이미피케이션 결정: 공개해야 지급).
-        org.mockito.Mockito.verifyNoInteractions(gamificationService);
+        verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -123,7 +125,7 @@ class CourseCommandServiceTest {
         assertThatThrownBy(() -> courseCommandService.createCourse(1L, request))
                 .isInstanceOf(GeneralException.class);
         verify(courseRepository, never()).save(any());
-        org.mockito.Mockito.verifyNoInteractions(gamificationService);
+        verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -208,7 +210,7 @@ class CourseCommandServiceTest {
 
         courseCommandService.updateCourse(1L, 10L, request);
 
-        org.mockito.Mockito.verifyNoInteractions(gamificationService);
+        verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -253,18 +255,38 @@ class CourseCommandServiceTest {
     }
 
     @Test
-    void 오늘_이미_다른_코스로_쓴_스톱은_보너스에서_제외된다() {
+    void 이전에_다른_코스로_쓴_스톱은_보너스에서_제외된다() {
         Course course = ownedCourseWithStops(2L, 3L);
 
         when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
         stubVerified(1L, 2L, 3L);
-        // 오늘 다른 코스(시설 1·2 조합)로 이미 XP를 받은 적 있다는 스냅샷.
-        when(gamificationService.findComponentSignaturesGrantedToday(1L, XpSourceType.COURSE_PUBLISHED))
+        // 과거에(오늘이든 며칠 전이든) 다른 코스(시설 1·2 조합)로 이미 XP를 받은 적 있다는 스냅샷.
+        when(gamificationService.findAllComponentSignaturesGranted(1L, XpSourceType.COURSE_PUBLISHED))
                 .thenReturn(List.of("1,2"));
 
         courseCommandService.updateVisibility(1L, 10L, true);
 
-        // 시설2는 오늘 이미 다른 코스로 XP를 받았으니 제외, 새 스톱은 시설3 하나뿐 — 20 + 5×1 = 25.
+        // 시설2는 이미 다른 코스로 XP를 받았으니 제외, 새 스톱은 시설3 하나뿐 — 20 + 5×1 = 25.
+        verifyCoursePublishedGrant(10L, 25, "2,3");
+    }
+
+    @Test
+    void 며칠_전_다른_코스로_쓴_스톱도_보너스에서_제외된다() {
+        // "오늘"로만 좁히면, 어제 이미 쓴 시설 9개에 새 시설 1개만 더해 오늘 다시 공개했을 때
+        // 9개 전부 "새 스톱"으로 잡혀 거의 매일 풀 XP를 다시 받는 구멍이 있었다 — 이 조회가
+        // 기간 제한 없이 과거 전체를 보는지 확인한다(GamificationServiceTest에서 리포지토리
+        // 호출 자체도 검증).
+        Course course = ownedCourseWithStops(2L, 3L);
+
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        stubVerified(1L, 2L, 3L);
+        // 며칠 전 다른 코스(시설 1·2 조합)로 이미 XP를 받았다 — "오늘"이 아니어도 걸려야 한다.
+        when(gamificationService.findAllComponentSignaturesGranted(1L, XpSourceType.COURSE_PUBLISHED))
+                .thenReturn(List.of("1,2"));
+
+        courseCommandService.updateVisibility(1L, 10L, true);
+
+        // 시설2는 며칠 전에 이미 XP를 받았으니 제외, 새 스톱은 시설3 하나뿐 — 20 + 5×1 = 25.
         verifyCoursePublishedGrant(10L, 25, "2,3");
     }
 
@@ -277,13 +299,13 @@ class CourseCommandServiceTest {
 
         when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
         stubVerified(1L, 2L, 3L);
-        // 오늘 다른 코스(시설 1·2·3·4 조합)로 이미 이 코스의 스톱을 전부 포함해 XP를 받은 적 있다.
-        when(gamificationService.findComponentSignaturesGrantedToday(1L, XpSourceType.COURSE_PUBLISHED))
+        // 과거에 다른 코스(시설 1·2·3·4 조합)로 이미 이 코스의 스톱을 전부 포함해 XP를 받은 적 있다.
+        when(gamificationService.findAllComponentSignaturesGranted(1L, XpSourceType.COURSE_PUBLISHED))
                 .thenReturn(List.of("1,2,3,4"));
 
         courseCommandService.updateVisibility(1L, 10L, true);
 
-        // 시설2·3 모두 오늘 이미 지급됐으니 새 스톱이 0개 — 금액이 0으로 계산된다.
+        // 시설2·3 모두 이미 지급됐으니 새 스톱이 0개 — 금액이 0으로 계산된다.
         verifyCoursePublishedGrant(10L, 0, "2,3");
     }
 
@@ -311,7 +333,7 @@ class CourseCommandServiceTest {
         CourseResponseDTO.MyCourse result = courseCommandService.updateVisibility(1L, 10L, false);
 
         assertThat(result.isPublic()).isFalse();
-        org.mockito.Mockito.verifyNoInteractions(gamificationService);
+        verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -322,7 +344,7 @@ class CourseCommandServiceTest {
 
         assertThatThrownBy(() -> courseCommandService.updateVisibility(1L, 10L, true))
                 .isInstanceOf(GeneralException.class);
-        org.mockito.Mockito.verifyNoInteractions(gamificationService);
+        verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -367,7 +389,7 @@ class CourseCommandServiceTest {
         CourseResponseDTO.OrderResult result = courseCommandService.optimizeOrder(List.of(1L, 2L));
 
         assertThat(result.stopIds()).containsExactly(2L, 1L);
-        org.mockito.Mockito.verifyNoInteractions(courseRepository);
+        verifyNoInteractions(courseRepository);
     }
 
     @Test
@@ -471,7 +493,7 @@ class CourseCommandServiceTest {
         CourseResponseDTO.MyCourse result = courseCommandService.replaceStop(1L, 10L, 1, 6L);
 
         assertThat(result.stopIds()).containsExactly(1L, 6L, 3L);
-        org.mockito.Mockito.verifyNoInteractions(petCheckRepository);
+        verifyNoInteractions(petCheckRepository);
     }
 
     @Test
@@ -526,11 +548,34 @@ class CourseCommandServiceTest {
         // MyCourse 응답엔 소유자 필드가 없어 위 검증만으론 저장된 엔티티의 소유자가 실제로
         // 받는 사람인지 확인이 안 된다 — 저장 직전 엔티티를 잡아 직접 확인한다.
         ArgumentCaptor<Course> savedCourse = ArgumentCaptor.forClass(Course.class);
-        org.mockito.Mockito.verify(courseRepository).save(savedCourse.capture());
+        verify(courseRepository).save(savedCourse.capture());
         assertThat(savedCourse.getValue().isOwnedBy(2L)).isTrue();
         assertThat(savedCourse.getValue()).isNotSameAs(original);
         // 복사되면 원본 소유자(1L)에게 경험치가 지급된다 — 복사한 사람(2L)이 아니다.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.COURSE_SHARED_COPY), any(), eq(15), eq(List.of()));
+        // componentSignature("원본courseId:복사한사람")는 같은 사람이 같은 원본을 반복 복사해도
+        // 평생 한 번만 지급되게 하는 중복방지 키다(원본 courseId=10L, 복사한 사람=2L).
+        verify(gamificationService).grantXp(
+                eq(1L), eq(XpSourceType.COURSE_SHARED_COPY), any(), eq(15), eq("10:2"), eq(List.of()));
+    }
+
+    @Test
+    void 같은_사람이_같은_원본을_여러_번_복사해도_같은_componentSignature로_지급된다() {
+        // sourceId(복사본 courseId)는 복사할 때마다 새로 발급돼 반복 복사를 못 막는다 —
+        // "원본courseId:복사한사람"이 매번 같은 값으로 넘어가야 GamificationService의
+        // componentSignature 평생 1회 검사가 반복 복사를 막을 수 있다.
+        Course original = ownedCourseWithStops(1L, 2L);
+        ReflectionTestUtils.setField(original, "shareCode", "CRS-SHARE0003");
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user(2L)));
+        when(courseRepository.findByShareCode("CRS-SHARE0003")).thenReturn(Optional.of(original));
+        when(courseRepository.save(org.mockito.ArgumentMatchers.any(Course.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        courseCommandService.copySharedCourse(2L, "CRS-SHARE0003");
+        courseCommandService.copySharedCourse(2L, "CRS-SHARE0003");
+
+        verify(gamificationService, times(2)).grantXp(
+                eq(1L), eq(XpSourceType.COURSE_SHARED_COPY), any(), eq(15), eq("10:2"), eq(List.of()));
     }
 
     @Test
@@ -585,7 +630,7 @@ class CourseCommandServiceTest {
 
         courseCommandService.copySharedCourse(1L, "CRS-SELFCOPY1");
 
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -604,8 +649,8 @@ class CourseCommandServiceTest {
             int expectedAmount,
             String expectedComponentSignature
     ) {
-        ArgumentCaptor<java.util.function.IntSupplier> amountCaptor =
-                ArgumentCaptor.forClass(java.util.function.IntSupplier.class);
+        ArgumentCaptor<IntSupplier> amountCaptor =
+                ArgumentCaptor.forClass(IntSupplier.class);
         verify(gamificationService).grantXp(
                 eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(courseId),
                 amountCaptor.capture(), eq(expectedComponentSignature), eq(List.of())

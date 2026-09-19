@@ -36,10 +36,12 @@ public interface XpEventRepository extends JpaRepository<XpEvent, Long> {
             String componentSignature
     );
 
-    // 당일 구성요소 중복 판단(코스 공개의 스톱 단위 하루 중복 방지) — 오늘 이 sourceType으로
-    // 지급된 componentSignature 전체. 호출부(CourseCommandService)가 각 서명을 다시 개별
-    // componentId로 쪼개 합집합을 구한다. Course를 다시 조회하지 않아도 되도록 지급 시점에
-    // 굳힌 값만 쓴다 — 이후 코스가 수정·삭제돼도 이 값은 영향받지 않는다.
+    // 구성요소 중복 판단(코스 공개의 스톱 단위 재사용 방지) — since 이후 이 sourceType으로
+    // 지급된 componentSignature 전체. 호출부(GamificationService.findAllComponentSignaturesGranted)가
+    // since를 LocalDateTime.MIN으로 넘겨 기간 제한 없이 전체 이력을 본다 — "오늘"로만 좁히면
+    // 스톱 하나만 바꿔가며 하루 지나서 반복하는 파밍을 못 막는다. 호출부(CourseCommandService)가
+    // 각 서명을 다시 개별 componentId로 쪼개 합집합을 구한다. Course를 다시 조회하지 않아도
+    // 되도록 지급 시점에 굳힌 값만 쓴다 — 이후 코스가 수정·삭제돼도 이 값은 영향받지 않는다.
     @Query("""
             SELECT xpEvent.componentSignature
             FROM XpEvent xpEvent
@@ -99,11 +101,7 @@ public interface XpEventRepository extends JpaRepository<XpEvent, Long> {
         long getCount();
     }
 
-    interface SourceTypeDailyStats {
-        XpSourceType getSourceType();
-
-        long getCount();
-
+    interface SourceTypeDailyStats extends SourceTypeCount {
         long getTotalAmount();
     }
 

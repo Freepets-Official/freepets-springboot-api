@@ -20,6 +20,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.global.util.BusinessZone;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,9 +40,7 @@ import lombok.extern.slf4j.Slf4j;
 @Transactional
 public class GamificationService {
 
-    // 서버 프로세스는 항상 UTC로 고정돼 있다(FreepetsServerApplication의 static 블록) —
-    // "하루"의 경계는 서버 타임존이 아니라 실제 사용자가 있는 KST 기준이어야 한다.
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
+    private static final ZoneId BUSINESS_ZONE = BusinessZone.ZONE;
 
     private final UserRepository userRepository;
     private final PetRepository petRepository;
@@ -279,16 +278,22 @@ public class GamificationService {
         return user.isLevelUpNotificationEnabled();
     }
 
-    // 오늘(KST) 지급분의 componentSignature 전체 — 당일 단위 중복 판단용(코스 공개의 "오늘 이미
-    // 쓴 스톱" 계산에 쓰인다). 평생 1회(componentSignature 완전 일치) 판정은 이 서비스 내부에서만
-    // 쓰고 호출부에 따로 안 열어준다 — grantXp 자체가 잠금 전/후로 이미 그 판정을 하기 때문에,
+    // 이 유저가 이 sourceType으로 지금까지(오늘만이 아니라 평생) 지급받은 componentSignature
+    // 전체 — 코스 공개의 "이미 쓴 스톱" 계산에 쓰인다. "오늘"로만 좁히면, 스톱 하나만 바꿔
+    // 가며 하루 상한까지 파밍하던 구멍을 오늘 안에서는 막아도 그냥 하루 지나서 반복하면 그대로
+    // 뚫린다 — 어제 쓴 시설 9개에 새 시설 1개만 더해 오늘 다시 공개하면, "오늘 쓴 스톱"은
+    // 0개라 9개 전부 "새 스톱"으로 잡혀 사실상 매일 거의 풀 XP를 다시 받는다. 그래서 이 조회는
+    // 시간 제한 없이 이 유저가 이 sourceType으로 componentSignature와 함께 지급받은 이력
+    // 전체를 본다 — 하루에 몇 번까지 받을 수 있는지는 별도의 일일 상한(isDailyCapReached)이
+    // 맡는다. 평생 1회(componentSignature 완전 일치) 판정은 이 서비스 내부에서만 쓰고
+    // 호출부에 따로 안 열어준다 — grantXp 자체가 잠금 전/후로 이미 그 판정을 하기 때문에,
     // 호출부가 grantXp 호출 전에 똑같은 판정을 미리 하면 잠금 밖에서 계산한 값이라 레이스에
     // 취약해진다(IntSupplier 오버로드의 문서 참고).
-    public List<String> findComponentSignaturesGrantedToday(
+    public List<String> findAllComponentSignaturesGranted(
             Long userId,
             XpSourceType sourceType
     ) {
-        return xpEventRepository.findComponentSignaturesGrantedSince(userId, sourceType, startOfTodayInBusinessZone());
+        return xpEventRepository.findComponentSignaturesGrantedSince(userId, sourceType, LocalDateTime.MIN);
     }
 
     private boolean isAlreadyGrantedForSource(

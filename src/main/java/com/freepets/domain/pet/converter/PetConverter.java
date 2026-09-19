@@ -10,13 +10,11 @@ import com.freepets.domain.pet.dto.PetRequestDTO;
 import com.freepets.domain.pet.dto.PetResponseDTO;
 import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.user.entity.User;
+import com.freepets.global.util.BusinessZone;
 
 public class PetConverter {
 
-    // 서버 프로세스는 항상 UTC로 고정돼 있다(FreepetsServerApplication의 static 블록) — "오늘"을
-    // JVM 기본 타임존(UTC)으로 계산하면, 한국 시간으로는 이미 생일이 지난 자정~오전 9시 사이에
-    // 나이가 하루(엄밀히는 그 시간대만큼) 늦게 올라간다. 실제 사용자가 있는 KST 기준으로 계산한다.
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
+    private static final ZoneId BUSINESS_ZONE = BusinessZone.ZONE;
 
     private PetConverter() {}
 

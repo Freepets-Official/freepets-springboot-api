@@ -154,15 +154,18 @@ class GamificationQueryServiceTest {
             long count,
             long totalAmount
     ) {
+        // SourceTypeDailyStats가 SourceTypeCount를 상속하므로 getSourceType()/getCount()는
+        // countRow가 이미 만든 값에 위임하고, 이 헬퍼는 getTotalAmount()만 더한다.
+        XpEventRepository.SourceTypeCount base = countRow(sourceType, count);
         return new XpEventRepository.SourceTypeDailyStats() {
             @Override
             public XpSourceType getSourceType() {
-                return sourceType;
+                return base.getSourceType();
             }
 
             @Override
             public long getCount() {
-                return count;
+                return base.getCount();
             }
 
             @Override

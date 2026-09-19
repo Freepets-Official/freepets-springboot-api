@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityGradeSnapshot;
 import com.freepets.domain.facility.repository.FacilityRepository;
+import com.freepets.global.util.BusinessZone;
 
 import lombok.RequiredArgsConstructor;
 
@@ -26,7 +27,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class FacilityGradeSnapshotService {
 
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
+    private static final ZoneId BUSINESS_ZONE = BusinessZone.ZONE;
     private static final int BACKFILL_PAGE_SIZE = 500;
     /**
      * 등급 추이 화면이 보장하는 기간({@link FacilityGradeSnapshot#TREND_WINDOW_DAYS})보다 넉넉히

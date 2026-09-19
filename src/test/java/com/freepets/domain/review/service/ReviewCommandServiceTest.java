@@ -3,13 +3,13 @@ package com.freepets.domain.review.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -336,7 +336,7 @@ class ReviewCommandServiceTest {
         // 요청에 visitedAt을 안 보내면 기존 방문일을 그대로 유지해야 한다.
         assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
         // 수정은 경험치를 지급하지 않는다(게이미피케이션 결정).
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        verifyNoInteractions(gamificationService);
     }
 
     @Test
@@ -561,7 +561,7 @@ class ReviewCommandServiceTest {
         assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
         verify(facilityGradeCacheService).refresh(7L);
         // 새 리뷰가 아니라 경험치는 지급되지 않는다.
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        verifyNoInteractions(gamificationService);
     }
 
     @Test

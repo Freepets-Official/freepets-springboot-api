@@ -77,7 +77,10 @@ public class SecurityConfig {
             "/api/v1/facilities/ranking",
             "/api/v1/facilities/{facilityId:[0-9]+}",
             "/api/v1/facilities/*/reviews",
-            "/api/v1/facilities/*/denial-reports/recent"
+            "/api/v1/facilities/*/denial-reports/recent",
+            // 다른 유저와 비교하는 화면이라 개인화가 없어도 볼 수 있어야 한다 — 토큰 없으면
+            // 응답의 me가 생략된다(GamificationRankingController 참고).
+            "/api/v1/gamification/ranking"
     };
 
     // 시설 검색도 같은 게스트 모드 읽기 API지만, 조건이 많아 본문으로 받느라 POST다

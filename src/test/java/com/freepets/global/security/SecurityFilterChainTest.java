@@ -42,6 +42,8 @@ import com.freepets.domain.facility.controller.FacilityController;
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
 import com.freepets.domain.facility.service.FacilityListQueryService;
 import com.freepets.domain.facility.service.FacilityQueryService;
+import com.freepets.domain.gamification.controller.GamificationRankingController;
+import com.freepets.domain.gamification.service.RankingQueryService;
 import com.freepets.domain.report.controller.DenialReportController;
 import com.freepets.domain.report.service.DenialReportCommandService;
 import com.freepets.domain.report.service.DenialReportQueryService;
@@ -65,6 +67,7 @@ import com.freepets.global.security.jwt.JwtProvider;
         FacilityController.class,
         ReviewController.class,
         DenialReportController.class,
+        GamificationRankingController.class,
         SecurityTestPingController.class
 })
 @Import({SecurityConfig.class, JwtConfig.class, JwtProvider.class, JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
@@ -124,6 +127,9 @@ class SecurityFilterChainTest {
 
     @MockitoBean
     private DenialReportCommandService denialReportCommandService;
+
+    @MockitoBean
+    private RankingQueryService rankingQueryService;
 
     @Test
     void 토큰없이_보호된_경로_요청시_401과_COMMON401을_반환한다() throws Exception {
@@ -326,6 +332,18 @@ class SecurityFilterChainTest {
                 .thenReturn(List.of());
 
         mockMvc.perform(get("/api/v1/facilities/1/denial-reports/recent"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    // 다른 유저와 비교하는 화면이라 개인화 없이도 볼 수 있어야 한다 — 토큰 없으면 me가
+    // 응답에서 빠질 뿐 목록 자체는 그대로 내려간다(GamificationRankingController 참고).
+    @Test
+    void 지역_랭킹_조회는_토큰없이도_통과한다() throws Exception {
+        when(rankingQueryService.getNationalRanking(any(), anyInt(), anyInt()))
+                .thenReturn(null);
+
+        mockMvc.perform(get("/api/v1/gamification/ranking"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true));
     }

@@ -16,6 +16,7 @@ import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.repository.XpEventRepository;
 import com.freepets.domain.gamification.service.LevelCurve;
 import com.freepets.domain.user.entity.User;
+import com.freepets.domain.user.repository.UserRepository;
 
 public class GamificationConverter {
 
@@ -113,6 +114,47 @@ public class GamificationConverter {
 
         return new GamificationResponseDTO.Quest(
                 sourceType, sourceType.getLabel(), completed, sourceType.getDailyCap(), earnedXpToday
+        );
+    }
+
+    public static GamificationResponseDTO.RankingItem toRankingItem(
+            UserRepository.RankingRow row,
+            Long viewerId
+    ) {
+        LevelTier tier = LevelTier.of(row.getLevel());
+
+        return new GamificationResponseDTO.RankingItem(
+                row.getRnk(),
+                row.getId(),
+                row.getNickname(),
+                row.getTotalXp(),
+                row.getLevel(),
+                tier.animal(),
+                tier.finish(),
+                tier.color(),
+                row.getId().equals(viewerId)
+        );
+    }
+
+    // ranked=false면 rank는 null로 둬 응답에서 키 자체가 빠지게 한다(RankingResult.MyRanking
+    // 참고) — 순위를 아예 숨겨야 하는 상황이라 0이나 -1 같은 placeholder를 대신 넣지 않는다.
+    public static GamificationResponseDTO.MyRanking toMyRanking(
+            User user,
+            Long rank,
+            long participantCount,
+            boolean ranked
+    ) {
+        LevelTier tier = LevelTier.of(user.getLevel());
+
+        return new GamificationResponseDTO.MyRanking(
+                ranked ? rank : null,
+                participantCount,
+                user.getTotalXp(),
+                user.getLevel(),
+                tier.animal(),
+                tier.finish(),
+                tier.color(),
+                ranked
         );
     }
 

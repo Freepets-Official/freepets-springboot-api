@@ -214,11 +214,11 @@ public class GamificationService {
      * petsToCredit 각각에게 같은 금액을 그대로(나누지 않고) 지급한다. 반려동물 한 마리가
      * uk_pet_xp_events_pet_source(-_component_signature)에 걸려도 그 반려동물만 건너뛰고
      * 나머지는 계속 지급한다 — 그룹 판별처럼 여러 마리가 한 번에 걸리는 호출에서 한 마리의
-     * 중복이 다른 마리의 정상 지급까지 막으면 안 된다. petXpEventWriter.save가 별도
-     * 세이브포인트(NESTED)로 저장해서, 한 마리의 실패가 Postgres 트랜잭션 전체를 abort시켜
-     * 나머지 반려동물이나 이 메서드를 호출한 User XP 커밋까지 막는 걸 방지한다(PetXpEventWriter
-     * 참고). 배지 재평가·레벨업 푸시는 반려동물 단위로는 아직 없다(카드 표시용 레벨·진행바만
-     * 필요한 범위라 의도적으로 뺐다).
+     * 중복이 다른 마리의 정상 지급까지 막으면 안 된다. petXpEventWriter.save가 예외 대신
+     * INSERT ... ON CONFLICT DO NOTHING으로 저장해서, 한 마리의 중복이 Postgres 트랜잭션을
+     * abort시켜 나머지 반려동물이나 이 메서드를 호출한 User XP 커밋까지 막는 걸 방지한다
+     * (PetXpEventWriter 참고). 배지 재평가·레벨업 푸시는 반려동물 단위로는 아직 없다(카드
+     * 표시용 레벨·진행바만 필요한 범위라 의도적으로 뺐다).
      */
     private void creditPets(
             List<Pet> petsToCredit,
@@ -228,15 +228,14 @@ public class GamificationService {
             String componentSignature
     ) {
         for (Pet pet : petsToCredit) {
-            try {
-                petXpEventWriter.save(
-                        pet,
-                        sourceType,
-                        sourceId,
-                        amount,
-                        componentSignature
-                );
-            } catch (DataIntegrityViolationException e) {
+            boolean inserted = petXpEventWriter.save(
+                    pet,
+                    sourceType,
+                    sourceId,
+                    amount,
+                    componentSignature
+            );
+            if (!inserted) {
                 log.warn(
                         "이미 지급된 반려동물 경험치라 스킵합니다 — petId={}, sourceType={}, sourceId={}, componentSignature={}",
                         pet.getPetId(), sourceType, sourceId, componentSignature

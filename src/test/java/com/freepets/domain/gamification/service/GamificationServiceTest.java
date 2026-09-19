@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -260,6 +259,7 @@ class GamificationServiceTest {
         when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.PETCHECK, 100L))
                 .thenReturn(false);
+        when(petXpEventWriter.save(any(), any(), any(), anyInt(), any())).thenReturn(true);
 
         gamificationService.grantXp(1L, XpSourceType.PETCHECK, 100L, 5, List.of(petA, petB));
 
@@ -294,11 +294,10 @@ class GamificationServiceTest {
         when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.PETCHECK, 100L))
                 .thenReturn(false);
-        // NESTED 세이브포인트로 저장하는 PetXpEventWriter가 이 반려동물만 유니크 제약에 걸려
-        // 실패했다고 가정한다 — 실제로는 세이브포인트 롤백 후 호출부(creditPets)로 예외가
-        // 전파되는데, Mockito 목에서는 그 저장 시점 예외만 그대로 재현하면 된다.
-        doThrow(new DataIntegrityViolationException("uk_pet_xp_events_pet_source"))
-                .when(petXpEventWriter).save(eq(alreadyCredited), any(), any(), anyInt(), any());
+        // PetXpEventWriter는 INSERT ... ON CONFLICT DO NOTHING으로 저장하므로 중복이어도 예외를
+        // 던지지 않고 false(삽입 안 됨)를 돌려준다 — 이 반려동물만 유니크 제약에 걸렸다고 가정한다.
+        when(petXpEventWriter.save(eq(alreadyCredited), any(), any(), anyInt(), any())).thenReturn(false);
+        when(petXpEventWriter.save(eq(fresh), any(), any(), anyInt(), any())).thenReturn(true);
 
         gamificationService.grantXp(1L, XpSourceType.PETCHECK, 100L, 5, List.of(alreadyCredited, fresh));
 

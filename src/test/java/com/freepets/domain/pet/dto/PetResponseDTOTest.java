@@ -48,4 +48,20 @@ class PetResponseDTOTest {
         assertThat(json).contains("\"age\":3");
         assertThat(json).contains("\"xpToNextLevel\":50");
     }
+
+    @Test
+    void gender와_birthDate는_null이어도_키가_그대로_남는다() throws Exception {
+        // @JsonInclude(NON_NULL)을 age·xpToNextLevel 두 필드에만 걸었다 — 레코드 전체에 걸면
+        // gender·birthDate도 같이 키가 빠져서, 같은 Pet을 보여주는 PetDetail(여긴 그런 어노테이션이
+        // 없어 "gender": null을 그대로 내려줌)과 응답 계약이 갈라진다. 그 회귀를 막는 테스트다.
+        PetResponseDTO.RegistrationCard card = new PetResponseDTO.RegistrationCard(
+                1L, "몽이", null, "말티즈", null, null,
+                LocalDateTime.of(2026, 1, 1, 0, 0), 70, 241500L, null, List.of()
+        );
+
+        String json = objectMapper.writeValueAsString(card);
+
+        assertThat(json).contains("\"gender\":null");
+        assertThat(json).contains("\"birthDate\":null");
+    }
 }

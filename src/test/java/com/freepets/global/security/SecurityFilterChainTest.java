@@ -40,6 +40,7 @@ import com.freepets.domain.course.service.CourseQueryService;
 import com.freepets.domain.course.service.CourseSimilarService;
 import com.freepets.domain.facility.controller.FacilityController;
 import com.freepets.domain.facility.dto.FacilityResponseDTO;
+import com.freepets.domain.facility.service.FacilityListQueryService;
 import com.freepets.domain.facility.service.FacilityQueryService;
 import com.freepets.domain.report.controller.DenialReportController;
 import com.freepets.domain.report.service.DenialReportCommandService;
@@ -108,6 +109,9 @@ class SecurityFilterChainTest {
 
     @MockitoBean
     private FacilityQueryService facilityQueryService;
+
+    @MockitoBean
+    private FacilityListQueryService facilityListQueryService;
 
     @MockitoBean
     private ReviewQueryService reviewQueryService;
@@ -280,6 +284,18 @@ class SecurityFilterChainTest {
                 .thenReturn(null);
 
         mockMvc.perform(get("/api/v1/facilities/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    void 전체_시설_목록_조회는_토큰없이도_통과한다() throws Exception {
+        when(facilityListQueryService.getFacilityList(any()))
+                .thenReturn(new FacilityResponseDTO.FacilityListResult(List.of(), 0));
+
+        mockMvc.perform(get("/api/v1/facilities")
+                        .param("sidoCode", "41")
+                        .param("sigunguCode", "480"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true));
     }

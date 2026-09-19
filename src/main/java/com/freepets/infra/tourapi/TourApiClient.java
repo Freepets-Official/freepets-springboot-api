@@ -8,6 +8,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 한국관광공사 국문 관광정보 서비스(KorService2) 호출 클라이언트.
@@ -18,7 +19,9 @@ import java.time.Duration;
  * <p>응답은 역직렬화하지 않고 원본 JSON 문자열을 그대로 반환한다.
  * 응답 구조를 실물로 확인하기 전이고, 탐사 단계에서는 원본 보존이 목적이기 때문이다.
  *
- * <p>호출 간 최소 간격을 두는 상태를 가지므로 스레드 안전하지 않다. 단일 스레드 배치에서만 사용한다.
+ * <p>호출 간 최소 간격을 두지만 그 상태는 원자적으로 관리하므로 여러 스레드가 공유해도 된다.
+ * 다만 간격이 0이 아니면 동시 호출이 서로를 기다리게 되므로, 요청 경로에서 쓰는 인스턴스는
+ * 간격을 0으로 만들어 쓴다({@code TourApiConfig} 참고).
  */
 public class TourApiClient {
 
@@ -31,19 +34,38 @@ public class TourApiClient {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
 
-    /** 공공데이터포털에 대한 호출 예절. 연속 호출 사이 최소 간격이다. */
-    private static final long MINIMUM_INTERVAL_MILLIS = 250L;
+    /** 공공데이터포털에 대한 호출 예절. 수천 페이지를 연달아 도는 배치의 기본 간격이다. */
+    public static final long BATCH_INTERVAL_MILLIS = 250L;
+
+    /** 요청 한 건이 호출 한 번으로 끝나는 경로에서 쓰는 간격. 대기가 곧 응답 지연이라 두지 않는다. */
+    public static final long NO_INTERVAL_MILLIS = 0L;
 
     private final String encodedServiceKey;
     private final HttpClient httpClient;
+    private final long minimumIntervalMillis;
 
-    private long lastRequestedAtMillis = 0L;
+    private final AtomicLong lastRequestedAtMillis = new AtomicLong(0L);
 
+    /** 배치 기본 간격으로 만든다. */
     public TourApiClient(String serviceKey) {
+        this(serviceKey, BATCH_INTERVAL_MILLIS);
+    }
+
+    /**
+     * @param minimumIntervalMillis 연속 호출 사이에 둘 최소 간격. 0이면 기다리지 않는다
+     */
+    public TourApiClient(
+            String serviceKey,
+            long minimumIntervalMillis
+    ) {
         if (serviceKey == null || serviceKey.isBlank()) {
             throw new IllegalArgumentException("서비스키가 비어 있습니다.");
         }
+        if (minimumIntervalMillis < 0) {
+            throw new IllegalArgumentException("호출 간격은 0 이상이어야 합니다.");
+        }
         this.encodedServiceKey = encodeServiceKeyIfNeeded(serviceKey);
+        this.minimumIntervalMillis = minimumIntervalMillis;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT)
                 .build();
@@ -59,9 +81,51 @@ public class TourApiClient {
             int pageNo,
             int numOfRows
     ) {
+        return areaBasedList(contentTypeId, null, null, pageNo, numOfRows);
+    }
+
+    /**
+     * 지역기반 관광정보 조회를 법정동 코드로 좁힌다.
+     *
+     * <p>지역 코드 체계는 {@code ldongCode2}가 내려주는 것과 같고, 응답 항목의
+     * {@code lDongRegnCd}/{@code lDongSignguCd}와도 같다. 그래서 우리 {@code regions} 테이블에
+     * 적재해둔 코드를 변환 없이 그대로 실을 수 있다.
+     *
+     * @param sidoCode    법정동 시도 코드. null이면 전국을 조회한다
+     * @param sigunguCode 법정동 시군구 코드. 시도 코드와 함께 보낼 때만 유효하다
+     */
+    public String areaBasedList(
+            Integer contentTypeId,
+            String sidoCode,
+            String sigunguCode,
+            int pageNo,
+            int numOfRows
+    ) {
+        return areaBasedList(contentTypeId, sidoCode, sigunguCode, null, pageNo, numOfRows);
+    }
+
+    /**
+     * 지역기반 관광정보 조회를 분류체계 중분류까지 좁힌다.
+     *
+     * <p>음식점(39)은 카페와 음식점을 {@code contentTypeId}로 가르지 못해 중분류가 필요하다.
+     * 코드 체계는 {@code lclsSystmCode2}가 내려주는 것과 같다.
+     *
+     * @param mediumCategoryCode 분류체계 중분류 코드({@code lclsSystm2}). null이면 거르지 않는다
+     */
+    public String areaBasedList(
+            Integer contentTypeId,
+            String sidoCode,
+            String sigunguCode,
+            String mediumCategoryCode,
+            int pageNo,
+            int numOfRows
+    ) {
         StringBuilder query = commonQuery(pageNo, numOfRows);
         appendParameter(query, "arrange", "C");
         appendParameter(query, "contentTypeId", contentTypeId);
+        appendParameter(query, "lDongRegnCd", sidoCode);
+        appendParameter(query, "lDongSignguCd", sigunguCode);
+        appendParameter(query, "lclsSystm2", mediumCategoryCode);
         return request("areaBasedList2", query);
     }
 
@@ -255,17 +319,34 @@ public class TourApiClient {
         query.append(name).append('=').append(value);
     }
 
+    /**
+     * 직전 호출로부터 최소 간격이 지날 때까지 기다린다.
+     *
+     * <p>여러 스레드가 한 인스턴스를 공유할 수 있으므로 자기 차례를 먼저 원자적으로 예약하고
+     * 나서 잔다. 읽고 자고 쓰는 순서로 하면 동시에 들어온 호출들이 같은 시각을 읽고 함께 나간다.
+     */
     private void waitForMinimumInterval() {
-        long elapsed = System.currentTimeMillis() - lastRequestedAtMillis;
-        if (elapsed < MINIMUM_INTERVAL_MILLIS) {
-            try {
-                Thread.sleep(MINIMUM_INTERVAL_MILLIS - elapsed);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new TourApiException("호출 대기가 중단되었습니다.", exception);
-            }
+        if (minimumIntervalMillis == NO_INTERVAL_MILLIS) {
+            return;
         }
-        lastRequestedAtMillis = System.currentTimeMillis();
+
+        long now = System.currentTimeMillis();
+        long sendAtMillis = lastRequestedAtMillis.accumulateAndGet(
+                now,
+                (previousSendAt, current) -> Math.max(current, previousSendAt + minimumIntervalMillis)
+        );
+
+        long waitMillis = sendAtMillis - now;
+        if (waitMillis <= 0) {
+            return;
+        }
+
+        try {
+            Thread.sleep(waitMillis);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new TourApiException("호출 대기가 중단되었습니다.", exception);
+        }
     }
 
 }

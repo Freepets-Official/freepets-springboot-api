@@ -49,6 +49,38 @@ public class FacilityResponseDTO {
     ) {}
 
     /**
+     * 전체 시설 목록 한 건.
+     *
+     * <p>{@link FacilitySummary}를 쓰지 않는 이유는 거리 때문이다. 그쪽은 {@code distanceM}이
+     * 필수라 좌표를 받지 않는 이 조회에서는 채울 값이 없다. 대신 지역으로 거르는 목록이라
+     * 시도·시군구를 담는다.
+     */
+    public record FacilityListItem(
+            Long facilityId,
+            String name,
+            FacilityCategory category,
+            String address,
+            String sido,
+            String sigungu,
+            PetAllowed petAllowed,
+            BigDecimal maxWeight,
+
+            // maxWeight 경계 포함 여부. FacilitySummary와 같은 규칙이다.
+            Boolean maxWeightInclusive,
+            List<Requirement> requirements,
+
+            // 시설에 저장된 친화도 점수를 반올림한 값. 리뷰가 한 건도 없는 시설은 null이다.
+            Integer petScore,
+            String rating,
+            long reviewCnt
+    ) {}
+
+    public record FacilityListResult(
+            List<FacilityListItem> items,
+            long total
+    ) {}
+
+    /**
      * 발자국 랭킹 한 행.
      *
      * <p>{@code rank}는 서버가 매긴다. 페이지를 넘겨도 순위가 이어져야 하므로(2페이지 첫 행이 21위)

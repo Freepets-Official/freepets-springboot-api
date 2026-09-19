@@ -31,6 +31,7 @@ import com.freepets.domain.facility.entity.ConfidenceSource;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
+import com.freepets.domain.facility.service.FacilityListQueryService;
 import com.freepets.domain.facility.service.FacilityQueryService;
 
 @WebMvcTest(FacilityController.class)
@@ -40,12 +41,16 @@ class FacilityControllerTest {
     private static final String SEARCH_PATH = "/api/v1/facilities/search";
     private static final String RANKING_PATH = "/api/v1/facilities/ranking";
     private static final String REGIONS_PATH = "/api/v1/facilities/regions";
+    private static final String LIST_PATH = "/api/v1/facilities";
 
     @Autowired
     private MockMvc mockMvc;
 
     @MockitoBean
     private FacilityQueryService facilityQueryService;
+
+    @MockitoBean
+    private FacilityListQueryService facilityListQueryService;
 
     private FacilityResponseDTO.FacilitySearchResult createSearchResult() {
         FacilityResponseDTO.FacilitySummary summary = new FacilityResponseDTO.FacilitySummary(
@@ -87,6 +92,74 @@ class FacilityControllerTest {
                 .andExpect(jsonPath("$.result.items[0].maxWeightInclusive").value(true))
                 .andExpect(jsonPath("$.result.items[0].requirements[0]").value("LEASH"))
                 .andExpect(jsonPath("$.result.items[0].reviewCnt").value(45));
+    }
+
+    // ------------------------------------------------------------------
+    // 전체 시설 목록
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("전체 목록 조회에 성공하면 200과 시설 목록을 반환한다")
+    void 전체_목록_조회에_성공하면_200과_시설_목록을_반환한다() throws Exception {
+        FacilityResponseDTO.FacilityListItem item = new FacilityResponseDTO.FacilityListItem(
+                7L,
+                "카페 파도살롱",
+                FacilityCategory.CAFE,
+                "경기 파주시 회동길 17",
+                "경기도",
+                "파주시",
+                PetAllowed.ALLOWED,
+                new BigDecimal("10.00"),
+                true,
+                List.of(Requirement.LEASH),
+                87,
+                "1등급",
+                45L
+        );
+
+        when(facilityListQueryService.getFacilityList(any()))
+                .thenReturn(new FacilityResponseDTO.FacilityListResult(List.of(item), 31L));
+
+        mockMvc.perform(get(LIST_PATH)
+                        .param("sidoCode", "41")
+                        .param("sigunguCode", "480")
+                        .param("category", "CAFE")
+                        .param("petAllowed", "ALLOWED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.total").value(31))
+                .andExpect(jsonPath("$.result.items[0].facilityId").value(7))
+                .andExpect(jsonPath("$.result.items[0].sido").value("경기도"))
+                .andExpect(jsonPath("$.result.items[0].sigungu").value("파주시"))
+                .andExpect(jsonPath("$.result.items[0].petAllowed").value("ALLOWED"))
+                .andExpect(jsonPath("$.result.items[0].reviewCnt").value(45));
+    }
+
+    @Test
+    @DisplayName("전체 목록 조회에 시도 코드가 없으면 400을 반환한다")
+    void 전체_목록_조회에_시도_코드가_없으면_400을_반환한다() throws Exception {
+        mockMvc.perform(get(LIST_PATH)
+                        .param("sigunguCode", "480"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("COMMON400"))
+                .andExpect(jsonPath("$.result.sidoCode").exists());
+
+        verifyNoInteractions(facilityListQueryService);
+    }
+
+    @Test
+    @DisplayName("전체 목록 조회의 페이지 크기가 상한을 넘으면 400을 반환한다")
+    void 전체_목록_조회의_페이지_크기가_상한을_넘으면_400을_반환한다() throws Exception {
+        mockMvc.perform(get(LIST_PATH)
+                        .param("sidoCode", "41")
+                        .param("sigunguCode", "480")
+                        .param("size", "101"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"))
+                .andExpect(jsonPath("$.result.size").exists());
+
+        verifyNoInteractions(facilityListQueryService);
     }
 
     @Test

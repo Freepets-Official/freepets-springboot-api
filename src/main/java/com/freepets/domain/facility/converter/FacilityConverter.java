@@ -63,6 +63,52 @@ public class FacilityConverter {
     }
 
     /**
+     * 전체 시설 목록을 만든다.
+     *
+     * @param reviewCounts 시설 ID → 리뷰 수. 리뷰가 없는 시설은 담기지 않는다
+     * @param total        페이징 이전, 조건에 맞는 전체 시설 수
+     */
+    public static FacilityResponseDTO.FacilityListResult toFacilityListResult(
+            List<Facility> facilities,
+            Map<Long, Long> reviewCounts,
+            long total
+    ) {
+        List<FacilityResponseDTO.FacilityListItem> items = facilities.stream()
+                .map(facility -> toFacilityListItem(
+                        facility,
+                        reviewCounts.getOrDefault(facility.getFacilityId(), 0L)
+                ))
+                .toList();
+
+        return new FacilityResponseDTO.FacilityListResult(items, total);
+    }
+
+    private static FacilityResponseDTO.FacilityListItem toFacilityListItem(
+            Facility facility,
+            long reviewCount
+    ) {
+        List<Requirement> requirements = facility.getCheckLists().stream()
+                .map(CheckList::getType)
+                .toList();
+
+        return new FacilityResponseDTO.FacilityListItem(
+                facility.getFacilityId(),
+                facility.getName(),
+                facility.getCategory(),
+                facility.getAddress(),
+                facility.getSido(),
+                facility.getSigungu(),
+                facility.getPetAllowed(),
+                facility.getMaxWeight(),
+                facility.getMaxWeightInclusive(),
+                requirements,
+                toDisplayScore(facility.getPetScore()),
+                PetFriendlyGrade.labelOf(facility.getPetScore(), reviewCount),
+                reviewCount
+        );
+    }
+
+    /**
      * 발자국 랭킹 목록을 만든다.
      *
      * <p>{@code rank}는 페이지를 가로질러 이어져야 하므로 현재 페이지 위치에서 시작한다.

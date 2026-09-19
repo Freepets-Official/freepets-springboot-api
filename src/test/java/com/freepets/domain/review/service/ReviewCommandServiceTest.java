@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -204,8 +205,9 @@ class ReviewCommandServiceTest {
         assertThat(result.petIds()).containsExactlyInAnyOrder(1L, 2L);
         assertThat(result.ratingSpace()).isEqualTo(5);
         assertThat(result.tags()).containsExactlyInAnyOrder(Tag.SPACIOUS, Tag.WATER_BOWL);
-        // 신규 작성에만 경험치가 지급되는지(게이미피케이션 훅) — 태그된 반려동물 각자에게도 지급.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq(List.of(pet1, pet2)));
+        // 시설+반려동물 조합 둘 다 처음이라 각각 따로 지급된다(componentSignature="시설ID:반려동물ID").
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:1"), eq(List.of(pet1)));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"), eq(List.of(pet2)));
     }
 
     @Test
@@ -365,8 +367,50 @@ class ReviewCommandServiceTest {
         assertThat(existingReview.getTags()).hasSize(2);
         // 요청에 visitedAt을 안 보내면 기존 방문일을 그대로 유지해야 한다.
         assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
-        // 수정은 경험치를 지급하지 않는다(게이미피케이션 결정).
-        verifyNoInteractions(gamificationService);
+        // newPet(2)은 이 시설(7)에서 처음 태그되는 조합이라 지급된다. oldPet(1)은 이번에
+        // 태그가 빠져서(replacePets로 교체됨) 아예 호출 대상이 아니다.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"), eq(List.of(newPet)));
+        verifyNoMoreInteractions(gamificationService);
+    }
+
+    @Test
+    void upsertReview_기존_반려동물을_유지한채_새_반려동물을_추가하면_둘_다_그랜트를_호출한다() {
+        // ReviewCommandService는 "새로 추가된 마리"를 스스로 구분하지 않는다 — 매번 현재 태그된
+        // 마리 전체를 대상으로 grantXp를 호출하고, 이미 이 시설+반려동물 조합으로 받은 적 있는지는
+        // GamificationService의 componentSignature 중복 판정에 전적으로 맡긴다. 그래서 oldPet이
+        // 계속 태그돼 있어도(재지급 여부는 GamificationService 책임) 호출 자체는 두 마리 다
+        // 나가야 한다.
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet oldPet = createPet(1L, user);
+        Pet newPet = createPet(2L, user);
+
+        Review existingReview = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .build();
+        existingReview.replacePets(List.of(oldPet));
+
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L, 2L));
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.of(existingReview));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(oldPet));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(newPet));
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        reviewCommandService.upsertReview(1L, 7L, request);
+
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:1"), eq(List.of(oldPet)));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"), eq(List.of(newPet)));
     }
 
     @Test
@@ -590,8 +634,10 @@ class ReviewCommandServiceTest {
         assertThat(result.ratingSpace()).isEqualTo(5);
         assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
         verify(facilityGradeCacheService).refresh(7L);
-        // 새 리뷰가 아니라 경험치는 지급되지 않는다.
-        verifyNoInteractions(gamificationService);
+        // newPet(2)은 이 시설(7)에서 처음 태그되는 조합이라 PUT 수정으로도 지급된다.
+        // oldPet(1)은 이번에 태그가 빠져서 호출 대상이 아니다.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"), eq(List.of(newPet)));
+        verifyNoMoreInteractions(gamificationService);
     }
 
     @Test

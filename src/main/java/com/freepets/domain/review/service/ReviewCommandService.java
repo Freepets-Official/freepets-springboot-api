@@ -21,6 +21,7 @@ import com.freepets.domain.review.converter.ReviewConverter;
 import com.freepets.domain.review.dto.ReviewRequestDTO;
 import com.freepets.domain.review.dto.ReviewResponseDTO;
 import com.freepets.domain.review.entity.Review;
+import com.freepets.domain.review.entity.ReviewPet;
 import com.freepets.domain.review.entity.ReviewReport;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.Tag;
@@ -60,8 +61,9 @@ public class ReviewCommandService {
     private final GamificationService gamificationService;
     private final S3ImageService s3ImageService;
 
-    // 리뷰 신규 작성 1건당 지급하는 경험치(수정은 미지급). 사진 첨부 가산점은 기획 요청이 아직
-    // 없어 보류했다(사진 필드 자체는 있음).
+    // 리뷰 XP는 "리뷰 건수"가 아니라 "이 유저가 이 시설에 이 반려동물로 리뷰를 남긴 적이
+    // 있는지"(시설+반려동물 조합) 단위로 지급한다 — grantReviewXpForNewlyCoveredPets 참고.
+    // 사진 첨부 가산점은 기획 요청이 아직 없어 보류했다(사진 필드 자체는 있음).
     private static final int REVIEW_XP = 20;
 
     // 리뷰가 바뀌면 시설의 친화도 점수·리뷰 수·발자국 등급을 다시 계산해둔다. 발자국 랭킹이
@@ -113,13 +115,17 @@ public class ReviewCommandService {
             throw exception;
         }
 
+        // review_pets는 IDENTITY 전략이라 이 시점엔 flush가 아직 안 됐으면 새로 추가된 행의 id가
+        // 비어있을 수 있다(update 경로는 save()가 이미 관리 중인 엔티티라 즉시 insert를 강제하지
+        // 않는다) — grantReviewXpForNewlyCoveredPets가 review_pet_id를 sourceId로 써야 해서
+        // 먼저 flush로 id를 확정한다.
+        reviewRepository.flush();
+
         facilityGradeCacheService.refresh(facilityId);
 
         deleteReplacedPhotoIfPresent(photo, previousPhotoUrl);
 
-        if (isNewReview) {
-            gamificationService.grantXp(userId, XpSourceType.REVIEW, savedReview.getReviewId(), REVIEW_XP, pets);
-        }
+        grantReviewXpForNewlyCoveredPets(userId, facilityId, savedReview);
 
         return ReviewConverter.toUpsertResult(savedReview);
     }
@@ -165,7 +171,11 @@ public class ReviewCommandService {
      * (facilityId 기준 upsertReview는 시설 컨텍스트가 있어야 호출 가능해 이 화면과는 안 맞는다).
      * reviewId 하나로 바로 수정한다 — upsertReview와 같은 applyRequestToReview를 reviewId
      * 기준 조회·소유권 검증으로만 감싼 것이다. 방문일은 update()가 안 받아서(엔티티 참고)
-     * 여기서도 그대로 유지된다. 새 리뷰가 아니라 경험치는 지급하지 않는다.
+     * 여기서도 그대로 유지된다.
+     *
+     * <p>이 수정으로 아직 이 시설에서 XP를 못 받은 반려동물이 새로 태그되면 그만큼 지급된다
+     * (grantReviewXpForNewlyCoveredPets 참고) — "새 리뷰"가 아니라는 이유로 더는 전부 스킵하지
+     * 않는다.
      */
     public ReviewResponseDTO.UpsertResult updateReview(
             Long userId,
@@ -184,11 +194,47 @@ public class ReviewCommandService {
 
         applyRequestToReview(review, request, pets, tags, photoUrl);
 
+        reviewRepository.flush();
+
         facilityGradeCacheService.refresh(review.getFacility().getFacilityId());
 
         deleteReplacedPhotoIfPresent(photo, previousPhotoUrl);
 
+        grantReviewXpForNewlyCoveredPets(userId, review.getFacility().getFacilityId(), review);
+
         return ReviewConverter.toUpsertResult(review);
+    }
+
+    /**
+     * 리뷰 XP를 "새 리뷰인지"가 아니라 "이 유저가 이 시설에 이 반려동물로 XP를 받은 적이
+     * 있는지"(시설+반려동물 조합) 단위로 지급한다. 리뷰 하나에 여러 마리가 태그되면 그중
+     * 아직 못 받은 마리마다 각각 REVIEW_XP를 지급한다(다 받은 마리는 몇 번을 다시 태그해도
+     * 또 지급되지 않는다) — 코스 공개가 스톱 구성 단위로 평생 1회를 판정하는 것과 같은
+     * componentSignature 메커니즘을 그대로 쓴다.
+     *
+     * <p>sourceId는 reviewId를 재사용하지 않는다 — 같은 reviewId로 두 번째 호출하면(리뷰를
+     * 수정해서 새 반려동물을 추가) GamificationService가 "이 sourceId로 이미 지급했다"고 보고
+     * 새로 추가된 반려동물분까지 막아버린다. review_pet 행은 replacePets가 매번 새로 만들어서
+     * (기존 반려동물이 그대로 남아있어도 행 자체는 새로 생김) reviewPetId가 항상 새 값이라
+     * sourceId로 재사용될 일이 없다 — 실제 중복 방지는 componentSignature(시설+반려동물)가
+     * 전담한다.
+     */
+    private void grantReviewXpForNewlyCoveredPets(
+            Long userId,
+            Long facilityId,
+            Review review
+    ) {
+        for (ReviewPet reviewPet : review.getReviewPets()) {
+            String componentSignature = facilityId + ":" + reviewPet.getPet().getPetId();
+            gamificationService.grantXp(
+                    userId,
+                    XpSourceType.REVIEW,
+                    reviewPet.getReviewPetId(),
+                    REVIEW_XP,
+                    componentSignature,
+                    List.of(reviewPet.getPet())
+            );
+        }
     }
 
     // 새 사진이 오면 업로드해서 새 URL을, 안 오면(수정 시 기존 사진 유지) 이전 URL을 그대로

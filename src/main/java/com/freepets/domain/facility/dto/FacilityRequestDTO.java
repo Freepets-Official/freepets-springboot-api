@@ -166,5 +166,15 @@ public class FacilityRequestDTO {
         @Min(value = 1, message = "페이지 크기는 1 이상이어야 합니다.")
         @Max(value = 100, message = "페이지 크기는 100 이하여야 합니다.")
         private int size = 15;
+
+        /**
+         * 빈 문자열로 온 시군구 코드를 "안 보냈다"와 같게 다룬다.
+         *
+         * <p>쿼리 스트링은 {@code ?sigunguCode=}처럼 값 없이 올 수 있는데, 그걸 그대로 조건에 실으면
+         * 코드가 빈 문자열인 시설을 찾게 된다. 판단을 DTO가 들고 있어야 쓰는 쪽마다 어긋나지 않는다.
+         */
+        public String sigunguCodeOrNull() {
+            return sigunguCode == null || sigunguCode.isBlank() ? null : sigunguCode;
+        }
     }
 }

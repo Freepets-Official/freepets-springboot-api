@@ -69,13 +69,14 @@ class FacilityListQueryServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 조립기는 목이 아니라 진짜를 쓴다. 트랜잭션 경계 때문에 클래스만 나뉘었을 뿐 한 흐름이라,
+        // 목으로 막으면 합치기·정렬·페이징이 통째로 검증에서 빠진다.
         facilityListQueryService = new FacilityListQueryService(
                 tourApiClient,
                 tourApiResponseParser,
                 facilityCategoryMapper,
-                facilityRepository,
-                reviewRepository,
-                regionRepository
+                regionRepository,
+                new FacilityListAssembler(facilityRepository, reviewRepository, facilityCategoryMapper)
         );
     }
 

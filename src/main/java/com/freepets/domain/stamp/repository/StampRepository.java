@@ -21,7 +21,7 @@ public interface StampRepository extends JpaRepository<Stamp, Long> {
 
     long countByUser_Id(Long userId);
 
-    long countByUser_IdAndVerifiedOnSiteTrue(Long userId);
+    long countByUser_IdAndIsVerifiedOnSiteTrue(Long userId);
 
     long countByUser_IdAndStampedAtGreaterThanEqual(
             Long userId,

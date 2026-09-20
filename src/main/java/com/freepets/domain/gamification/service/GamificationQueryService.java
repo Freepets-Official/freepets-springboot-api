@@ -16,6 +16,7 @@ import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.repository.UserBadgeRepository;
 import com.freepets.domain.gamification.repository.XpEventRepository;
 import com.freepets.domain.review.service.ReviewQueryService;
+import com.freepets.domain.stamp.service.StampQueryService;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -40,6 +41,11 @@ public class GamificationQueryService {
     // 서로 직접 건드리는 걸 막는다.
     private final ReviewQueryService reviewQueryService;
 
+    // STAMP·REGION 패밀리(도장 수·distinct 지역 수)도 같은 이유로 stamp 도메인의 조회 서비스를
+    // 통해서만 가져온다 — GET /me/stamps의 summary.total/summary.regionCount와 계산이 갈리면
+    // 도장첩 요약과 배지 진행도가 서로 다른 숫자를 보여주게 된다.
+    private final StampQueryService stampQueryService;
+
     public GamificationResponseDTO.MyStatus getMyStatus(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
@@ -61,13 +67,29 @@ public class GamificationQueryService {
 
         Map<BadgeFamily, Long> counts = new EnumMap<>(BadgeFamily.class);
         for (BadgeFamily family : BadgeFamily.values()) {
-            XpSourceType sourceType = family.getRelatedSourceType();
-            long count = sourceType != null
-                    ? xpEventCounts.getOrDefault(sourceType, 0L)
-                    : reviewQueryService.getTotalHelpfulReceived(userId);
-            counts.put(family, count);
+            counts.put(family, countOf(family, userId, xpEventCounts));
         }
         return counts;
+    }
+
+    // relatedSourceType이 있는 패밀리는 XpEvent 그룹 카운트를 그대로 쓰고, null인 패밀리는
+    // 각자 값을 소유한 도메인의 조회 서비스로 분기한다(HELPFUL→리뷰, STAMP·REGION→stamp).
+    private long countOf(
+            BadgeFamily family,
+            Long userId,
+            Map<XpSourceType, Long> xpEventCounts
+    ) {
+        XpSourceType sourceType = family.getRelatedSourceType();
+        if (sourceType != null) {
+            return xpEventCounts.getOrDefault(sourceType, 0L);
+        }
+
+        return switch (family) {
+            case HELPFUL -> reviewQueryService.getTotalHelpfulReceived(userId);
+            case STAMP -> stampQueryService.getTotalStampCount(userId);
+            case REGION -> stampQueryService.getDistinctRegionCount(userId);
+            default -> 0L;
+        };
     }
 
     // GET /api/v1/me/gamification/quests — 오늘(KST) 기준 6개 퀘스트 진행률. target은

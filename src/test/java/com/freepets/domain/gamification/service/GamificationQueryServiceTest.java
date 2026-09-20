@@ -24,6 +24,7 @@ import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.repository.UserBadgeRepository;
 import com.freepets.domain.gamification.repository.XpEventRepository;
 import com.freepets.domain.review.service.ReviewQueryService;
+import com.freepets.domain.stamp.service.StampQueryService;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
@@ -45,11 +46,14 @@ class GamificationQueryServiceTest {
     @Mock
     private ReviewQueryService reviewQueryService;
 
+    @Mock
+    private StampQueryService stampQueryService;
+
     private GamificationQueryService gamificationQueryService;
 
     private void setUpService() {
         gamificationQueryService = new GamificationQueryService(
-                userRepository, userBadgeRepository, xpEventRepository, reviewQueryService
+                userRepository, userBadgeRepository, xpEventRepository, reviewQueryService, stampQueryService
         );
     }
 

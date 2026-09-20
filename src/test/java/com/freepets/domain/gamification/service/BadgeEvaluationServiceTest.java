@@ -190,6 +190,51 @@ class BadgeEvaluationServiceTest {
         verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.HELPFUL_DIAMOND));
     }
 
+    @Test
+    void 도장_10개를_모으면_해당하는_단계까지_전부_부여된다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_BRONZE)).thenReturn(true);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_SILVER)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_GOLD)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_RUBY)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_CRYSTAL)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_DIAMOND)).thenReturn(false);
+
+        badgeEvaluationService.evaluateStampBadge(user, 10L);
+
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.STAMP_BRONZE));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.STAMP_SILVER));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.STAMP_GOLD));
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.STAMP_RUBY));
+    }
+
+    @Test
+    void 정복자는_1_5_15_30_기준으로_평가되고_크리스탈_다이아는_없다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(eq(1L), any())).thenReturn(false);
+
+        // 시/군/구 15곳을 찍어 동(1)·은(5)·금(15) 단계까지만 기준을 넘고, 루비(30)는 아직이다.
+        badgeEvaluationService.evaluateRegionBadge(user, 15L);
+
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REGION_BRONZE));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REGION_SILVER));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REGION_GOLD));
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.REGION_RUBY));
+    }
+
+    @Test
+    void 정복자_30곳을_채우면_루비까지_부여된다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(eq(1L), any())).thenReturn(false);
+
+        badgeEvaluationService.evaluateRegionBadge(user, 30L);
+
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REGION_RUBY));
+    }
+
     private UserBadge argThatBadgeIs(Badge badge) {
         return org.mockito.ArgumentMatchers.argThat(userBadge -> userBadge != null && userBadge.getBadge() == badge);
     }

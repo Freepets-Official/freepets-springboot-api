@@ -264,6 +264,28 @@ public class GamificationService {
     }
 
     /**
+     * 여권 도장(STAMP) 배지 평가 — stamp 도메인(StampCommandService)이 도장을 저장한 뒤 부른다.
+     * evaluateHelpfulSaviorBadge와 같은 이유로 XP 지급이나 하루 상한이 없다.
+     */
+    public void evaluateStampBadge(
+            User user,
+            long totalStamps
+    ) {
+        badgeEvaluationService.evaluateStampBadge(user, totalStamps);
+    }
+
+    /**
+     * 정복자(REGION) 배지 평가 — stamp 도메인이 이번 도장으로 늘어난 distinct 지역 수를 계산해
+     * 넘긴다.
+     */
+    public void evaluateRegionBadge(
+            User user,
+            long distinctRegionCount
+    ) {
+        badgeEvaluationService.evaluateRegionBadge(user, distinctRegionCount);
+    }
+
+    /**
      * PATCH /api/v1/me/gamification/notification — 레벨업(및 배지) 알림 on/off. 다른 도메인
      * 처럼 "본인 것만" 걱정할 필요가 없다 — 대상이 항상 인증된 본인(userId)뿐이라 소유권 검증이
      * 따로 필요 없다.

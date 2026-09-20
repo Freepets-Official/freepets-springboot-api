@@ -136,16 +136,15 @@ class FacilityControllerTest {
     }
 
     @Test
-    @DisplayName("전체 목록 조회에 시도 코드가 없으면 400을 반환한다")
-    void 전체_목록_조회에_시도_코드가_없으면_400을_반환한다() throws Exception {
-        mockMvc.perform(get(LIST_PATH)
-                        .param("sigunguCode", "480"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.isSuccess").value(false))
-                .andExpect(jsonPath("$.code").value("COMMON400"))
-                .andExpect(jsonPath("$.result.sidoCode").exists());
+    @DisplayName("전체 목록 조회는 지역 없이도 200이다 — 전국 조회")
+    void 전체_목록_조회는_지역_없이도_200이다() throws Exception {
+        when(facilityListQueryService.getFacilityList(any()))
+                .thenReturn(new FacilityResponseDTO.FacilityListResult(List.of(), 48786L));
 
-        verifyNoInteractions(facilityListQueryService);
+        mockMvc.perform(get(LIST_PATH))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.total").value(48786));
     }
 
     @Test

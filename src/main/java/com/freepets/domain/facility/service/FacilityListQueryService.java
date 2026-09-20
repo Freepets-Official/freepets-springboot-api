@@ -78,6 +78,13 @@ public class FacilityListQueryService {
     public FacilityResponseDTO.FacilityListResult getFacilityList(FacilityRequestDTO.FacilityListRequest request) {
         validateRegion(request);
 
+        if (request.isNationwide()) {
+            // 전국은 관광공사에서 한 번에 받을 수 없다. 조건에 맞는 전량이 5만 건(30MB)이라
+            // 요청마다 받아 파싱하는 건 불가능하고, 나눠 받으면 동반 가능 필터를 건 뒤 페이지마다
+            // 남는 건수가 들쭉날쭉해진다. 적재해둔 데이터로 답한다.
+            return facilityListAssembler.assembleFromDatabase(request);
+        }
+
         List<AreaBasedItem> fetched;
         try {
             fetched = fetchFromTourApi(request);
@@ -104,6 +111,18 @@ public class FacilityListQueryService {
      */
     private void validateRegion(FacilityRequestDTO.FacilityListRequest request) {
         String sigunguCode = request.sigunguCodeOrNull();
+
+        if (request.isNationwide()) {
+            // 시도 없이 시군구만 온 경우다. 시군구 코드는 시도 안에서만 유일해서 단독으로는
+            // 가리키는 지역이 정해지지 않는다. 조용히 전국을 내려주면 필터가 먹은 줄 알게 된다.
+            if (sigunguCode != null) {
+                throw new GeneralException(
+                        ErrorStatus.COMMON400,
+                        Map.of("sidoCode", "시군구 코드는 시도 코드와 함께 보내야 합니다.")
+                );
+            }
+            return;
+        }
 
         if (sigunguCode == null && regionRepository.existsBySidoCodeAndSigunguCodeIsNotNull(request.getSidoCode())) {
             throw new GeneralException(

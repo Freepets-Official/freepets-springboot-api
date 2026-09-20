@@ -99,6 +99,60 @@ class FacilityListQueryServiceTest {
         verifyNoInteractions(tourApiClient);
     }
 
+    // ------------------------------------------------------------------
+    // 전국 조회
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("지역을 생략하면 관광공사를 부르지 않고 DB로 내려준다")
+    void 지역을_생략하면_DB로_내려준다() {
+        FacilityRequestDTO.FacilityListRequest request = createRequest(null, null);
+
+        when(facilityRepository.searchAll(isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
+                .thenReturn(List.of(facility(1L, "100", "가게", PetAllowed.ALLOWED)));
+        when(facilityRepository.countAll(isNull(), isNull(), isNull(), isNull())).thenReturn(48786L);
+        when(reviewRepository.countByFacilityIds(List.of(1L))).thenReturn(List.of());
+
+        FacilityResponseDTO.FacilityListResult result = facilityListQueryService.getFacilityList(request);
+
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.total()).isEqualTo(48786);
+        // 전국은 한 응답으로 받을 수 없어 관광공사를 아예 부르지 않는다.
+        verifyNoInteractions(tourApiClient);
+    }
+
+    @Test
+    @DisplayName("전국 조회에도 분류·동반 가능 필터는 그대로 걸린다")
+    void 전국_조회에도_필터는_그대로_걸린다() {
+        FacilityRequestDTO.FacilityListRequest request = createRequest(null, null);
+        request.setCategory(FacilityCategory.CAFE);
+        request.setPetAllowed(PetAllowed.ALLOWED);
+
+        when(facilityRepository.searchAll(eq(FacilityCategory.CAFE), eq(PetAllowed.ALLOWED),
+                isNull(), isNull(), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(facilityRepository.countAll(eq(FacilityCategory.CAFE), eq(PetAllowed.ALLOWED),
+                isNull(), isNull())).thenReturn(0L);
+
+        FacilityResponseDTO.FacilityListResult result = facilityListQueryService.getFacilityList(request);
+
+        assertThat(result.items()).isEmpty();
+        assertThat(result.total()).isZero();
+    }
+
+    @Test
+    @DisplayName("시도 없이 시군구만 보내면 400이다")
+    void 시도_없이_시군구만_보내면_400이다() {
+        FacilityRequestDTO.FacilityListRequest request = createRequest(null, SIGUNGU_CODE_PAJU);
+
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> facilityListQueryService.getFacilityList(request));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON400);
+        verifyNoInteractions(tourApiClient);
+        verifyNoInteractions(regionRepository);
+    }
+
     @Test
     @DisplayName("하위 시군구 행이 없는 시도는 시군구 없이 조회된다")
     void 하위_시군구_행이_없는_시도는_시군구_없이_조회된다() {

@@ -137,19 +137,21 @@ public class FacilityRequestDTO {
      * <p>랭킹 조건에서 좌표와 반경을 뺀 형태다. 거리순이 아니라 이름순으로 내려가므로 좌표가
      * 필요 없고, 좌표를 안 받으니 개인위치정보가 쿼리 스트링에 실릴 일도 없다.
      *
-     * <p>지역을 필수로 받는 이유는 관광공사에서 조건에 맞는 전량을 한 번에 받아오기 때문이다.
-     * 시군구까지 좁히면 최대 700여 건이지만 시도만 지정하면 9천 건이 넘고, 전국은 5만 건에 가깝다.
-     *
-     * <p>하위 시군구 행이 없는 시도만 {@code sigunguCode}를 비울 수 있다. 그 판단은 지역 테이블을
-     * 봐야 해서 {@code FacilityListQueryService}가 한다. 세종특별자치시는 시군구 코드가 시도와 같은
+     * <p>지역을 지정하면 관광공사에서 조건에 맞는 전량을 한 번에 받아온다. 시군구까지 좁히면 최대
+     * 700여 건이지만 시도만 지정하면 9천 건이 넘어, 지역을 지정할 때는 시군구까지 받는다. 하위
+     * 시군구 행이 없는 시도만 {@code sigunguCode}를 비울 수 있고, 그 판단은 지역 테이블을 봐야 해서
+     * {@code FacilityListQueryService}가 한다. 세종특별자치시는 시군구 코드가 시도와 같은
      * {@code 36110}으로 내려오므로 그대로 채워 보내면 된다.
+     *
+     * <p>{@code sidoCode}를 비우면 전국이다. 전국은 5만 건에 가까워 관광공사에서 한 번에 받을 수
+     * 없으므로 적재해둔 DB에서 내려간다. 시도 없이 시군구만 보내는 것은 실수이므로 400으로 막는다.
      */
     @Getter
     @Setter
     @NoArgsConstructor
     public static class FacilityListRequest {
 
-        @NotBlank(message = "시도 코드는 필수입니다.")
+        /** 시도 코드. 비우면 전국이며, 이때는 관광공사가 아니라 적재해둔 DB에서 내려간다. */
         @Size(max = 10, message = "시도 코드는 10자 이하여야 합니다.")
         private String sidoCode;
 
@@ -175,6 +177,16 @@ public class FacilityRequestDTO {
          */
         public String sigunguCodeOrNull() {
             return sigunguCode == null || sigunguCode.isBlank() ? null : sigunguCode;
+        }
+
+        /** 시도 코드도 같은 규칙으로 다룬다. {@link #sigunguCodeOrNull()} 참고. */
+        public String sidoCodeOrNull() {
+            return sidoCode == null || sidoCode.isBlank() ? null : sidoCode;
+        }
+
+        /** 지역을 지정하지 않은 전국 조회인지. 관광공사를 부를지 DB를 읽을지가 여기서 갈린다. */
+        public boolean isNationwide() {
+            return sidoCodeOrNull() == null;
         }
     }
 }

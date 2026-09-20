@@ -84,14 +84,14 @@ public class FacilityListAssembler {
         List<Facility> found = facilityRepository.searchAll(
                 request.getCategory(),
                 request.getPetAllowed(),
-                request.getSidoCode(),
+                request.sidoCodeOrNull(),
                 sigunguCode,
                 pageable
         );
         long total = facilityRepository.countAll(
                 request.getCategory(),
                 request.getPetAllowed(),
-                request.getSidoCode(),
+                request.sidoCodeOrNull(),
                 sigunguCode
         );
 
@@ -147,7 +147,7 @@ public class FacilityListAssembler {
         return facilityRepository.findAllWithoutContentId(
                 request.getCategory(),
                 request.getPetAllowed(),
-                request.getSidoCode(),
+                request.sidoCodeOrNull(),
                 request.sigunguCodeOrNull()
         );
     }

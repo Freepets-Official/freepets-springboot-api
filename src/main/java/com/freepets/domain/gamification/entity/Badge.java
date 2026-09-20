@@ -3,21 +3,27 @@ package com.freepets.domain.gamification.entity;
 /**
  * 행동 기반 배지 카탈로그. 레벨 배지({@link LevelTier})와 별개로, 특정 행동을 달성하면 준다.
  *
- * <p>도메인마다 동일한 6단계(1·5·10·50·100·500회)로 나뉘고, 단계 이름도 동/은/금/루비/크리스탈/
- * 다이아로 모든 도메인에서 통일한다 — 도메인별로 다른 개수·다른 이름을 쓰던 이전 방식 대신, 어느
+ * <p>대부분의 도메인은 동일한 6단계(1·5·10·50·100·500회)로 나뉘고, 단계 이름도 동/은/금/루비/
+ * 크리스탈/다이아로 통일한다 — 도메인별로 다른 개수·다른 이름을 쓰던 이전 방식 대신, 어느
  * 도메인이든 "동=1회, 다이아=500회"라는 것만 기억하면 되게 한다. {@code relatedSourceType}(=
  * {@link #getFamily()}{@code .getRelatedSourceType()})은
  * {@link com.freepets.domain.gamification.service.BadgeEvaluationService#evaluateAfterXpEvent}가
  * "이 타입의 XpEvent가 막 하나 생겼을 때만 이 배지를 재평가하면 된다"는 걸 판단하는 용도고,
- * {@code threshold}(={@link #getTier()}{@code .getThreshold()})는 그 타입의 누적 달성 횟수가
- * 몇 번째에 달성되는지다. 둘 다 상수마다 따로 저장하지 않는다 — 같은 패밀리·같은 단계면 항상
- * 같은 값이라, {@code family}/{@code tier} 필드 하나로만 정해지게 해서 42개 상수 사이에 값이
- * 어긋날 여지를 없앤다.
+ * {@code threshold}(=기본은 {@link #getTier()}{@code .getThreshold()}, {@code REGION}처럼 예외가
+ * 있으면 {@code thresholdOverride})는 그 타입의 누적 달성 횟수가 몇 번째에 달성되는지다. 상수마다
+ * 따로 저장하지 않는다 — 같은 패밀리·같은 단계면 항상 같은 값이라, {@code family}/{@code tier}
+ * 필드로만 정해지게 해서 상수 사이에 값이 어긋날 여지를 없앤다.
  *
- * <p>{@code HELPFUL_*}처럼 패밀리의 {@code relatedSourceType}이 {@code null}인 배지는 이
- * XpEvent 기반 평가 대상이 아니다 — 본인 행동이 아니라 남이 눌러주는 게 트리거라 별도 평가
- * 경로({@link com.freepets.domain.gamification.service.BadgeEvaluationService#evaluateHelpfulSaviorBadge})를
- * 탄다.
+ * <p>{@code REGION}(정복자)은 예외다 — 시/군/구는 시설보다 훨씬 느리게 늘어 공통 6단계 기준을
+ * 그대로 쓰면 다이아(500곳)가 불가능하므로, {@code thresholdOverride}로 1/5/15/30 4단계만 쓴다
+ * (CRYSTAL·DIAMOND 상수 자체가 없다).
+ *
+ * <p>{@code HELPFUL_*}·{@code STAMP_*}·{@code REGION_*}처럼 패밀리의 {@code relatedSourceType}이
+ * {@code null}인 배지는 XpEvent 기반 평가 대상이 아니다 — 본인의 판별·리뷰 같은 행동이 아니라
+ * 남의 반응(도움됐어요)이거나 다른 도메인(stamp)의 누적치가 트리거라, 각자 별도 평가 경로
+ * ({@link com.freepets.domain.gamification.service.BadgeEvaluationService#evaluateHelpfulSaviorBadge},
+ * {@link com.freepets.domain.gamification.service.BadgeEvaluationService#evaluateStampBadge},
+ * {@link com.freepets.domain.gamification.service.BadgeEvaluationService#evaluateRegionBadge})를 탄다.
  */
 public enum Badge {
 
@@ -77,12 +83,33 @@ public enum Badge {
     HELPFUL_GOLD("구원자 금", "내 리뷰가 다른 집사들에게 도움됐어요를 총 10번 받았어요", BadgeFamily.HELPFUL, BadgeTier.GOLD),
     HELPFUL_RUBY("구원자 루비", "내 리뷰가 다른 집사들에게 도움됐어요를 총 50번 받았어요", BadgeFamily.HELPFUL, BadgeTier.RUBY),
     HELPFUL_CRYSTAL("구원자 크리스탈", "내 리뷰가 다른 집사들에게 도움됐어요를 총 100번 받았어요", BadgeFamily.HELPFUL, BadgeTier.CRYSTAL),
-    HELPFUL_DIAMOND("구원자 다이아", "내 리뷰가 다른 집사들에게 도움됐어요를 총 500번 받았어요", BadgeFamily.HELPFUL, BadgeTier.DIAMOND);
+    HELPFUL_DIAMOND("구원자 다이아", "내 리뷰가 다른 집사들에게 도움됐어요를 총 500번 받았어요", BadgeFamily.HELPFUL, BadgeTier.DIAMOND),
+
+    // 여권 도장(STAMP) — 다른 도메인과 같은 6단계(1/5/10/50/100/500)를 그대로 쓴다
+    // (freepets-docs docs/14-도장-서버-저장.md 3절 "다른 도메인과 같은 1/5/10/50/100/500").
+    STAMP_BRONZE("도장 동", "여권 도장을 1개 모았어요", BadgeFamily.STAMP, BadgeTier.BRONZE),
+    STAMP_SILVER("도장 은", "여권 도장을 5개 모았어요", BadgeFamily.STAMP, BadgeTier.SILVER),
+    STAMP_GOLD("도장 금", "여권 도장을 10개 모았어요", BadgeFamily.STAMP, BadgeTier.GOLD),
+    STAMP_RUBY("도장 루비", "여권 도장을 50개 모았어요", BadgeFamily.STAMP, BadgeTier.RUBY),
+    STAMP_CRYSTAL("도장 크리스탈", "여권 도장을 100개 모았어요", BadgeFamily.STAMP, BadgeTier.CRYSTAL),
+    STAMP_DIAMOND("도장 다이아", "여권 도장을 500개 모았어요", BadgeFamily.STAMP, BadgeTier.DIAMOND),
+
+    // 정복자(REGION) — 서로 다른 시/군/구 수가 기준. 지역은 시설보다 훨씬 느리게 늘어 다른
+    // 도메인과 같은 문턱(1/5/10/50/100/500)을 쓰면 다이아(500곳)가 사실상 불가능하다 —
+    // 문서가 명시한 1/5/15/30 4단계만 쓰고 CRYSTAL·DIAMOND는 만들지 않는다.
+    REGION_BRONZE("정복자 동", "도장을 찍은 시/군/구가 1곳이에요", BadgeFamily.REGION, BadgeTier.BRONZE, 1),
+    REGION_SILVER("정복자 은", "도장을 찍은 시/군/구가 5곳이에요", BadgeFamily.REGION, BadgeTier.SILVER, 5),
+    REGION_GOLD("정복자 금", "도장을 찍은 시/군/구가 15곳이에요", BadgeFamily.REGION, BadgeTier.GOLD, 15),
+    REGION_RUBY("정복자 루비", "도장을 찍은 시/군/구가 30곳이에요", BadgeFamily.REGION, BadgeTier.RUBY, 30);
 
     private final String label;
     private final String description;
     private final BadgeFamily family;
     private final BadgeTier tier;
+
+    /** null이면 {@link #getThreshold()}가 {@code tier.getThreshold()}를 쓴다. REGION처럼 공통
+     *  6단계 기준을 그대로 못 쓰는 패밀리만 이 값을 채운다. */
+    private final Integer thresholdOverride;
 
     Badge(
             String label,
@@ -90,10 +117,21 @@ public enum Badge {
             BadgeFamily family,
             BadgeTier tier
     ) {
+        this(label, description, family, tier, null);
+    }
+
+    Badge(
+            String label,
+            String description,
+            BadgeFamily family,
+            BadgeTier tier,
+            Integer thresholdOverride
+    ) {
         this.label = label;
         this.description = description;
         this.family = family;
         this.tier = tier;
+        this.thresholdOverride = thresholdOverride;
     }
 
     public String getLabel() {
@@ -117,7 +155,7 @@ public enum Badge {
     }
 
     public int getThreshold() {
-        return tier.getThreshold();
+        return thresholdOverride != null ? thresholdOverride : tier.getThreshold();
     }
 
 }

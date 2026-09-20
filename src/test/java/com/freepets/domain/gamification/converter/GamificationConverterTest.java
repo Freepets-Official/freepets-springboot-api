@@ -79,7 +79,7 @@ class GamificationConverterTest {
     }
 
     @Test
-    void 진행도는_패밀리마다_하나씩_7개가_담긴다() {
+    void 진행도는_패밀리마다_하나씩_담긴다() {
         User user = user(0, 1);
 
         GamificationResponseDTO.MyStatus status = GamificationConverter.toMyStatus(user, List.of(), Map.of());
@@ -88,7 +88,7 @@ class GamificationConverterTest {
         assertThat(status.progress()).extracting(GamificationResponseDTO.BadgeProgress::family)
                 .containsExactlyInAnyOrder(
                         "PETCHECK", "REVIEW", "REPORT", "SATISFACTION",
-                        "COURSE_PUBLISHED", "COURSE_SHARED", "HELPFUL"
+                        "COURSE_PUBLISHED", "COURSE_SHARED", "HELPFUL", "STAMP", "REGION"
                 );
     }
 

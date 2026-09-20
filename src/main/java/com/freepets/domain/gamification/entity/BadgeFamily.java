@@ -19,7 +19,13 @@ public enum BadgeFamily {
     SATISFACTION("만족도", XpSourceType.SATISFACTION),
     COURSE_PUBLISHED("공개 코스", XpSourceType.COURSE_PUBLISHED),
     COURSE_SHARED("인기 코스", XpSourceType.COURSE_SHARED_COPY),
-    HELPFUL("구원자", null);
+    HELPFUL("구원자", null),
+
+    // 여권 도장·정복자 — HELPFUL과 같은 이유로 relatedSourceType이 없다(XpEvent가 안 생기는
+    // 행동). 누적치는 stamp 도메인(StampQueryService)이 소유한 개념이라
+    // GamificationQueryService.countByFamily가 family로 분기해 그 서비스를 호출한다.
+    STAMP("여권 도장", null),
+    REGION("정복자", null);
 
     private final String label;
     private final XpSourceType relatedSourceType;

@@ -41,7 +41,7 @@ public class StampQueryService {
         StampResponseDTO.Summary summary = new StampResponseDTO.Summary(
                 stamps.size(),
                 getDistinctRegionCount(userId),
-                stampRepository.countByUser_IdAndVerifiedOnSiteTrue(userId),
+                stampRepository.countByUser_IdAndIsVerifiedOnSiteTrue(userId),
                 stampRepository.countByUser_IdAndStampedAtGreaterThanEqual(userId, startOfMonthInBusinessZone())
         );
 

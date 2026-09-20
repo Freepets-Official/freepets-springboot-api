@@ -4,9 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.freepets.domain.gamification.entity.PawAnimal;
 import com.freepets.domain.gamification.entity.PawColor;
-import com.freepets.domain.gamification.entity.PawFinish;
 import com.freepets.domain.gamification.entity.XpSourceType;
 
 public class GamificationResponseDTO {
@@ -15,16 +13,16 @@ public class GamificationResponseDTO {
 
     // GET /api/v1/me/gamification 응답. xpToNextLevel은 최대 레벨(LevelCurve.MAX_LEVEL)에
     // 닿으면 더 이상 의미가 없어 null(키 생략) — tierBadgeImageUrl도 디자인 리소스가 오기 전까진
-    // 항상 null이라 같은 이유로 뺀다. tierAnimal·tierFinish·tierColor는 프론트가 발바닥 아이콘을
-    // 직접 그릴 수 있게 구조화된 값으로 내려주고, tierLabel은 그 조합을 바로 쓸 수 있는 문자열이다.
+    // 항상 null이라 같은 이유로 뺀다. tierColor·tierOpacityPercent·tierLabel은 앱이 레벨 숫자로
+    // 직접 계산해서 그리므로(반려동물 모양은 사용자가 고르는 값이라 서버가 모름) 앱이 실제로
+    // 쓰지는 않는다 — 참고용/과거 호환 필드다(freepets-docs PR #49, docs/13 2절).
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record MyStatus(
             int level,
             long totalXp,
             Long xpToNextLevel,
-            PawAnimal tierAnimal,
-            PawFinish tierFinish,
             PawColor tierColor,
+            int tierOpacityPercent,
             String tierLabel,
             String tierBadgeImageUrl,
             boolean levelUpNotificationEnabled,
@@ -120,21 +118,25 @@ public class GamificationResponseDTO {
             long participantCount,
             long xp,
             int level,
-            PawAnimal tierAnimal,
-            PawFinish tierFinish,
             PawColor tierColor,
+            int tierOpacityPercent,
             boolean ranked
     ) {}
 
+    /**
+     * @param petName      대표 반려동물(가장 먼저 등록한 1마리) 이름 — 없으면 {@code null}
+     * @param petPhotoUrl  대표 반려동물 사진 — 없으면 {@code null}(앱이 이름 첫 글자로 대신 그림)
+     */
     public record RankingItem(
             long rank,
             Long userId,
             String nickname,
             long xp,
             int level,
-            PawAnimal tierAnimal,
-            PawFinish tierFinish,
             PawColor tierColor,
+            int tierOpacityPercent,
+            String petName,
+            String petPhotoUrl,
             boolean isMe
     ) {}
 

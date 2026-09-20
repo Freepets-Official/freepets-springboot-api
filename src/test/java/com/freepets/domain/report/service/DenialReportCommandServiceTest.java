@@ -26,7 +26,6 @@ import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
-import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.report.dto.DenialReportResponseDTO;
 import com.freepets.domain.report.entity.DenialReason;
 import com.freepets.domain.report.entity.FacilityReport;
@@ -62,7 +61,6 @@ class DenialReportCommandServiceTest {
     void 정상_접수되면_실시간_거부_제보가_저장된다() {
         User user = user(1L);
         Facility facility = facility(7L);
-        Pet pet = pet(9L, user);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
@@ -75,7 +73,6 @@ class DenialReportCommandServiceTest {
         });
         when(facilityReportRepository.countByFacility_FacilityIdAndIsRealtimeTrueAndCreatedAtAfter(eq(7L), any()))
                 .thenReturn(1L);
-        when(gamificationService.allActivePetsOf(1L)).thenReturn(List.of(pet));
 
         DenialReportResponseDTO.Report result = denialReportCommandService.report(1L, 7L, DenialReason.WEIGHT);
 
@@ -88,8 +85,8 @@ class DenialReportCommandServiceTest {
         assertThat(result.status()).isEqualTo(ReportStatus.APPLIED);
         verify(denialReportNotificationService).notifyDenial(7L, 1L, DenialReason.WEIGHT, "테스트 시설");
         // 제출 즉시 경험치가 지급되는지(게이미피케이션 훅) — 승인 기능이 없어 제출 시점에 지급하기로
-        // 확인받았다. 거부 제보는 특정 반려동물과 연결되지 않아 이 유저의 반려동물 전체에게 나간다.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REPORT), eq(100L), eq(15), eq(List.of(pet)));
+        // 확인받았다.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REPORT), eq(100L), eq(15));
     }
 
     @Test
@@ -160,12 +157,4 @@ class DenialReportCommandServiceTest {
         return facility;
     }
 
-    private Pet pet(
-            Long petId,
-            User owner
-    ) {
-        Pet pet = Pet.builder().user(owner).build();
-        ReflectionTestUtils.setField(pet, "petId", petId);
-        return pet;
-    }
 }

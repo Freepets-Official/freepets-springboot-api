@@ -231,8 +231,7 @@ public class ReviewCommandService {
                     XpSourceType.REVIEW,
                     reviewPet.getReviewPetId(),
                     REVIEW_XP,
-                    componentSignature,
-                    List.of(reviewPet.getPet())
+                    componentSignature
             );
         }
     }

@@ -14,8 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.freepets.domain.gamification.entity.XpEvent;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.repository.XpEventRepository;
-import com.freepets.domain.pet.entity.Pet;
-import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -43,9 +41,7 @@ public class GamificationService {
     private static final ZoneId BUSINESS_ZONE = BusinessZone.ZONE;
 
     private final UserRepository userRepository;
-    private final PetRepository petRepository;
     private final XpEventRepository xpEventRepository;
-    private final PetXpEventWriter petXpEventWriter;
     private final GamificationNotificationService gamificationNotificationService;
     private final BadgeEvaluationService badgeEvaluationService;
 
@@ -55,7 +51,7 @@ public class GamificationService {
             Long sourceId,
             int amount
     ) {
-        grantXp(userId, sourceType, sourceId, () -> amount, null, List.of());
+        grantXp(userId, sourceType, sourceId, () -> amount, null);
     }
 
     /**
@@ -72,36 +68,7 @@ public class GamificationService {
             int amount,
             String componentSignature
     ) {
-        grantXp(userId, sourceType, sourceId, () -> amount, componentSignature, List.of());
-    }
-
-    /**
-     * 이 지급과 함께 반려동물에게도 개별 경험치를 나눠주고 싶은 호출부(판별·리뷰·제보·만족도)
-     * 전용 — componentSignature는 안 쓰는 호출부가 대부분이라 null로 고정한다.
-     */
-    public void grantXp(
-            Long userId,
-            XpSourceType sourceType,
-            Long sourceId,
-            int amount,
-            List<Pet> petsToCredit
-    ) {
-        grantXp(userId, sourceType, sourceId, () -> amount, null, petsToCredit);
-    }
-
-    /**
-     * componentSignature·반려동물 팬아웃이 둘 다 필요한 호출부(코스 공유 복사 등, 지급액이
-     * 미리 정해져 있는 경우) 전용.
-     */
-    public void grantXp(
-            Long userId,
-            XpSourceType sourceType,
-            Long sourceId,
-            int amount,
-            String componentSignature,
-            List<Pet> petsToCredit
-    ) {
-        grantXp(userId, sourceType, sourceId, () -> amount, componentSignature, petsToCredit);
+        grantXp(userId, sourceType, sourceId, () -> amount, componentSignature);
     }
 
     /**
@@ -119,8 +86,7 @@ public class GamificationService {
             XpSourceType sourceType,
             Long sourceId,
             IntSupplier amountSupplier,
-            String componentSignature,
-            List<Pet> petsToCredit
+            String componentSignature
     ) {
         // 유저 행을 잠그기 전에 값싼 사전 검사부터 한다 — 이미 상한/중복으로 막힐 호출
         // (예: 판별을 하루에 10번 넘게 반복하는 흔한 케이스)이 매번 User row를 잠글 필요는
@@ -188,66 +154,6 @@ public class GamificationService {
         }
 
         badgeEvaluationService.evaluateAfterXpEvent(user, sourceType);
-
-        if (!petsToCredit.isEmpty()) {
-            creditPets(
-                    petsToCredit,
-                    sourceType,
-                    sourceId,
-                    amount,
-                    componentSignature
-            );
-        }
-    }
-
-    /**
-     * 특정 반려동물과 연결되지 않는 행동(제보·코스 공개·코스 공유 복사 등)이 반려동물 개별
-     * 경험치를 이 유저의 반려동물 전체에게 나눠주고 싶을 때 쓰는 대상 목록 — 여러 호출부가
-     * 각자 PetRepository를 직접 물고 똑같은 조회를 반복하지 않도록 한 곳에 모아둔다. 삭제된
-     * 반려동물은 제외한다.
-     */
-    public List<Pet> allActivePetsOf(Long userId) {
-        return petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(userId);
-    }
-
-    /**
-     * petsToCredit 각각에게 같은 금액을 그대로(나누지 않고) 지급한다. 반려동물 한 마리가
-     * uk_pet_xp_events_pet_source(-_component_signature)에 걸려도 그 반려동물만 건너뛰고
-     * 나머지는 계속 지급한다 — 그룹 판별처럼 여러 마리가 한 번에 걸리는 호출에서 한 마리의
-     * 중복이 다른 마리의 정상 지급까지 막으면 안 된다. petXpEventWriter.save가 별도
-     * 세이브포인트(NESTED)로 저장해서, 한 마리의 실패가 Postgres 트랜잭션 전체를 abort시켜
-     * 나머지 반려동물이나 이 메서드를 호출한 User XP 커밋까지 막는 걸 방지한다(PetXpEventWriter
-     * 참고). 배지 재평가·레벨업 푸시는 반려동물 단위로는 아직 없다(카드 표시용 레벨·진행바만
-     * 필요한 범위라 의도적으로 뺐다).
-     */
-    private void creditPets(
-            List<Pet> petsToCredit,
-            XpSourceType sourceType,
-            Long sourceId,
-            int amount,
-            String componentSignature
-    ) {
-        for (Pet pet : petsToCredit) {
-            try {
-                petXpEventWriter.save(
-                        pet,
-                        sourceType,
-                        sourceId,
-                        amount,
-                        componentSignature
-                );
-            } catch (DataIntegrityViolationException e) {
-                log.warn(
-                        "이미 지급된 반려동물 경험치라 스킵합니다 — petId={}, sourceType={}, sourceId={}, componentSignature={}",
-                        pet.getPetId(), sourceType, sourceId, componentSignature
-                );
-                continue;
-            }
-
-            long newPetTotalXp = pet.getTotalXp() + amount;
-            int newPetLevel = LevelCurve.levelForTotalXp(newPetTotalXp);
-            pet.gainXp(newPetTotalXp, newPetLevel);
-        }
     }
 
     /**

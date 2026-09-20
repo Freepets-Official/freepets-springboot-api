@@ -20,6 +20,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.gamification.dto.GamificationResponseDTO;
+import com.freepets.domain.pet.entity.Pet;
+import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
@@ -32,10 +34,34 @@ class RankingQueryServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private PetRepository petRepository;
+
     private RankingQueryService rankingQueryService;
 
     private void setUpService() {
-        rankingQueryService = new RankingQueryService(userRepository);
+        rankingQueryService = new RankingQueryService(userRepository, petRepository);
+    }
+
+    private Pet pet(
+            Long petId,
+            Long userId,
+            String name,
+            String photoUrl
+    ) {
+        Pet pet = Pet.builder().build();
+        ReflectionTestUtils.setField(pet, "petId", petId);
+        ReflectionTestUtils.setField(pet, "name", name);
+        ReflectionTestUtils.setField(pet, "profile", photoUrl);
+        User owner = User.builder()
+                .email(userId + "@test.com")
+                .passwordHash("hash")
+                .nickname("owner" + userId)
+                .provider(Provider.LOCAL)
+                .build();
+        ReflectionTestUtils.setField(owner, "id", userId);
+        ReflectionTestUtils.setField(pet, "user", owner);
+        return pet;
     }
 
     private User user(
@@ -102,7 +128,29 @@ class RankingQueryServiceTest {
         assertThat(result.me()).isNull();
         assertThat(result.items()).hasSize(1);
         assertThat(result.items().get(0).isMe()).isFalse();
+        // 대표 반려동물이 없으면 petName/petPhotoUrl은 null이다.
+        assertThat(result.items().get(0).petName()).isNull();
+        assertThat(result.items().get(0).petPhotoUrl()).isNull();
         verify(userRepository, never()).findByIdAndDeletedAtIsNull(any());
+    }
+
+    @Test
+    void 가장_먼저_등록한_반려동물이_대표로_채워진다() {
+        setUpService();
+        when(userRepository.countByDeletedAtIsNull()).thenReturn(1L);
+        when(userRepository.findNationalRanking(anyInt(), anyLong()))
+                .thenReturn(List.of(row(1, 8L, "1등", 9800L, 15)));
+        // petId 오름차순으로 두 마리를 돌려주면, 서비스는 그중 첫 항목(가장 먼저 등록한 아이)만 써야 한다.
+        when(petRepository.findAllByUserIdInAndDeletedAtIsNullOrderByUserIdAscPetIdAsc(List.of(8L)))
+                .thenReturn(List.of(
+                        pet(101L, 8L, "보리", "https://example.com/bori.jpg"),
+                        pet(102L, 8L, "몽이", "https://example.com/mongi.jpg")
+                ));
+
+        GamificationResponseDTO.RankingResult result = rankingQueryService.getNationalRanking(null, 0, 20);
+
+        assertThat(result.items().get(0).petName()).isEqualTo("보리");
+        assertThat(result.items().get(0).petPhotoUrl()).isEqualTo("https://example.com/bori.jpg");
     }
 
     @Test

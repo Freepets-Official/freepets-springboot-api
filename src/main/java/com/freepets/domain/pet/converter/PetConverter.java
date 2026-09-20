@@ -5,7 +5,6 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
-import com.freepets.domain.gamification.service.LevelCurve;
 import com.freepets.domain.pet.dto.PetRequestDTO;
 import com.freepets.domain.pet.dto.PetResponseDTO;
 import com.freepets.domain.pet.entity.Pet;
@@ -60,11 +59,9 @@ public class PetConverter {
 
     public static PetResponseDTO.RegistrationCard toRegistrationCard(
             Pet pet,
+            PetResponseDTO.PawPrintStats pawPrints,
             List<PetResponseDTO.FavoriteFacility> favoriteFacilities
     ) {
-        Long xpToNextLevel = pet.getLevel() < LevelCurve.MAX_LEVEL
-                ? LevelCurve.xpToReachLevel(pet.getLevel() + 1) - pet.getTotalXp()
-                : null;
         Integer age = pet.getBirthDate() != null
                 ? (int) ChronoUnit.YEARS.between(pet.getBirthDate(), LocalDate.now(BUSINESS_ZONE))
                 : null;
@@ -77,9 +74,7 @@ public class PetConverter {
                 pet.getBirthDate(),
                 age,
                 pet.getCreatedAt(),
-                pet.getLevel(),
-                pet.getTotalXp(),
-                xpToNextLevel,
+                pawPrints,
                 favoriteFacilities
         );
     }

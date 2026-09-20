@@ -19,6 +19,7 @@ import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.ReviewTag;
 import com.freepets.domain.review.entity.Tag;
 import com.freepets.domain.review.repository.ReviewHelpfulRepository;
+import com.freepets.domain.review.repository.ReviewPetRepository;
 import com.freepets.domain.review.repository.ReviewReportRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -44,6 +45,7 @@ public class ReviewQueryService {
     private final ReviewRepository reviewRepository;
     private final ReviewReportRepository reviewReportRepository;
     private final ReviewHelpfulRepository reviewHelpfulRepository;
+    private final ReviewPetRepository reviewPetRepository;
 
     public ReviewResponseDTO.ReviewListResult getReviews(
             Long facilityId,
@@ -113,6 +115,11 @@ public class ReviewQueryService {
      */
     public long getTotalHelpfulReceived(Long userId) {
         return reviewRepository.sumHelpfulCountByUserId(userId);
+    }
+
+    // GET /pets/{petId}/stats의 reviewCount(참고용) — 이 반려동물이 낀(삭제 안 된) 리뷰 수.
+    public long countForPet(Long petId) {
+        return reviewPetRepository.countByPetPetIdAndReviewDeletedAtIsNull(petId);
     }
 
     // 등급 집계는 시설 전체 리뷰가 필요해서 페이지네이션 없이 다 불러온 뒤, 화면에 내려줄

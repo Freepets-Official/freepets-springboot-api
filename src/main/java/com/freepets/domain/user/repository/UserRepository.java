@@ -91,6 +91,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * 매기면 동점 구간에서 실제 순위와 어긋난다. 동점자끼리는 id 오름차순(먼저 가입한 순)으로
      * 안정적인 순서를 준다 — "먼저 도달한 사람이 앞"을 정확히 재현할 별도 시각 기록이 아직
      * 없어서 쓰는 근사치다.
+     *
+     * <p>{@code freepets.users}로 스키마를 명시한다 — {@link UserRepositoryRankingTest}로
+     * 확인해보니 이 레포의 H2 테스트 DB·(추정)실제 배포 DB 모두 {@code freepets} 스키마를
+     * 쓰고 있고, 스키마를 떼면(unqualified {@code FROM users}) 그 자리에서 SQLGrammarException이
+     * 난다 — 즉 하드코딩된 스키마 자체는 이 환경과 맞다. 라이브 500 보고(2026-09-20, 프론트)의
+     * 원인은 이 스키마 불일치가 아닌 다른 요인(배포 DB의 실제 스키마/권한, 컬럼 별칭 매핑 등)일
+     * 가능성이 높다 — 백엔드가 실제 배포 환경에서 직접 재현해 원인을 좁혀야 한다.
      */
     @Query(value = """
             SELECT * FROM (

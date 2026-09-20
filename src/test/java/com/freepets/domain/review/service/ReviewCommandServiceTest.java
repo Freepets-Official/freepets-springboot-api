@@ -206,8 +206,8 @@ class ReviewCommandServiceTest {
         assertThat(result.ratingSpace()).isEqualTo(5);
         assertThat(result.tags()).containsExactlyInAnyOrder(Tag.SPACIOUS, Tag.WATER_BOWL);
         // 시설+반려동물 조합 둘 다 처음이라 각각 따로 지급된다(componentSignature="시설ID:반려동물ID").
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:1"), eq(List.of(pet1)));
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"), eq(List.of(pet2)));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:1"));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"));
     }
 
     @Test
@@ -369,7 +369,7 @@ class ReviewCommandServiceTest {
         assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
         // newPet(2)은 이 시설(7)에서 처음 태그되는 조합이라 지급된다. oldPet(1)은 이번에
         // 태그가 빠져서(replacePets로 교체됨) 아예 호출 대상이 아니다.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"), eq(List.of(newPet)));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"));
         verifyNoMoreInteractions(gamificationService);
     }
 
@@ -409,8 +409,8 @@ class ReviewCommandServiceTest {
 
         reviewCommandService.upsertReview(1L, 7L, request);
 
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:1"), eq(List.of(oldPet)));
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"), eq(List.of(newPet)));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:1"));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"));
     }
 
     @Test
@@ -636,7 +636,7 @@ class ReviewCommandServiceTest {
         verify(facilityGradeCacheService).refresh(7L);
         // newPet(2)은 이 시설(7)에서 처음 태그되는 조합이라 PUT 수정으로도 지급된다.
         // oldPet(1)은 이번에 태그가 빠져서 호출 대상이 아니다.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"), eq(List.of(newPet)));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"));
         verifyNoMoreInteractions(gamificationService);
     }
 

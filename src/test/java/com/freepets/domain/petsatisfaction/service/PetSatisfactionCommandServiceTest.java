@@ -127,8 +127,8 @@ class PetSatisfactionCommandServiceTest {
         assertThat(result.petId()).isEqualTo(1L);
         assertThat(result.facilityId()).isEqualTo(7L);
         assertThat(result.score()).isEqualTo(9.8f);
-        // 신규 평가에만 경험치가 지급되는지(게이미피케이션 훅) — 평가한 그 반려동물에게도 지급.
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.SATISFACTION), any(), eq(10), eq(List.of(pet)));
+        // 신규 평가에만 경험치가 지급되는지(게이미피케이션 훅).
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.SATISFACTION), any(), eq(10));
     }
 
     @Test

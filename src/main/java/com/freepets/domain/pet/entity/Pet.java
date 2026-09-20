@@ -93,19 +93,6 @@ public class Pet extends BaseEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
-    // 반려동물 개별 게이미피케이션 누적치. User.totalXp/level과 완전히 별개 값이다 — 계정
-    // 전체 퀘스트·배지·레벨업 알림은 여전히 User가 담당하고, 이 값은 "반려동물 등록증" 카드의
-    // 레벨·진행바 표시 전용이다. 레벨 산정 공식은 User와 동일하게
-    // gamification.service.LevelCurve를 그대로 재사용한다 — Pet은 그 공식을 몰라야 하므로
-    // (계층 규칙) 새 레벨은 항상 호출부(GamificationService)가 계산해서 gainXp로 넘긴다.
-    @ColumnDefault("0")
-    @Column(name = "total_xp", nullable = false)
-    private long totalXp;
-
-    @ColumnDefault("1")
-    @Column(nullable = false)
-    private int level;
-
     // 판별 세션(PetCheck) 자체가 아니라 그 안의 아이별 결과(PetCheckVerdict)에 걸린다.
     // 펫이 삭제되면 orphanRemoval 없이 verdict.pet만 NULL로 남는다(fk_verdict_pet ON DELETE SET NULL,
     // db/schema.sql) — 판별 기록 자체는 유지해야 하므로 cascade/orphanRemoval을 걸지 않는다.
@@ -142,8 +129,6 @@ public class Pet extends BaseEntity {
         this.isVaccinated = isVaccinated;
         this.gender = gender;
         this.birthDate = birthDate;
-        this.totalXp = 0;
-        this.level = 1;
     }
 
     public void update(
@@ -170,22 +155,6 @@ public class Pet extends BaseEntity {
         this.isVaccinated = isVaccinated;
         this.gender = gender;
         this.birthDate = birthDate;
-    }
-
-    /**
-     * 반려동물 개별 누적 경험치·레벨 반영. User.gainXp와 같은 이유로 계산 없이 대입만 한다 —
-     * 레벨 공식(LevelCurve)은 gamification 도메인 소유라 Pet은 몰라야 한다.
-     *
-     * @return 이번 지급으로 레벨이 올랐는지
-     */
-    public boolean gainXp(
-            long newTotalXp,
-            int newLevel
-    ) {
-        this.totalXp = newTotalXp;
-        boolean isLeveledUp = newLevel > this.level;
-        this.level = newLevel;
-        return isLeveledUp;
     }
 
     public void delete() {

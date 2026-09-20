@@ -11,9 +11,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.freepets.domain.gamification.dto.GamificationResponseDTO;
 import com.freepets.domain.gamification.entity.Badge;
 import com.freepets.domain.gamification.entity.BadgeFamily;
-import com.freepets.domain.gamification.entity.PawAnimal;
 import com.freepets.domain.gamification.entity.PawColor;
-import com.freepets.domain.gamification.entity.PawFinish;
 import com.freepets.domain.gamification.entity.UserBadge;
 import com.freepets.domain.gamification.service.LevelCurve;
 import com.freepets.domain.user.entity.Provider;
@@ -44,11 +42,10 @@ class GamificationConverterTest {
         GamificationResponseDTO.MyStatus status = GamificationConverter.toMyStatus(user, List.of(), Map.of());
 
         assertThat(status.xpToNextLevel()).isEqualTo(LevelCurve.xpToReachLevel(3) - 150);
-        // 레벨 1=개·흐릿함·빨강, 레벨 2=개·흐릿함·주황(레벨마다 한 칸씩 색이 바뀐다).
-        assertThat(status.tierAnimal()).isEqualTo(PawAnimal.DOG);
-        assertThat(status.tierFinish()).isEqualTo(PawFinish.DIM);
-        assertThat(status.tierColor()).isEqualTo(PawColor.ORANGE);
-        assertThat(status.tierLabel()).isEqualTo("개 발바닥 · 흐릿함 · 주황");
+        // 레벨 1=빨강 80%, 레벨 2=빨강 60%(같은 색 안에서 투명도가 20%씩 옅어진다).
+        assertThat(status.tierColor()).isEqualTo(PawColor.RED);
+        assertThat(status.tierOpacityPercent()).isEqualTo(60);
+        assertThat(status.tierLabel()).isEqualTo("빨강 60% 발바닥");
     }
 
     @Test
@@ -58,12 +55,27 @@ class GamificationConverterTest {
         GamificationResponseDTO.MyStatus status = GamificationConverter.toMyStatus(user, List.of(), Map.of());
 
         assertThat(status.xpToNextLevel()).isNull();
-        // 레벨 70 = 두 번째 동물(고양이)의 마지막 단계(홀로그램)·마지막 색(보라) —
-        // 2종×5단계×7색이 정확히 70에서 끝난다.
-        assertThat(status.tierAnimal()).isEqualTo(PawAnimal.CAT);
-        assertThat(status.tierFinish()).isEqualTo(PawFinish.HOLOGRAPHIC);
-        assertThat(status.tierColor()).isEqualTo(PawColor.VIOLET);
-        assertThat(status.tierLabel()).isEqualTo("고양이 발바닥 · 홀로그램 · 보라");
+        // 레벨 40 = 마지막 슬롯(무지개)의 마지막 투명도(0%) — 8슬롯(7색+무지개)×5단계가
+        // 정확히 40에서 끝난다.
+        assertThat(status.tierColor()).isEqualTo(PawColor.RAINBOW);
+        assertThat(status.tierOpacityPercent()).isEqualTo(0);
+        assertThat(status.tierLabel()).isEqualTo("무지개 0% 발바닥");
+    }
+
+    // 레벨 상한이 70에서 40으로 내려오면서(PR #49) — 예전 상한(70) 아래서 이미 41~70레벨을
+    // 찍은 기존 계정은 다음 XP 지급 전까지 User.level 컬럼이 그 값 그대로 남는다. 그 값을 그대로
+    // 내려주면 40단계만 아는 LevelTier·앱이 범위 밖 레벨을 받으므로, 응답의 level은 40으로
+    // 잘려야 한다.
+    @Test
+    void 예전_상한_아래서_41레벨_이상을_찍은_기존_계정은_level이_40으로_잘려서_내려간다() {
+        User user = user(999_999, 55);
+
+        GamificationResponseDTO.MyStatus status = GamificationConverter.toMyStatus(user, List.of(), Map.of());
+
+        assertThat(status.level()).isEqualTo(LevelCurve.MAX_LEVEL);
+        assertThat(status.xpToNextLevel()).isNull();
+        assertThat(status.tierColor()).isEqualTo(PawColor.RAINBOW);
+        assertThat(status.tierOpacityPercent()).isEqualTo(0);
     }
 
     @Test

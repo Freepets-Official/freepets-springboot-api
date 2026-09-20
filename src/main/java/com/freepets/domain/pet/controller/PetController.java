@@ -67,6 +67,17 @@ public class PetController {
         );
     }
 
+    // "함께한 발자국" 상세 — checkCount/reviewCount/satisfactionCount/stampCount와 그 합(total).
+    @GetMapping("/{petId}/stats")
+    public ApiResponse<PetResponseDTO.PawPrintStats> getPetStats(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable("petId") Long petId
+    ) {
+        return ApiResponse.onSuccess(
+                petQueryService.getPawPrintStats(userId, petId)
+        );
+    }
+
     @PutMapping(value = "/{petId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<PetResponseDTO.PetDetail> updatePet(
             @AuthenticationPrincipal Long userId,

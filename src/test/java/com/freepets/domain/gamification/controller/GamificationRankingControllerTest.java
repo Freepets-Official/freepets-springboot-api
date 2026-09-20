@@ -19,9 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.freepets.domain.gamification.dto.GamificationResponseDTO;
-import com.freepets.domain.gamification.entity.PawAnimal;
 import com.freepets.domain.gamification.entity.PawColor;
-import com.freepets.domain.gamification.entity.PawFinish;
 import com.freepets.domain.gamification.service.RankingQueryService;
 
 @WebMvcTest(GamificationRankingController.class)
@@ -38,10 +36,10 @@ class GamificationRankingControllerTest {
     @DisplayName("전국 랭킹 조회에 성공하면 200을 반환한다")
     void 전국_랭킹_조회에_성공하면_200을_반환한다() throws Exception {
         GamificationResponseDTO.MyRanking me = new GamificationResponseDTO.MyRanking(
-                12L, 340L, 1240L, 6, PawAnimal.DOG, PawFinish.CLEAR, PawColor.GREEN, true
+                12L, 340L, 1240L, 6, PawColor.GREEN, 40, true
         );
         GamificationResponseDTO.RankingItem item = new GamificationResponseDTO.RankingItem(
-                1L, 8L, "강릉댕댕", 9800L, 15, PawAnimal.CAT, PawFinish.HOLOGRAPHIC, PawColor.BLUE, false
+                1L, 8L, "강릉댕댕", 9800L, 15, PawColor.BLUE, 0, "보리", "https://example.com/pet.jpg", false
         );
         when(rankingQueryService.getNationalRanking(isNull(), eq(0), eq(20))).thenReturn(
                 new GamificationResponseDTO.RankingResult(
@@ -55,6 +53,8 @@ class GamificationRankingControllerTest {
                 .andExpect(jsonPath("$.result.me.rank").value(12))
                 .andExpect(jsonPath("$.result.me.participantCount").value(340))
                 .andExpect(jsonPath("$.result.items[0].nickname").value("강릉댕댕"))
+                .andExpect(jsonPath("$.result.items[0].petName").value("보리"))
+                .andExpect(jsonPath("$.result.items[0].petPhotoUrl").value("https://example.com/pet.jpg"))
                 .andExpect(jsonPath("$.result.items[0].isMe").value(false))
                 .andExpect(jsonPath("$.result.total").value(340));
     }

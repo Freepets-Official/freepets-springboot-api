@@ -339,7 +339,7 @@ class SecurityFilterChainTest {
     // 다른 유저와 비교하는 화면이라 개인화 없이도 볼 수 있어야 한다 — 토큰 없으면 me가
     // 응답에서 빠질 뿐 목록 자체는 그대로 내려간다(GamificationRankingController 참고).
     @Test
-    void 지역_랭킹_조회는_토큰없이도_통과한다() throws Exception {
+    void 전국_랭킹_조회는_토큰없이도_통과한다() throws Exception {
         when(rankingQueryService.getNationalRanking(any(), anyInt(), anyInt()))
                 .thenReturn(null);
 

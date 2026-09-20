@@ -37,12 +37,15 @@ class PetConverterTest {
                 .build();
     }
 
+    private static final PetResponseDTO.PawPrintStats NO_PAW_PRINTS =
+            new PetResponseDTO.PawPrintStats(0, 0, 0, 0, 0);
+
     @Test
     void toRegistrationCard는_생년월일로_만_나이를_계산한다() {
         // 오늘로부터 정확히 3년 전 생일 — 생일이 지난 상태라 만 3세여야 한다.
         Pet pet = pet(today().minusYears(3));
 
-        PetResponseDTO.RegistrationCard card = PetConverter.toRegistrationCard(pet, List.of());
+        PetResponseDTO.RegistrationCard card = PetConverter.toRegistrationCard(pet, NO_PAW_PRINTS, List.of());
 
         assertThat(card.age()).isEqualTo(3);
     }
@@ -52,7 +55,7 @@ class PetConverterTest {
         // 3년 전 오늘보다 하루 늦게 태어난 것으로 설정 — 올해 생일이 아직 안 지나서 만 2세여야 한다.
         Pet pet = pet(today().minusYears(3).plusDays(1));
 
-        PetResponseDTO.RegistrationCard card = PetConverter.toRegistrationCard(pet, List.of());
+        PetResponseDTO.RegistrationCard card = PetConverter.toRegistrationCard(pet, NO_PAW_PRINTS, List.of());
 
         assertThat(card.age()).isEqualTo(2);
     }
@@ -61,7 +64,7 @@ class PetConverterTest {
     void toRegistrationCard는_생년월일이_없으면_나이도_null이다() {
         Pet pet = pet(null);
 
-        PetResponseDTO.RegistrationCard card = PetConverter.toRegistrationCard(pet, List.of());
+        PetResponseDTO.RegistrationCard card = PetConverter.toRegistrationCard(pet, NO_PAW_PRINTS, List.of());
 
         assertThat(card.age()).isNull();
     }
@@ -72,8 +75,18 @@ class PetConverterTest {
         LocalDateTime createdAt = LocalDateTime.of(2026, 1, 1, 0, 0);
         ReflectionTestUtils.setField(pet, "createdAt", createdAt);
 
-        PetResponseDTO.RegistrationCard card = PetConverter.toRegistrationCard(pet, List.of());
+        PetResponseDTO.RegistrationCard card = PetConverter.toRegistrationCard(pet, NO_PAW_PRINTS, List.of());
 
         assertThat(card.issuedAt()).isEqualTo(createdAt);
+    }
+
+    @Test
+    void toRegistrationCard는_전달받은_발자국_통계를_그대로_담는다() {
+        Pet pet = pet(null);
+        PetResponseDTO.PawPrintStats pawPrints = new PetResponseDTO.PawPrintStats(3, 2, 1, 4, 8);
+
+        PetResponseDTO.RegistrationCard card = PetConverter.toRegistrationCard(pet, pawPrints, List.of());
+
+        assertThat(card.pawPrints()).isEqualTo(pawPrints);
     }
 }

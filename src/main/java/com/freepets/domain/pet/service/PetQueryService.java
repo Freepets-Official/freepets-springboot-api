@@ -22,6 +22,7 @@ public class PetQueryService {
 
     private final PetRepository petRepository;
     private final PetSatisfactionQueryService petSatisfactionQueryService;
+    private final PetPawPrintQueryService petPawPrintQueryService;
 
     public PetResponseDTO.PetList getMyPets(Long userId) {
         List<Pet> pets = petRepository.findAllByUserIdAndDeletedAtIsNullOrderByPetIdAsc(userId);
@@ -54,8 +55,19 @@ public class PetQueryService {
                         topFacility.score()
                 ))
                 .toList();
+        PetResponseDTO.PawPrintStats pawPrints = petPawPrintQueryService.getPawPrintStats(petId);
 
-        return PetConverter.toRegistrationCard(pet, favoriteFacilities);
+        return PetConverter.toRegistrationCard(pet, pawPrints, favoriteFacilities);
+    }
+
+    // GET /api/v1/pets/{petId}/stats — "함께한 발자국" 상세(freepets-docs PR #49).
+    public PetResponseDTO.PawPrintStats getPawPrintStats(
+            Long userId,
+            Long petId
+    ) {
+        findOwnedPet(userId, petId);
+
+        return petPawPrintQueryService.getPawPrintStats(petId);
     }
 
     private Pet findOwnedPet(

@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.freepets.domain.stamp.converter.StampConverter;
 import com.freepets.domain.stamp.dto.StampResponseDTO;
 import com.freepets.domain.stamp.entity.Stamp;
+import com.freepets.domain.stamp.repository.StampPetRepository;
 import com.freepets.domain.stamp.repository.StampRepository;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -29,6 +30,7 @@ public class StampQueryService {
 
     private final UserRepository userRepository;
     private final StampRepository stampRepository;
+    private final StampPetRepository stampPetRepository;
 
     public StampResponseDTO.MyStamps getMyStamps(Long userId) {
         if (!userRepository.existsById(userId)) {
@@ -52,6 +54,11 @@ public class StampQueryService {
 
     public long getDistinctRegionCount(Long userId) {
         return stampRepository.findDistinctRegionsByUser_Id(userId).size();
+    }
+
+    // "함께한 발자국"(GET /pets/{petId}/stats)이 쓰는 값 — 이 반려동물이 낀 도장 수.
+    public long countForPet(Long petId) {
+        return stampPetRepository.countByPetPetId(petId);
     }
 
     /**

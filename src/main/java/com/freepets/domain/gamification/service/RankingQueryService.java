@@ -1,13 +1,17 @@
 package com.freepets.domain.gamification.service;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.freepets.domain.gamification.converter.GamificationConverter;
 import com.freepets.domain.gamification.dto.GamificationResponseDTO;
+import com.freepets.domain.pet.entity.Pet;
+import com.freepets.domain.pet.repository.PetRepository;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -35,6 +39,7 @@ public class RankingQueryService {
     private static final int MAX_SIZE = 50;
 
     private final UserRepository userRepository;
+    private final PetRepository petRepository;
 
     public GamificationResponseDTO.RankingResult getNationalRanking(
             Long viewerId,
@@ -47,9 +52,19 @@ public class RankingQueryService {
 
         long participantCount = userRepository.countByDeletedAtIsNull();
 
-        List<GamificationResponseDTO.RankingItem> items = userRepository
-                .findNationalRanking(safeSize, offset).stream()
-                .map(row -> GamificationConverter.toRankingItem(row, viewerId))
+        List<UserRepository.RankingRow> rows = userRepository.findNationalRanking(safeSize, offset);
+        Map<Long, Pet> representativePetByUserId = findRepresentativePets(rows);
+
+        List<GamificationResponseDTO.RankingItem> items = rows.stream()
+                .map(row -> {
+                    Pet representativePet = representativePetByUserId.get(row.getId());
+                    return GamificationConverter.toRankingItem(
+                            row,
+                            viewerId,
+                            representativePet != null ? representativePet.getName() : null,
+                            representativePet != null ? representativePet.getProfile() : null
+                    );
+                })
                 .toList();
 
         GamificationResponseDTO.MyRanking me = viewerId != null
@@ -63,6 +78,21 @@ public class RankingQueryService {
                 participantCount,
                 LocalDateTime.now()
         );
+    }
+
+    // 랭킹 줄에 보여줄 "대표 반려동물"(가장 먼저 등록한 1마리) — userId별로 petId가 가장 작은
+    // 것만 남긴다. petId 오름차순으로 정렬해서 받으므로 먼저 만난 값을 유지하면 된다.
+    private Map<Long, Pet> findRepresentativePets(List<UserRepository.RankingRow> rows) {
+        List<Long> userIds = rows.stream().map(UserRepository.RankingRow::getId).toList();
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, Pet> representativePetByUserId = new HashMap<>();
+        for (Pet pet : petRepository.findAllByUserIdInAndDeletedAtIsNullOrderByUserIdAscPetIdAsc(userIds)) {
+            representativePetByUserId.putIfAbsent(pet.getUser().getId(), pet);
+        }
+        return representativePetByUserId;
     }
 
     private GamificationResponseDTO.MyRanking buildMyRanking(

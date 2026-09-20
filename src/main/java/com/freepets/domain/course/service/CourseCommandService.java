@@ -25,7 +25,6 @@ import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
-import com.freepets.domain.pet.entity.Pet;
 import com.freepets.domain.petcheck.repository.PetCheckRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.User;
@@ -280,8 +279,6 @@ public class CourseCommandService {
         // 원 소유자 본인이 복사한 경우는 지급하지 않는다.
         if (!original.getUser().getId().equals(userId)) {
             Long originalOwnerId = original.getUser().getId();
-            // 반려동물 개별 경험치도 원 소유자 기준이다 — 복사한 사람(userId)의 반려동물이 아니다.
-            List<Pet> originalOwnerPets = gamificationService.allActivePetsOf(originalOwnerId);
             // sourceId(복사본 courseId)는 복사할 때마다 새로 발급돼 반복 복사를 못 막는다 —
             // 같은 사람이 같은 원본을 계속 복사하면 매번 다른 sourceId라 "평생 1회" sourceId
             // 검사를 그대로 통과해버린다. "원본 courseId + 복사한 사람" 조합을 componentSignature로
@@ -295,8 +292,7 @@ public class CourseCommandService {
                     XpSourceType.COURSE_SHARED_COPY,
                     saved.getCourseId(),
                     COURSE_SHARED_COPY_XP,
-                    componentSignature,
-                    originalOwnerPets
+                    componentSignature
             );
         }
 
@@ -389,17 +385,12 @@ public class CourseCommandService {
                 .collect(Collectors.toSet());
         String componentSignature = componentSignatureOf(currentFacilityIds);
 
-        // 코스는 특정 반려동물과 연결되지 않는 행동이라(시설 동선이지 반려동물 동행 기록이
-        // 아님), 반려동물 개별 경험치는 이 유저의 반려동물 전체에게 나눠준다.
-        List<Pet> pets = gamificationService.allActivePetsOf(userId);
-
         gamificationService.grantXp(
                 userId,
                 XpSourceType.COURSE_PUBLISHED,
                 courseId,
                 () -> resolveCoursePublishedXp(userId, currentFacilityIds),
-                componentSignature,
-                pets
+                componentSignature
         );
     }
 

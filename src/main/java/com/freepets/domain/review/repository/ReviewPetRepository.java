@@ -27,4 +27,9 @@ public interface ReviewPetRepository extends JpaRepository<ReviewPet, Long> {
             """)
     List<FacilityPetProfile> findKindAndBreedSizeByFacilityIdIn(@Param("facilityIds") Collection<Long> facilityIds);
 
+    // 참고용 통계(GET /pets/{petId}/stats의 reviewCount) — 삭제된 리뷰는 세지 않는다.
+    // "함께한 발자국" 총합(total)에는 넣지 않는다(freepets-docs PR #49, docs/12 0절 — 리뷰는
+    // 발자국 집계 대상이 아니다).
+    long countByPetPetIdAndReviewDeletedAtIsNull(Long petId);
+
 }

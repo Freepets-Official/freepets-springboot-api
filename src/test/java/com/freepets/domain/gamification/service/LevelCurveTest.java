@@ -47,4 +47,13 @@ class LevelCurveTest {
         assertThat(LevelCurve.xpToReachLevel(LevelCurve.MAX_LEVEL + 10))
                 .isEqualTo(LevelCurve.xpToReachLevel(LevelCurve.MAX_LEVEL));
     }
+
+    // 레벨 상한이 70에서 40으로 내려오면서(PR #49), 이미 41~70레벨을 찍은 기존 계정의
+    // User.level 컬럼이 다음 XP 지급 전까지 그대로 남는다 — 응답을 만들 때 이 값으로 잘라낸다.
+    @Test
+    void clampLevel은_최대_레벨을_넘는_값을_최대_레벨로_잘라낸다() {
+        assertThat(LevelCurve.clampLevel(70)).isEqualTo(LevelCurve.MAX_LEVEL);
+        assertThat(LevelCurve.clampLevel(LevelCurve.MAX_LEVEL)).isEqualTo(LevelCurve.MAX_LEVEL);
+        assertThat(LevelCurve.clampLevel(1)).isEqualTo(1);
+    }
 }

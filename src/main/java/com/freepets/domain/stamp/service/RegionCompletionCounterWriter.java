@@ -15,14 +15,12 @@ import lombok.RequiredArgsConstructor;
  * 두 요청이 동시에 같은(아직 아무도 완성하지 않은) 지역의 카운터를 처음 만들려 하면 유니크
  * 제약 위반이 나는데, 이 앱의 기본 {@code JpaTransactionManager}는 세이브포인트(NESTED
  * 전파)를 지원하지 않아 같은 트랜잭션 안에서 그 예외를 잡아도 트랜잭션 전체가 이미 abort
- * 상태다(Postgres SQLSTATE 25P02) — {@link com.freepets.domain.gamification.service.PetXpEventWriter}가
- * 같은 이유로 REQUIRES_NEW로 분리된 것과 동일한 문제다. 그래서 독립된 트랜잭션으로 생성을
- * 시도하고, 위반이 나면(다른 요청이 먼저 만듦) 조용히 넘어간다 — 어느 쪽이든 호출부
- * (RegionCompletionService)가 그 뒤 비관적 락으로 다시 조회하면 실제로 존재하는 행을 보게 된다.
+ * 상태다(Postgres SQLSTATE 25P02). 그래서 독립된 트랜잭션으로 생성을 시도하고, 위반이 나면
+ * (다른 요청이 먼저 만듦) 조용히 넘어간다 — 어느 쪽이든 호출부(RegionCompletionService)가
+ * 그 뒤 비관적 락으로 다시 조회하면 실제로 존재하는 행을 보게 된다.
  *
  * <p>같은 클래스 안의 private 메서드 호출은 Spring 프록시를 타지 않아(self-invocation)
- * REQUIRES_NEW가 무시되므로, PetXpEventWriter·GamificationNotificationService처럼 별도 빈으로
- * 분리한다.
+ * REQUIRES_NEW가 무시되므로, {@code GamificationNotificationService}처럼 별도 빈으로 분리한다.
  */
 @Service
 @RequiredArgsConstructor

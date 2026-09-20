@@ -29,28 +29,6 @@ class PetTest {
         assertThat(pet.isDangerousBreed()).isFalse();
     }
 
-    @Test
-    void gainXp는_레벨이_오르면_true를_반환하고_누적치를_반영한다() {
-        Pet pet = pet(Kind.DOG, "말티즈"); // totalXp=0, level=1
-
-        boolean isLeveledUp = pet.gainXp(150, 2);
-
-        assertThat(pet.getTotalXp()).isEqualTo(150);
-        assertThat(pet.getLevel()).isEqualTo(2);
-        assertThat(isLeveledUp).isTrue();
-    }
-
-    @Test
-    void gainXp는_레벨이_그대로면_false를_반환한다() {
-        Pet pet = pet(Kind.DOG, "말티즈"); // totalXp=0, level=1
-
-        boolean isLeveledUp = pet.gainXp(20, 1);
-
-        assertThat(pet.getTotalXp()).isEqualTo(20);
-        assertThat(pet.getLevel()).isEqualTo(1);
-        assertThat(isLeveledUp).isFalse();
-    }
-
     private Pet pet(Kind kind, String species) {
         return Pet.builder()
                 .name("테스트")

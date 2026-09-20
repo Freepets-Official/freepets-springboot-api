@@ -95,6 +95,11 @@ public class PetSatisfactionQueryService {
                 .toList();
     }
 
+    // "함께한 발자국"(GET /pets/{petId}/stats)이 쓰는 값 — 이 반려동물의 만족도 평가 횟수.
+    public long countForPet(Long petId) {
+        return petSatisfactionRepository.countByPetPetId(petId);
+    }
+
     // 점수 높은 순(동점이면 facilityId 오름차순)으로 정렬해 상위 TOP_FACILITIES_LIMIT개만 남긴다.
     private List<PetSatisfaction> topByScore(List<PetSatisfaction> satisfactions) {
         return satisfactions.stream()

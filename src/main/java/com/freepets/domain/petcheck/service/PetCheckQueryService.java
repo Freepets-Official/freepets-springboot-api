@@ -97,4 +97,9 @@ public class PetCheckQueryService {
 
         return PetCheckConverter.toVerifyPage(verdict, benefits);
     }
+
+    // "함께한 발자국"(GET /pets/{petId}/stats)이 쓰는 값 — 이 반려동물이 낀 판별 결과 수.
+    public long countForPet(Long petId) {
+        return petCheckVerdictRepository.countByPet_PetId(petId);
+    }
 }

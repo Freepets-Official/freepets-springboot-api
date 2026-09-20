@@ -555,7 +555,7 @@ class CourseCommandServiceTest {
         // componentSignature("원본courseId:복사한사람")는 같은 사람이 같은 원본을 반복 복사해도
         // 평생 한 번만 지급되게 하는 중복방지 키다(원본 courseId=10L, 복사한 사람=2L).
         verify(gamificationService).grantXp(
-                eq(1L), eq(XpSourceType.COURSE_SHARED_COPY), any(), eq(15), eq("10:2"), eq(List.of()));
+                eq(1L), eq(XpSourceType.COURSE_SHARED_COPY), any(), eq(15), eq("10:2"));
     }
 
     @Test
@@ -575,7 +575,7 @@ class CourseCommandServiceTest {
         courseCommandService.copySharedCourse(2L, "CRS-SHARE0003");
 
         verify(gamificationService, times(2)).grantXp(
-                eq(1L), eq(XpSourceType.COURSE_SHARED_COPY), any(), eq(15), eq("10:2"), eq(List.of()));
+                eq(1L), eq(XpSourceType.COURSE_SHARED_COPY), any(), eq(15), eq("10:2"));
     }
 
     @Test
@@ -653,7 +653,7 @@ class CourseCommandServiceTest {
                 ArgumentCaptor.forClass(IntSupplier.class);
         verify(gamificationService).grantXp(
                 eq(1L), eq(XpSourceType.COURSE_PUBLISHED), eq(courseId),
-                amountCaptor.capture(), eq(expectedComponentSignature), eq(List.of())
+                amountCaptor.capture(), eq(expectedComponentSignature)
         );
         assertThat(amountCaptor.getValue().getAsInt()).isEqualTo(expectedAmount);
     }

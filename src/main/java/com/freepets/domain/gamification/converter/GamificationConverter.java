@@ -27,7 +27,7 @@ public class GamificationConverter {
             List<UserBadge> badges,
             Map<BadgeFamily, Long> familyCounts
     ) {
-        int level = user.getLevel();
+        int level = LevelCurve.clampLevel(user.getLevel());
         LevelTier tier = LevelTier.of(level);
         Long xpToNextLevel = level < LevelCurve.MAX_LEVEL
                 ? LevelCurve.xpToReachLevel(level + 1) - user.getTotalXp()
@@ -44,9 +44,8 @@ public class GamificationConverter {
                 level,
                 user.getTotalXp(),
                 xpToNextLevel,
-                tier.animal(),
-                tier.finish(),
                 tier.color(),
+                tier.opacityPercent(),
                 tier.label(),
                 tier.badgeImageUrl(),
                 user.isLevelUpNotificationEnabled(),
@@ -119,19 +118,23 @@ public class GamificationConverter {
 
     public static GamificationResponseDTO.RankingItem toRankingItem(
             UserRepository.RankingRow row,
-            Long viewerId
+            Long viewerId,
+            String petName,
+            String petPhotoUrl
     ) {
-        LevelTier tier = LevelTier.of(row.getLevel());
+        int level = LevelCurve.clampLevel(row.getLevel());
+        LevelTier tier = LevelTier.of(level);
 
         return new GamificationResponseDTO.RankingItem(
                 row.getRnk(),
                 row.getId(),
                 row.getNickname(),
                 row.getTotalXp(),
-                row.getLevel(),
-                tier.animal(),
-                tier.finish(),
+                level,
                 tier.color(),
+                tier.opacityPercent(),
+                petName,
+                petPhotoUrl,
                 row.getId().equals(viewerId)
         );
     }
@@ -144,16 +147,16 @@ public class GamificationConverter {
             long participantCount,
             boolean ranked
     ) {
-        LevelTier tier = LevelTier.of(user.getLevel());
+        int level = LevelCurve.clampLevel(user.getLevel());
+        LevelTier tier = LevelTier.of(level);
 
         return new GamificationResponseDTO.MyRanking(
                 ranked ? rank : null,
                 participantCount,
                 user.getTotalXp(),
-                user.getLevel(),
-                tier.animal(),
-                tier.finish(),
+                level,
                 tier.color(),
+                tier.opacityPercent(),
                 ranked
         );
     }

@@ -107,10 +107,8 @@ public class GamificationResponseDTO {
     /**
      * @param rank              1부터. ranked=false면 순위 자체를 감춰야 해서 키가 생략된다
      * @param participantCount  이 스코프의 전체 참여자 수 — "340명 중 12번째" 문장에 그대로 쓴다
-     * @param ranked            false가 되는 이유가 둘이고, 화면 문구가 서로 다르다. 둘은 xp로
-     *                          구분한다 — xp가 0이면 "아직 활동이 없어 순위 없음"(#152),
-     *                          xp가 있는데도 false면 "참여자가 적어 순위 미공개"(1명이면 1등이
-     *                          당연하고, 2명이면 상대가 특정된다). 어느 쪽이든 rank는 생략된다
+     * @param ranked            활동이 있으면(xp가 1 이상) true. false면 아직 활동이 없어
+     *                          랭킹 대상이 아니라는 뜻이고(#152), 이때 rank는 생략된다
      */
     public record MyRanking(
             @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -195,19 +195,22 @@ class RankingQueryServiceTest {
     }
 
     @Test
-    void 참여자가_3명_미만이면_순위를_감춘다() {
+    void 참여자가_적어도_활동이_있으면_순위를_준다() {
+        // 참여자 수로 순위를 감추지 않는다(#152) — 목록(items)은 그대로 공개되므로 내 순위만
+        // 가려봐야 화면끼리 어긋나기만 한다.
         setUpService();
         User me = user(1L, "나", 50L, 2);
         when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).thenReturn(2L);
-        when(userRepository.findNationalRanking(anyLong(), anyInt(), anyLong())).thenReturn(List.of());
+        when(userRepository.findNationalRanking(anyLong(), anyInt(), anyLong()))
+                .thenReturn(List.of(row(1, 1L, "나", 50L, 2)));
         when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(me));
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(50L)).thenReturn(1L);
 
         GamificationResponseDTO.RankingResult result = rankingQueryService.getNationalRanking(1L, 0, 20);
 
-        assertThat(result.me().ranked()).isFalse();
-        assertThat(result.me().rank()).isNull();
-        // 참여자가 너무 적어 순위 자체가 무의미할 때는 등수를 세는 쿼리 자체를 부르지 않는다.
-        verify(userRepository, never()).countByDeletedAtIsNullAndTotalXpGreaterThan(anyLong());
+        assertThat(result.me().ranked()).isTrue();
+        assertThat(result.me().rank()).isEqualTo(2L);
+        assertThat(result.me().participantCount()).isEqualTo(2L);
     }
 
     @Test

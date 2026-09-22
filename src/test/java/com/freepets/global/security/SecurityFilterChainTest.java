@@ -400,12 +400,14 @@ class SecurityFilterChainTest {
                 .compact();
     }
 
-    // {facilityId}를 숫자 전용 패턴으로 열었기 때문에 같은 depth의 문자열 경로(regions)까지
-    // 함께 열리지 않는지 확인한다 — 이번 요구사항 범위 밖이라 계속 인증이 필요해야 한다.
+    // 지역 칩을 못 받으면 게스트는 랭킹·전체 목록에서 지역을 고를 수 없다. 응답에 개인화가
+    // 없어 인증을 요구할 이유도 없다.
     @Test
-    void 시설_지역_목록_조회는_여전히_토큰이_필요하다() throws Exception {
+    void 시설_지역_목록_조회는_토큰없이도_통과한다() throws Exception {
+        when(facilityQueryService.getRegions()).thenReturn(List.of());
+
         mockMvc.perform(get("/api/v1/facilities/regions"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("COMMON401"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
     }
 }

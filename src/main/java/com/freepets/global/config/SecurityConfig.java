@@ -69,12 +69,15 @@ public class SecurityConfig {
      * 조회와 경로가 같아서 함께 열려 있었고, 토큰이 없거나 만료된 요청이 401 대신 userId가
      * null인 채로 컨트롤러까지 들어갔다.
      *
-     * <p>{@code {facilityId}}는 숫자로 제한해서 연다 — {@code "*"}로 열면 같은 depth의
-     * {@code /facilities/regions}(인증 필요, 이번 범위 밖)까지 같이 열려버린다.
+     * <p>{@code {facilityId}}는 숫자로 제한해서 연다 — {@code "*"}로 열면 같은 depth의 문자열
+     * 경로가 의도와 무관하게 함께 열린다. 여는 경로는 하나씩 적어서 연다.
      */
     private static final String[] GUEST_GET_PATTERNS = {
             "/api/v1/facilities",
             "/api/v1/facilities/ranking",
+            // 랭킹·전체 목록의 지역 칩을 그리는 목록이다. 응답이 법정동 코드와 지역명뿐이라
+            // 사용자마다 달라지지 않는다. 이게 막혀 있으면 게스트는 지역을 고를 수 없다.
+            "/api/v1/facilities/regions",
             "/api/v1/facilities/{facilityId:[0-9]+}",
             "/api/v1/facilities/*/reviews",
             "/api/v1/facilities/*/denial-reports/recent",

@@ -74,14 +74,17 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<Role> findActiveRoleById(@Param("id") Long id);
 
     /**
-     * 전국 랭킹의 참여자 수(GamificationRanking) — 지금은 전국 단일 스코프뿐이라 "활성 계정
-     * 전체"가 곧 참여자 수다. 지역 스코프가 생기면 지역 필터가 추가된 버전이 따로 필요하다.
-     */
-    long countByDeletedAtIsNull();
-
-    /**
-     * 내 순위 계산용 — "나보다 totalXp가 많은 활성 계정 수 + 1"이 곧 내 순위다. 동점은 같은
-     * 순위를 받아야 해서(1,1,3) "많거나 같은 수"가 아니라 "많은 수"만 센다.
+     * 두 가지로 쓴다(#152).
+     *
+     * <ul>
+     *   <li>내 순위 — "나보다 totalXp가 많은 활성 계정 수 + 1"이 곧 내 순위다. 동점은 같은
+     *       순위를 받아야 해서(1,1,3) "많거나 같은 수"가 아니라 "많은 수"만 센다.</li>
+     *   <li>참여자 수 — 0을 넘겨 "XP가 1이라도 있는 활성 계정 수"를 센다. 활동이 없는 계정은
+     *       랭킹 목록에서도 빠지므로({@link #findNationalRanking}) 참여자 수 기준도 같아야
+     *       "N명 중 K번째"가 목록과 맞는다.</li>
+     * </ul>
+     *
+     * <p>지역 스코프가 생기면 지역 필터가 추가된 버전이 따로 필요하다.
      */
     long countByDeletedAtIsNullAndTotalXpGreaterThan(long totalXp);
 
@@ -91,6 +94,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * 매기면 동점 구간에서 실제 순위와 어긋난다. 동점자끼리는 id 오름차순(먼저 가입한 순)으로
      * 안정적인 순서를 준다 — "먼저 도달한 사람이 앞"을 정확히 재현할 별도 시각 기록이 아직
      * 없어서 쓰는 근사치다.
+     *
+     * <p>XP가 0인 계정은 제외한다(#152) — 활동이 없으면 순위도 없다. 동점을 같은 순위로 묶는
+     * RANK() 특성상, 빼지 않으면 활동이 전혀 없는 계정이 전부 한 덩어리로 목록 뒤를 채운다.
      *
      * <p>{@code freepets.users}로 스키마를 명시한다 — {@link UserRepositoryRankingTest}로
      * 확인해보니 이 레포의 H2 테스트 DB·(추정)실제 배포 DB 모두 {@code freepets} 스키마를
@@ -104,7 +110,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
                 SELECT id, nickname, total_xp AS totalXp, level,
                        RANK() OVER (ORDER BY total_xp DESC) AS rnk
                 FROM freepets.users
-                WHERE deleted_at IS NULL
+                WHERE deleted_at IS NULL AND total_xp > 0
             ) ranked
             ORDER BY rnk ASC, id ASC
             LIMIT :size OFFSET :offset

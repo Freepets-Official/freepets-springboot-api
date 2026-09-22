@@ -119,7 +119,7 @@ class RankingQueryServiceTest {
     @Test
     void 게스트_조회는_me가_null이다() {
         setUpService();
-        when(userRepository.countByDeletedAtIsNull()).thenReturn(340L);
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(340L);
         when(userRepository.findNationalRanking(anyInt(), anyLong()))
                 .thenReturn(List.of(row(1, 8L, "1등", 9800L, 15)));
 
@@ -137,7 +137,7 @@ class RankingQueryServiceTest {
     @Test
     void 가장_먼저_등록한_반려동물이_대표로_채워진다() {
         setUpService();
-        when(userRepository.countByDeletedAtIsNull()).thenReturn(1L);
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(1L);
         when(userRepository.findNationalRanking(anyInt(), anyLong()))
                 .thenReturn(List.of(row(1, 8L, "1등", 9800L, 15)));
         // petId 오름차순으로 두 마리를 돌려주면, 서비스는 그중 첫 항목(가장 먼저 등록한 아이)만 써야 한다.
@@ -157,7 +157,7 @@ class RankingQueryServiceTest {
     void 로그인한_조회자는_본인_순위와_isMe가_채워진다() {
         setUpService();
         User me = user(12L, "나", 1240L, 6);
-        when(userRepository.countByDeletedAtIsNull()).thenReturn(340L);
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(340L);
         when(userRepository.findNationalRanking(anyInt(), anyLong()))
                 .thenReturn(List.of(row(1, 8L, "1등", 9800L, 15), row(2, 12L, "나", 1240L, 6)));
         when(userRepository.findByIdAndDeletedAtIsNull(12L)).thenReturn(Optional.of(me));
@@ -174,10 +174,31 @@ class RankingQueryServiceTest {
     }
 
     @Test
+    void XP가_0인_조회자는_순위를_받지_않는다() {
+        // #152 — 활동이 없으면 랭킹 목록에서도 빠지므로, 순위를 매기면 "목록엔 없는데 내 순위는
+        // 34등"처럼 화면끼리 어긋난다.
+        setUpService();
+        User me = user(12L, "갓_가입한_사람", 0L, 1);
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(340L);
+        when(userRepository.findNationalRanking(anyInt(), anyLong()))
+                .thenReturn(List.of(row(1, 8L, "1등", 9800L, 15)));
+        when(userRepository.findByIdAndDeletedAtIsNull(12L)).thenReturn(Optional.of(me));
+
+        GamificationResponseDTO.RankingResult result = rankingQueryService.getNationalRanking(12L, 0, 20);
+
+        assertThat(result.me().ranked()).isFalse();
+        assertThat(result.me().rank()).isNull();
+        // 참여자 수와 내 XP는 그대로 내려간다 — 순위만 없을 뿐 화면에 보여줄 값은 필요하다.
+        assertThat(result.me().participantCount()).isEqualTo(340L);
+        assertThat(result.me().xp()).isZero();
+        verify(userRepository, never()).countByDeletedAtIsNullAndTotalXpGreaterThan(0L + 1);
+    }
+
+    @Test
     void 참여자가_3명_미만이면_순위를_감춘다() {
         setUpService();
         User me = user(1L, "나", 50L, 2);
-        when(userRepository.countByDeletedAtIsNull()).thenReturn(2L);
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(2L);
         when(userRepository.findNationalRanking(anyInt(), anyLong())).thenReturn(List.of());
         when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(me));
 
@@ -185,14 +206,15 @@ class RankingQueryServiceTest {
 
         assertThat(result.me().ranked()).isFalse();
         assertThat(result.me().rank()).isNull();
-        // 참여자가 너무 적어 순위 자체가 무의미할 때는 등수를 세는 카운트 쿼리 자체를 부르지 않는다.
-        verify(userRepository, never()).countByDeletedAtIsNullAndTotalXpGreaterThan(anyLong());
+        // 참여자가 너무 적어 순위 자체가 무의미할 때는 등수를 세는 쿼리를 부르지 않는다.
+        // (0L 호출은 참여자 수 집계라 별개다 — 내 XP로 부르는 호출만 없어야 한다.)
+        verify(userRepository, never()).countByDeletedAtIsNullAndTotalXpGreaterThan(50L);
     }
 
     @Test
     void 존재하지_않는_조회자면_예외를_던진다() {
         setUpService();
-        when(userRepository.countByDeletedAtIsNull()).thenReturn(10L);
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(10L);
         when(userRepository.findNationalRanking(anyInt(), anyLong())).thenReturn(List.of());
         when(userRepository.findByIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
 
@@ -205,7 +227,7 @@ class RankingQueryServiceTest {
     @Test
     void size가_상한을_넘으면_50으로_잘린다() {
         setUpService();
-        when(userRepository.countByDeletedAtIsNull()).thenReturn(0L);
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(0L);
         when(userRepository.findNationalRanking(eq(50), eq(0L))).thenReturn(List.of());
 
         rankingQueryService.getNationalRanking(null, 0, 999);
@@ -216,7 +238,7 @@ class RankingQueryServiceTest {
     @Test
     void size가_0이하면_기본값_20을_쓴다() {
         setUpService();
-        when(userRepository.countByDeletedAtIsNull()).thenReturn(0L);
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(0L);
         when(userRepository.findNationalRanking(eq(20), eq(0L))).thenReturn(List.of());
 
         rankingQueryService.getNationalRanking(null, 0, 0);

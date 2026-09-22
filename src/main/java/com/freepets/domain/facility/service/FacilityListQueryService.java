@@ -84,6 +84,10 @@ public class FacilityListQueryService {
         // 시도 단위(9천 건)·전국(5만 건, 30MB)은 상한을 넘고, 나눠 받으면 동반 가능 필터를 건 뒤
         // 페이지마다 남는 건수가 들쭉날쭉해진다. 그 둘은 적재해둔 데이터로 답한다.
         if (request.sigunguCodeOrNull() == null) {
+            // sidoCode가 비어 있으면 전국, 값이 있으면 시도 단위다 — 관광공사를 부르지 않은
+            // 이유를 운영 로그에서 그대로 구분할 수 있게 둘 다 남긴다(#156).
+            log.info("시군구를 좁히지 않은 조회라 관광공사를 부르지 않고 DB로 응답합니다. "
+                    + "sidoCode={}, category={}", request.getSidoCode(), request.getCategory());
             return facilityListAssembler.assembleFromDatabase(request);
         }
 
@@ -148,6 +152,7 @@ public class FacilityListQueryService {
      * 반대로 음식점은 "카페가 아닌 39"라 관광공사에서 못 거르고 받은 뒤에 걷어낸다.
      */
     private List<AreaBasedItem> fetchFromTourApi(FacilityRequestDTO.FacilityListRequest request) {
+        long startedAtMillis = System.currentTimeMillis();
         String body = tourApiClient.areaBasedList(
                 facilityCategoryMapper.toContentTypeId(request.getCategory()),
                 request.getSidoCode(),
@@ -166,7 +171,16 @@ public class FacilityListQueryService {
                     totalCount, MAXIMUM_FETCH_ROWS);
         }
 
-        return tourApiResponseParser.parseItems(body, AreaBasedItem.class);
+        List<AreaBasedItem> items = tourApiResponseParser.parseItems(body, AreaBasedItem.class);
+
+        // 목록이 정말 관광공사에서 왔는지 운영 로그로 확인할 수 있게 남긴다.
+        // totalCount는 관광공사 응답 본문에서만 나오는 값이라 DB 대체 응답과 구분된다.
+        log.info("관광공사에서 시설 목록을 받았습니다. sidoCode={}, sigunguCode={}, category={}, "
+                        + "totalCount={}, 수신={}건, 응답크기={}자, 소요={}ms",
+                request.getSidoCode(), request.getSigunguCode(), request.getCategory(),
+                totalCount, items.size(), body.length(), System.currentTimeMillis() - startedAtMillis);
+
+        return items;
     }
 
 }

@@ -119,8 +119,8 @@ class RankingQueryServiceTest {
     @Test
     void 게스트_조회는_me가_null이다() {
         setUpService();
-        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(340L);
-        when(userRepository.findNationalRanking(anyInt(), anyLong()))
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).thenReturn(340L);
+        when(userRepository.findNationalRanking(anyLong(), anyInt(), anyLong()))
                 .thenReturn(List.of(row(1, 8L, "1등", 9800L, 15)));
 
         GamificationResponseDTO.RankingResult result = rankingQueryService.getNationalRanking(null, 0, 20);
@@ -137,8 +137,8 @@ class RankingQueryServiceTest {
     @Test
     void 가장_먼저_등록한_반려동물이_대표로_채워진다() {
         setUpService();
-        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(1L);
-        when(userRepository.findNationalRanking(anyInt(), anyLong()))
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).thenReturn(1L);
+        when(userRepository.findNationalRanking(anyLong(), anyInt(), anyLong()))
                 .thenReturn(List.of(row(1, 8L, "1등", 9800L, 15)));
         // petId 오름차순으로 두 마리를 돌려주면, 서비스는 그중 첫 항목(가장 먼저 등록한 아이)만 써야 한다.
         when(petRepository.findAllByUserIdInAndDeletedAtIsNullOrderByUserIdAscPetIdAsc(List.of(8L)))
@@ -157,8 +157,8 @@ class RankingQueryServiceTest {
     void 로그인한_조회자는_본인_순위와_isMe가_채워진다() {
         setUpService();
         User me = user(12L, "나", 1240L, 6);
-        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(340L);
-        when(userRepository.findNationalRanking(anyInt(), anyLong()))
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).thenReturn(340L);
+        when(userRepository.findNationalRanking(anyLong(), anyInt(), anyLong()))
                 .thenReturn(List.of(row(1, 8L, "1등", 9800L, 15), row(2, 12L, "나", 1240L, 6)));
         when(userRepository.findByIdAndDeletedAtIsNull(12L)).thenReturn(Optional.of(me));
         // 참여자 340명 중 나보다 totalXp가 많은 사람이 11명이라 12번째.
@@ -179,8 +179,8 @@ class RankingQueryServiceTest {
         // 34등"처럼 화면끼리 어긋난다.
         setUpService();
         User me = user(12L, "갓_가입한_사람", 0L, 1);
-        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(340L);
-        when(userRepository.findNationalRanking(anyInt(), anyLong()))
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).thenReturn(340L);
+        when(userRepository.findNationalRanking(anyLong(), anyInt(), anyLong()))
                 .thenReturn(List.of(row(1, 8L, "1등", 9800L, 15)));
         when(userRepository.findByIdAndDeletedAtIsNull(12L)).thenReturn(Optional.of(me));
 
@@ -191,31 +191,30 @@ class RankingQueryServiceTest {
         // 참여자 수와 내 XP는 그대로 내려간다 — 순위만 없을 뿐 화면에 보여줄 값은 필요하다.
         assertThat(result.me().participantCount()).isEqualTo(340L);
         assertThat(result.me().xp()).isZero();
-        verify(userRepository, never()).countByDeletedAtIsNullAndTotalXpGreaterThan(0L + 1);
+        verify(userRepository, never()).countByDeletedAtIsNullAndTotalXpGreaterThan(anyLong());
     }
 
     @Test
     void 참여자가_3명_미만이면_순위를_감춘다() {
         setUpService();
         User me = user(1L, "나", 50L, 2);
-        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(2L);
-        when(userRepository.findNationalRanking(anyInt(), anyLong())).thenReturn(List.of());
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).thenReturn(2L);
+        when(userRepository.findNationalRanking(anyLong(), anyInt(), anyLong())).thenReturn(List.of());
         when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(me));
 
         GamificationResponseDTO.RankingResult result = rankingQueryService.getNationalRanking(1L, 0, 20);
 
         assertThat(result.me().ranked()).isFalse();
         assertThat(result.me().rank()).isNull();
-        // 참여자가 너무 적어 순위 자체가 무의미할 때는 등수를 세는 쿼리를 부르지 않는다.
-        // (0L 호출은 참여자 수 집계라 별개다 — 내 XP로 부르는 호출만 없어야 한다.)
-        verify(userRepository, never()).countByDeletedAtIsNullAndTotalXpGreaterThan(50L);
+        // 참여자가 너무 적어 순위 자체가 무의미할 때는 등수를 세는 쿼리 자체를 부르지 않는다.
+        verify(userRepository, never()).countByDeletedAtIsNullAndTotalXpGreaterThan(anyLong());
     }
 
     @Test
     void 존재하지_않는_조회자면_예외를_던진다() {
         setUpService();
-        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(10L);
-        when(userRepository.findNationalRanking(anyInt(), anyLong())).thenReturn(List.of());
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).thenReturn(10L);
+        when(userRepository.findNationalRanking(anyLong(), anyInt(), anyLong())).thenReturn(List.of());
         when(userRepository.findByIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> rankingQueryService.getNationalRanking(999L, 0, 20))
@@ -227,22 +226,22 @@ class RankingQueryServiceTest {
     @Test
     void size가_상한을_넘으면_50으로_잘린다() {
         setUpService();
-        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(0L);
-        when(userRepository.findNationalRanking(eq(50), eq(0L))).thenReturn(List.of());
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).thenReturn(0L);
+        when(userRepository.findNationalRanking(anyLong(), eq(50), eq(0L))).thenReturn(List.of());
 
         rankingQueryService.getNationalRanking(null, 0, 999);
 
-        verify(userRepository).findNationalRanking(50, 0L);
+        verify(userRepository).findNationalRanking(1L, 50, 0L);
     }
 
     @Test
     void size가_0이하면_기본값_20을_쓴다() {
         setUpService();
-        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).thenReturn(0L);
-        when(userRepository.findNationalRanking(eq(20), eq(0L))).thenReturn(List.of());
+        when(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).thenReturn(0L);
+        when(userRepository.findNationalRanking(anyLong(), eq(20), eq(0L))).thenReturn(List.of());
 
         rankingQueryService.getNationalRanking(null, 0, 0);
 
-        verify(userRepository).findNationalRanking(20, 0L);
+        verify(userRepository).findNationalRanking(1L, 20, 0L);
     }
 }

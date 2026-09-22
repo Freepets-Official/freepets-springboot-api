@@ -35,8 +35,9 @@ public class RankingQueryService {
     // 참여자가 1명이면 "1등"이 의미가 없고, 2명이면 상대가 누군지 바로 특정된다.
     private static final long MIN_PARTICIPANTS_FOR_RANKING = 3;
 
-    // 랭킹에 끼려면 XP가 이 값을 넘어야 한다 — 활동이 없으면 순위도 없다(#152).
-    private static final long MINIMUM_XP_TO_PARTICIPATE = 0;
+    // 랭킹에 끼려면 XP가 이만큼은 있어야 한다 — 활동이 없으면 순위도 없다(#152). 목록·참여자
+    // 수·내 순위 세 군데가 전부 이 값 하나를 보고 움직여야 서로 어긋나지 않는다.
+    private static final long MINIMUM_XP_TO_PARTICIPATE = 1;
 
     private static final int DEFAULT_SIZE = 20;
     private static final int MAX_SIZE = 50;
@@ -54,10 +55,11 @@ public class RankingQueryService {
         long offset = (long) safePage * safeSize;
 
         // 목록에서 빠지는 계정은 참여자 수에서도 빠져야 "N명 중 K번째"가 목록과 맞는다.
-        long participantCount =
-                userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(MINIMUM_XP_TO_PARTICIPATE);
+        long participantCount = userRepository
+                .countByDeletedAtIsNullAndTotalXpGreaterThanEqual(MINIMUM_XP_TO_PARTICIPATE);
 
-        List<UserRepository.RankingRow> rows = userRepository.findNationalRanking(safeSize, offset);
+        List<UserRepository.RankingRow> rows =
+                userRepository.findNationalRanking(MINIMUM_XP_TO_PARTICIPATE, safeSize, offset);
         Map<Long, Pet> representativePetByUserId = findRepresentativePets(rows);
 
         List<GamificationResponseDTO.RankingItem> items = rows.stream()
@@ -109,7 +111,7 @@ public class RankingQueryService {
 
         // 목록에 없는 사람에게 순위를 주지 않는다 — XP가 0이면 랭킹 대상이 아니라서, 순위를
         // 매기면 "목록엔 없는데 내 순위는 34등"처럼 화면끼리 어긋난다(#152).
-        boolean participates = viewer.getTotalXp() > MINIMUM_XP_TO_PARTICIPATE;
+        boolean participates = viewer.getTotalXp() >= MINIMUM_XP_TO_PARTICIPATE;
         boolean ranked = participates && participantCount >= MIN_PARTICIPANTS_FOR_RANKING;
         Long rank = ranked
                 ? 1 + userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(viewer.getTotalXp())

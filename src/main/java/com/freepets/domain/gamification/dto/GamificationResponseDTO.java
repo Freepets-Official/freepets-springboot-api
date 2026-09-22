@@ -105,12 +105,12 @@ public class GamificationResponseDTO {
     ) {}
 
     /**
-     * @param rank              1부터. 참여자가 너무 적으면(ranked=false) 순위 자체를 감춰야
-     *                          해서 키가 생략된다 — GamificationRankingQueryService의 최소
-     *                          인원 기준 참고
+     * @param rank              1부터. ranked=false면 순위 자체를 감춰야 해서 키가 생략된다
      * @param participantCount  이 스코프의 전체 참여자 수 — "340명 중 12번째" 문장에 그대로 쓴다
-     * @param ranked            participantCount가 너무 적어 순위 공개가 무의미하거나(1명)
-     *                          참여자 특정이 쉬워지면(2명) false — 이때 rank는 생략된다
+     * @param ranked            false가 되는 이유가 둘이고, 화면 문구가 서로 다르다. 둘은 xp로
+     *                          구분한다 — xp가 0이면 "아직 활동이 없어 순위 없음"(#152),
+     *                          xp가 있는데도 false면 "참여자가 적어 순위 미공개"(1명이면 1등이
+     *                          당연하고, 2명이면 상대가 특정된다). 어느 쪽이든 rank는 생략된다
      */
     public record MyRanking(
             @JsonInclude(JsonInclude.Include.NON_NULL)

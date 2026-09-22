@@ -70,7 +70,7 @@ class UserRepositoryRankingTest {
         entityManager.flush();
         entityManager.clear();
 
-        List<UserRepository.RankingRow> result = userRepository.findNationalRanking(10, 0);
+        List<UserRepository.RankingRow> result = userRepository.findNationalRanking(1L, 10, 0);
 
         assertThat(result).hasSize(4);
         assertThat(result.get(0).getId()).isEqualTo(first.getId());
@@ -93,8 +93,8 @@ class UserRepositoryRankingTest {
         entityManager.flush();
         entityManager.clear();
 
-        List<UserRepository.RankingRow> firstPage = userRepository.findNationalRanking(2, 0);
-        List<UserRepository.RankingRow> secondPage = userRepository.findNationalRanking(2, 2);
+        List<UserRepository.RankingRow> firstPage = userRepository.findNationalRanking(1L, 2, 0);
+        List<UserRepository.RankingRow> secondPage = userRepository.findNationalRanking(1L, 2, 2);
 
         assertThat(firstPage).hasSize(2);
         assertThat(secondPage).hasSize(1);
@@ -112,8 +112,8 @@ class UserRepositoryRankingTest {
         entityManager.flush();
         entityManager.clear();
 
-        assertThat(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).isEqualTo(1L);
-        List<UserRepository.RankingRow> result = userRepository.findNationalRanking(10, 0);
+        assertThat(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).isEqualTo(1L);
+        List<UserRepository.RankingRow> result = userRepository.findNationalRanking(1L, 10, 0);
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getNickname()).isEqualTo("남은사람");
     }
@@ -129,8 +129,8 @@ class UserRepositoryRankingTest {
         entityManager.flush();
         entityManager.clear();
 
-        assertThat(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThan(0L)).isEqualTo(1L);
-        List<UserRepository.RankingRow> result = userRepository.findNationalRanking(10, 0);
+        assertThat(userRepository.countByDeletedAtIsNullAndTotalXpGreaterThanEqual(1L)).isEqualTo(1L);
+        List<UserRepository.RankingRow> result = userRepository.findNationalRanking(1L, 10, 0);
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getNickname()).isEqualTo("활동한사람");
     }

@@ -10,6 +10,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * 한국관광공사 국문 관광정보 서비스(KorService2) 호출 클라이언트.
  *
@@ -22,7 +24,11 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>호출 간 최소 간격을 두지만 그 상태는 원자적으로 관리하므로 여러 스레드가 공유해도 된다.
  * 다만 간격이 0이 아니면 동시 호출이 서로를 기다리게 되므로, 요청 경로에서 쓰는 인스턴스는
  * 간격을 0으로 만들어 쓴다({@code TourApiConfig} 참고).
+ *
+ * <p>실제 HTTP 호출 내역은 DEBUG로 남긴다. 배치는 수천 번을 부르므로 INFO로 두면 로그가 넘친다.
+ * 확인이 필요할 때 {@code logging.level.com.freepets.infra.tourapi=DEBUG}로 켠다.
  */
+@Slf4j
 public class TourApiClient {
 
     private static final String BASE_URL = "https://apis.data.go.kr/B551011/KorService2";
@@ -230,6 +236,7 @@ public class TourApiClient {
                 .GET()
                 .build();
 
+        long startedAtMillis = System.currentTimeMillis();
         HttpResponse<String> httpResponse;
         try {
             httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -241,6 +248,10 @@ public class TourApiClient {
         }
 
         String body = httpResponse.body();
+        // 서비스키가 로그에 새지 않도록 쿼리는 빼고 호스트와 경로만 남긴다.
+        log.debug("관광공사 API 호출. GET {}{} → HTTP {}, 응답크기={}자, 소요={}ms",
+                uri.getHost(), uri.getPath(), httpResponse.statusCode(),
+                body == null ? 0 : body.length(), System.currentTimeMillis() - startedAtMillis);
         verifyNotErrorResponse(operation, httpResponse.statusCode(), body);
         return body;
     }

@@ -90,12 +90,16 @@ final class FacilityConditionGuard {
     }
 
     static boolean hasWeightMention(Facility facility) {
+        // 정리 안내문(petConditionRaw)도 근거로 친다 — 파서가 이 문장까지 읽고 maxWeight를
+        // 뽑으므로(#148), 여기서 빼면 관광공사 원문에만 kg이 없는 시설의 정상 추출값이
+        // 전부 "근거 없음"으로 버려진다.
         String sourceText = String.join(" ",
                 nullToEmpty(facility.getAccompanyType()),
                 nullToEmpty(facility.getAllowedAnimalText()),
                 nullToEmpty(facility.getRequiredMatterText()),
                 nullToEmpty(facility.getEtcAccompanyText()),
-                nullToEmpty(facility.getAccidentRiskText())
+                nullToEmpty(facility.getAccidentRiskText()),
+                nullToEmpty(facility.getPetConditionRaw())
         );
         return WEIGHT_MENTION.matcher(sourceText).find();
     }

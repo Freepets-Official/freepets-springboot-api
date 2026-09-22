@@ -19,6 +19,7 @@ import com.freepets.domain.course.dto.CourseResponseDTO;
 import com.freepets.domain.course.entity.Course;
 import com.freepets.domain.course.entity.CourseSource;
 import com.freepets.domain.course.entity.CourseStop;
+import com.freepets.domain.course.entity.CourseStopDraft;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.PetAllowed;
@@ -65,7 +66,8 @@ public class CourseCommandService {
     ) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
-        List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
+        List<CourseStopDraft> stopDrafts = toStopDrafts(request.getStops());
+        List<Facility> stops = facilitiesOf(stopDrafts);
         validateStopsPetAllowed(stops);
 
         if (request.isPublic()) {
@@ -79,7 +81,7 @@ public class CourseCommandService {
                 .source(CourseSource.CUSTOM)
                 .isPublic(request.isPublic())
                 .build();
-        course.replaceStops(stops);
+        course.replaceStops(stopDrafts);
 
         Course saved = courseRepository.save(course);
 
@@ -96,7 +98,8 @@ public class CourseCommandService {
             CourseRequestDTO.SaveRequest request
     ) {
         Course course = findOwnedCourse(userId, courseId);
-        List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
+        List<CourseStopDraft> stopDrafts = toStopDrafts(request.getStops());
+        List<Facility> stops = facilitiesOf(stopDrafts);
         validateStopsPetAllowed(stops);
         boolean isPublicBeforeUpdate = course.isPublic();
 
@@ -104,7 +107,7 @@ public class CourseCommandService {
             validateStopsEligibleForPublish(userId, stops);
         }
 
-        course.update(request.getName(), request.getDescription(), stops);
+        course.update(request.getName(), request.getDescription(), stopDrafts);
         course.updateVisibility(request.isPublic());
 
         if (!isPublicBeforeUpdate && course.isPublic()) {
@@ -131,7 +134,7 @@ public class CourseCommandService {
 
     /**
      * PATCH /api/v1/courses/{courseId}/visibility — 공개 여부만 바꾼다. updateCourse(PUT)는
-     * name·stopIds 전체를 요구해서, 공개만 켜고 싶은 요청도 코스를 통째로 다시 보내야 했다 —
+     * name·stops 전체를 요구해서, 공개만 켜고 싶은 요청도 코스를 통째로 다시 보내야 했다 —
      * 그 부담 때문에 실제로는 토글이 거의 안 될 위험이 있어 가벼운 전용 경로를 따로 둔다.
      * 공개 전환 시 스톱 발행 요건 검증·XP 지급은 updateCourse와 동일하게 적용한다.
      */
@@ -180,7 +183,7 @@ public class CourseCommandService {
     /**
      * PUT /api/v1/courses/{courseId}/stops/{stopOrder} — 그 자리(0부터 시작하는 순서)의
      * 스톱만 다른 시설로 교체한다. 나머지 스톱과 순서는 그대로 — "1·2·3·4·5에서 4번만
-     * 6번으로" 같은 한 곳 스왑을 위해 매번 stopIds 전체를 다시 구성해 보낼 필요가 없게 한다.
+     * 6번으로" 같은 한 곳 스왑을 위해 매번 stops 전체를 다시 구성해 보낼 필요가 없게 한다.
      * 스톱을 추가하거나 빼서 개수 자체가 바뀌는 편집은 여전히 updateCourse(전체 교체)를 쓴다.
      */
     public CourseResponseDTO.MyCourse replaceStop(
@@ -190,12 +193,14 @@ public class CourseCommandService {
             Long newFacilityId
     ) {
         Course course = findOwnedCourse(userId, courseId);
-        List<Facility> facilitiesInOrder = course.getStops().stream()
+        // 시설만 바꾸는 엔드포인트라 그 자리에 잡아둔 도착 시각은 그대로 둔다 — 시설을 바꿨다고
+        // 일정까지 지워지면 시간표를 다시 짜야 한다.
+        List<CourseStopDraft> stopsInOrder = course.getStops().stream()
                 .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
-                .map(CourseStop::getFacility)
+                .map(stop -> new CourseStopDraft(stop.getFacility(), stop.getVisitTime()))
                 .collect(Collectors.toCollection(ArrayList::new));
 
-        if (stopOrder < 0 || stopOrder >= facilitiesInOrder.size()) {
+        if (stopOrder < 0 || stopOrder >= stopsInOrder.size()) {
             throw new GeneralException(ErrorStatus.COURSE4043);
         }
 
@@ -203,7 +208,8 @@ public class CourseCommandService {
                 .orElseThrow(() -> new GeneralException(ErrorStatus.FACILITY4001));
         validateStopsPetAllowed(List.of(newFacility));
 
-        facilitiesInOrder.set(stopOrder, newFacility);
+        stopsInOrder.set(stopOrder, new CourseStopDraft(newFacility, stopsInOrder.get(stopOrder).visitTime()));
+        List<Facility> facilitiesInOrder = facilitiesOf(stopsInOrder);
 
         // 이 코스가 이미 공개 상태라면, updateCourse(전체 교체)와 똑같이 스왑 후 스톱 전체가
         // 다시 발행 요건(판별+리뷰)을 만족하는지 확인한다 — 안 그러면 검증된 코스를 공개해둔
@@ -212,7 +218,7 @@ public class CourseCommandService {
             validateStopsEligibleForPublish(userId, facilitiesInOrder);
         }
 
-        course.replaceStops(facilitiesInOrder);
+        course.replaceStops(stopsInOrder);
 
         return CourseConverter.toMyCourse(course);
     }
@@ -249,10 +255,13 @@ public class CourseCommandService {
         Course original = courseRepository.findByShareCode(shareCode)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.COURSE4044));
 
-        List<Facility> stops = original.getStops().stream()
+        // 도착 시각까지 그대로 복사한다 — 시간표가 코스의 내용인데 복사본에서 비면 받은 쪽이
+        // 일정을 처음부터 다시 짜야 한다.
+        List<CourseStopDraft> stopDrafts = original.getStops().stream()
                 .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
-                .map(CourseStop::getFacility)
+                .map(stop -> new CourseStopDraft(stop.getFacility(), stop.getVisitTime()))
                 .toList();
+        List<Facility> stops = facilitiesOf(stopDrafts);
         // 원본이 이 게이트가 생기기 전에 만들어졌거나, 저장 이후 시설의 petAllowed가 DENIED로
         // 바뀌었을 수 있다 — 복사도 결국 새 CUSTOM 코스를 만드는 경로라 createCourse/updateCourse와
         // 같은 검증을 거쳐야 한다.
@@ -265,7 +274,7 @@ public class CourseCommandService {
                 .source(CourseSource.CUSTOM)
                 .isPublic(false)
                 .build();
-        copy.replaceStops(stops);
+        copy.replaceStops(stopDrafts);
 
         Course saved = courseRepository.save(copy);
 
@@ -442,6 +451,27 @@ public class CourseCommandService {
             return Stream.empty();
         }
         return Arrays.stream(componentSignature.split(",")).map(Long::valueOf);
+    }
+
+    /**
+     * 요청의 스톱을 순서 그대로 시설 + 도착 시각 묶음으로 바꾼다. 시설 조회는
+     * {@link #findFacilitiesInOrder}가 하던 그대로다 — 없는 시설이면 FACILITY4001로 막는다.
+     */
+    private List<CourseStopDraft> toStopDrafts(List<CourseRequestDTO.StopRequest> stopRequests) {
+        List<Long> facilityIds = stopRequests.stream()
+                .map(CourseRequestDTO.StopRequest::getFacilityId)
+                .toList();
+        List<Facility> facilities = findFacilitiesInOrder(facilityIds);
+
+        List<CourseStopDraft> drafts = new ArrayList<>();
+        for (int index = 0; index < stopRequests.size(); index++) {
+            drafts.add(new CourseStopDraft(facilities.get(index), stopRequests.get(index).getVisitTime()));
+        }
+        return drafts;
+    }
+
+    private static List<Facility> facilitiesOf(List<CourseStopDraft> drafts) {
+        return drafts.stream().map(CourseStopDraft::facility).toList();
     }
 
     private List<Facility> findFacilitiesInOrder(List<Long> stopIds) {

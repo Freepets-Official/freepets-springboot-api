@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.IntSupplier;
@@ -27,6 +28,7 @@ import com.freepets.domain.course.dto.CourseRequestDTO;
 import com.freepets.domain.course.dto.CourseResponseDTO;
 import com.freepets.domain.course.entity.Course;
 import com.freepets.domain.course.entity.CourseSource;
+import com.freepets.domain.course.entity.CourseStopDraft;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
@@ -82,9 +84,81 @@ class CourseCommandServiceTest {
 
         CourseResponseDTO.MyCourse result = courseCommandService.createCourse(1L, request("강릉 코스", List.of(1L, 2L)));
 
-        assertThat(result.stopIds()).containsExactly(1L, 2L);
+        assertThat(result.stops()).extracting(CourseResponseDTO.Stop::facilityId).containsExactly(1L, 2L);
         // 비공개로 만들면 경험치가 지급되지 않는다(게이미피케이션 결정: 공개해야 지급).
         verifyNoInteractions(gamificationService);
+    }
+
+    @Test
+    void 스톱별_도착_시각이_그대로_저장되고_응답에_실린다() {
+        // #150 — 전엔 서버에 시각 컬럼 자체가 없어 앱 로컬에만 남았다. 기기를 바꾸면 사라지던 값.
+        User user = user(1L);
+        Facility a = facility(1L, "A");
+        Facility b = facility(2L, "B");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(facilityRepository.findAllById(List.of(1L, 2L))).thenReturn(List.of(a, b));
+        when(courseRepository.save(org.mockito.ArgumentMatchers.any(Course.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CourseRequestDTO.SaveRequest request = new CourseRequestDTO.SaveRequest();
+        request.setName("강릉 코스");
+        request.setStops(List.of(
+                stopRequest(1L, LocalTime.of(10, 0)),
+                stopRequest(2L, null)
+        ));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.createCourse(1L, request);
+
+        assertThat(result.stops())
+                .extracting(CourseResponseDTO.Stop::facilityId, CourseResponseDTO.Stop::visitTime)
+                .containsExactly(
+                        org.assertj.core.api.Assertions.tuple(1L, LocalTime.of(10, 0)),
+                        org.assertj.core.api.Assertions.tuple(2L, null)
+                );
+    }
+
+    @Test
+    void 공유_코드로_복사하면_도착_시각까지_따라간다() {
+        // 시간표가 코스의 내용인데 복사본에서 비면 받은 쪽이 일정을 처음부터 다시 짜야 한다.
+        Course original = ownedCourseWithStops(1L, 2L);
+        original.replaceStops(List.of(
+                new CourseStopDraft(facility(1L, "A"), LocalTime.of(10, 0)),
+                new CourseStopDraft(facility(2L, "B"), LocalTime.of(13, 30))
+        ));
+        ReflectionTestUtils.setField(original, "shareCode", "CRS-SHARE0003");
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user(2L)));
+        when(courseRepository.findByShareCode("CRS-SHARE0003")).thenReturn(Optional.of(original));
+        when(courseRepository.save(org.mockito.ArgumentMatchers.any(Course.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.copySharedCourse(2L, "CRS-SHARE0003");
+
+        assertThat(result.stops()).extracting(CourseResponseDTO.Stop::visitTime)
+                .containsExactly(LocalTime.of(10, 0), LocalTime.of(13, 30));
+    }
+
+    @Test
+    void 스톱을_교체해도_그_자리의_도착_시각은_유지된다() {
+        // 시설만 바꾸는 엔드포인트다 — 시설을 바꿨다고 잡아둔 일정까지 지워지면 안 된다.
+        Course course = ownedCourseWithStops(1L, 2L);
+        course.replaceStops(List.of(
+                new CourseStopDraft(facility(1L, "A"), LocalTime.of(10, 0)),
+                new CourseStopDraft(facility(2L, "B"), LocalTime.of(13, 30))
+        ));
+
+        when(courseRepository.findById(10L)).thenReturn(Optional.of(course));
+        when(facilityRepository.findById(6L)).thenReturn(Optional.of(facility(6L, "새 시설")));
+
+        CourseResponseDTO.MyCourse result = courseCommandService.replaceStop(1L, 10L, 1, 6L);
+
+        assertThat(result.stops())
+                .extracting(CourseResponseDTO.Stop::facilityId, CourseResponseDTO.Stop::visitTime)
+                .containsExactly(
+                        org.assertj.core.api.Assertions.tuple(1L, LocalTime.of(10, 0)),
+                        org.assertj.core.api.Assertions.tuple(6L, LocalTime.of(13, 30))
+                );
     }
 
     @Test
@@ -221,7 +295,7 @@ class CourseCommandServiceTest {
         CourseResponseDTO.MyCourse result = courseCommandService.updateName(1L, 10L, "새 이름");
 
         assertThat(result.name()).isEqualTo("새 이름");
-        assertThat(result.stopIds()).containsExactly(1L, 2L);
+        assertThat(result.stops()).extracting(CourseResponseDTO.Stop::facilityId).containsExactly(1L, 2L);
     }
 
     @Test
@@ -424,7 +498,7 @@ class CourseCommandServiceTest {
 
         CourseResponseDTO.MyCourse result = courseCommandService.replaceStop(1L, 10L, 3, 6L);
 
-        assertThat(result.stopIds()).containsExactly(1L, 2L, 3L, 6L, 5L);
+        assertThat(result.stops()).extracting(CourseResponseDTO.Stop::facilityId).containsExactly(1L, 2L, 3L, 6L, 5L);
     }
 
     @Test
@@ -479,7 +553,7 @@ class CourseCommandServiceTest {
 
         CourseResponseDTO.MyCourse result = courseCommandService.replaceStop(1L, 10L, 1, 6L);
 
-        assertThat(result.stopIds()).containsExactly(1L, 6L, 3L);
+        assertThat(result.stops()).extracting(CourseResponseDTO.Stop::facilityId).containsExactly(1L, 6L, 3L);
     }
 
     @Test
@@ -492,7 +566,7 @@ class CourseCommandServiceTest {
 
         CourseResponseDTO.MyCourse result = courseCommandService.replaceStop(1L, 10L, 1, 6L);
 
-        assertThat(result.stopIds()).containsExactly(1L, 6L, 3L);
+        assertThat(result.stops()).extracting(CourseResponseDTO.Stop::facilityId).containsExactly(1L, 6L, 3L);
         verifyNoInteractions(petCheckRepository);
     }
 
@@ -542,7 +616,7 @@ class CourseCommandServiceTest {
         CourseResponseDTO.MyCourse result = courseCommandService.copySharedCourse(2L, "CRS-SHARE0001");
 
         assertThat(result.name()).isEqualTo(original.getName());
-        assertThat(result.stopIds()).containsExactly(1L, 2L);
+        assertThat(result.stops()).extracting(CourseResponseDTO.Stop::facilityId).containsExactly(1L, 2L);
         assertThat(result.isPublic()).isFalse();
 
         // MyCourse 응답엔 소유자 필드가 없어 위 검증만으론 저장된 엔티티의 소유자가 실제로
@@ -592,7 +666,7 @@ class CourseCommandServiceTest {
 
         CourseResponseDTO.MyCourse result = courseCommandService.copySharedCourse(2L, "CRS-SHARE0002");
 
-        assertThat(result.stopIds()).containsExactly(1L);
+        assertThat(result.stops()).extracting(CourseResponseDTO.Stop::facilityId).containsExactly(1L);
     }
 
     @Test
@@ -604,7 +678,7 @@ class CourseCommandServiceTest {
                 .name("몽이 코스")
                 .source(CourseSource.CUSTOM)
                 .build();
-        original.replaceStops(List.of(deniedFacility(1L, "동반불가 매장")));
+        original.replaceStops(List.of(CourseStopDraft.withoutTime(deniedFacility(1L, "동반불가 매장"))));
         ReflectionTestUtils.setField(original, "courseId", 10L);
         ReflectionTestUtils.setField(original, "shareCode", "CRS-DENIED001");
 
@@ -676,8 +750,8 @@ class CourseCommandServiceTest {
                 .name("몽이 코스")
                 .source(CourseSource.CUSTOM)
                 .build();
-        List<Facility> stops = List.of(facilityIds).stream()
-                .map(id -> facility(id, "시설" + id))
+        List<CourseStopDraft> stops = List.of(facilityIds).stream()
+                .map(id -> CourseStopDraft.withoutTime(facility(id, "시설" + id)))
                 .toList();
         course.replaceStops(stops);
         ReflectionTestUtils.setField(course, "courseId", 10L);
@@ -691,8 +765,8 @@ class CourseCommandServiceTest {
                 .source(CourseSource.CUSTOM)
                 .isPublic(true)
                 .build();
-        List<Facility> stops = List.of(facilityIds).stream()
-                .map(id -> facility(id, "시설" + id))
+        List<CourseStopDraft> stops = List.of(facilityIds).stream()
+                .map(id -> CourseStopDraft.withoutTime(facility(id, "시설" + id)))
                 .toList();
         course.replaceStops(stops);
         ReflectionTestUtils.setField(course, "courseId", 10L);
@@ -705,8 +779,18 @@ class CourseCommandServiceTest {
     ) {
         CourseRequestDTO.SaveRequest request = new CourseRequestDTO.SaveRequest();
         request.setName(name);
-        request.setStopIds(stopIds);
+        request.setStops(stopIds.stream().map(id -> stopRequest(id, null)).toList());
         return request;
+    }
+
+    private CourseRequestDTO.StopRequest stopRequest(
+            Long facilityId,
+            LocalTime visitTime
+    ) {
+        CourseRequestDTO.StopRequest stopRequest = new CourseRequestDTO.StopRequest();
+        stopRequest.setFacilityId(facilityId);
+        stopRequest.setVisitTime(visitTime);
+        return stopRequest;
     }
 
     private User user(Long id) {

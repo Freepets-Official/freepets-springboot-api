@@ -19,6 +19,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.freepets.domain.course.dto.CourseResponseDTO;
 import com.freepets.domain.course.entity.Course;
 import com.freepets.domain.course.entity.CourseSource;
+import com.freepets.domain.course.entity.CourseStopDraft;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
@@ -64,7 +65,7 @@ class CourseQueryServiceTest {
                 .name("몽이 코스")
                 .source(CourseSource.CUSTOM)
                 .build();
-        course.replaceStops(List.of(a, b));
+        course.replaceStops(List.of(CourseStopDraft.withoutTime(a), CourseStopDraft.withoutTime(b)));
         ReflectionTestUtils.setField(course, "courseId", 10L);
 
         when(courseRepository.findAllByUser_Id(1L)).thenReturn(List.of(course));
@@ -72,7 +73,7 @@ class CourseQueryServiceTest {
         List<CourseResponseDTO.MyCourse> result = courseQueryService.getMyCourses(1L);
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).stopIds()).containsExactly(1L, 2L);
+        assertThat(result.get(0).stops()).extracting(CourseResponseDTO.Stop::facilityId).containsExactly(1L, 2L);
     }
 
     @Test
@@ -88,7 +89,7 @@ class CourseQueryServiceTest {
 
         assertThat(result.total()).isEqualTo(1);
         assertThat(result.items().get(0).ownerNickname()).isEqualTo("테스터");
-        assertThat(result.items().get(0).stopIds()).containsExactly(1L);
+        assertThat(result.items().get(0).stops()).extracting(CourseResponseDTO.Stop::facilityId).containsExactly(1L);
     }
 
     @Test
@@ -190,7 +191,7 @@ class CourseQueryServiceTest {
                 .source(CourseSource.CUSTOM)
                 .isPublic(true)
                 .build();
-        course.replaceStops(List.of(stop));
+        course.replaceStops(List.of(CourseStopDraft.withoutTime(stop)));
         ReflectionTestUtils.setField(course, "courseId", courseId);
         return course;
     }

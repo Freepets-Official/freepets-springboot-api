@@ -16,7 +16,7 @@ public class CourseConverter {
                 course.getCourseId(),
                 course.getName(),
                 course.getDescription(),
-                stopIdsOf(course),
+                stopsOf(course),
                 course.getCreatedAt(),
                 course.isPublic()
         );
@@ -35,15 +35,18 @@ public class CourseConverter {
                 course.getName(),
                 course.getDescription(),
                 course.getUser().getNickname(),
-                stopIdsOf(course),
+                stopsOf(course),
                 course.getCreatedAt()
         );
     }
 
-    private static List<Long> stopIdsOf(Course course) {
+    private static List<CourseResponseDTO.Stop> stopsOf(Course course) {
         return course.getStops().stream()
                 .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
-                .map(stop -> stop.getFacility().getFacilityId())
+                .map(stop -> new CourseResponseDTO.Stop(
+                        stop.getFacility().getFacilityId(),
+                        stop.getVisitTime()
+                ))
                 .toList();
     }
 

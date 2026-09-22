@@ -72,10 +72,12 @@ public class FacilityListAssembler {
     }
 
     /**
-     * 관광공사를 못 쓸 때 적재해둔 데이터로 같은 형태의 응답을 만든다.
+     * 적재해둔 데이터로 관광공사 경로와 같은 형태의 응답을 만든다. 관광공사 장애 때의 대체
+     * 경로이자, 한 번에 받기엔 너무 큰 범위(시군구를 비운 시도 단위·전국)의 정규 경로다.
      *
-     * <p>정렬 기준이 DB 컬레이션이라 관광공사 경로와 순서가 미세하게 다를 수 있다. 장애 중에만
-     * 도는 경로라 그 차이를 맞추려고 전 건을 메모리로 올리지는 않는다.
+     * <p>정렬 기준이 DB 컬레이션이라 관광공사 경로와 순서가 미세하게 다를 수 있다. 그 차이를
+     * 맞추려고 전 건을 메모리로 올리지는 않는다 — 두 경로를 오가며 보는 화면이 아니라, 지역
+     * 범위를 정하면 그 범위 안에서는 한 경로만 쓰기 때문이다.
      */
     public FacilityResponseDTO.FacilityListResult assembleFromDatabase(FacilityRequestDTO.FacilityListRequest request) {
         String sigunguCode = request.sigunguCodeOrNull();

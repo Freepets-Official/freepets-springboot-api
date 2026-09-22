@@ -70,6 +70,23 @@ class RegionRepositoryTest {
     }
 
     @Test
+    void 시군구_행만_있는_시도도_시도_존재_확인은_통과한다() {
+        // #154 — 시도 단위 조회 검증이 이 메서드에 달려 있다. "시군구가 null인 행"을 찾는
+        // 방식이었다면 강원처럼 시군구 행만 있는 시도는 전부 400이 된다.
+        assertThat(regionRepository.existsBySidoCode("32")).isTrue();
+    }
+
+    @Test
+    void 시군구가_없는_시도도_시도_존재_확인은_통과한다() {
+        assertThat(regionRepository.existsBySidoCode("36")).isTrue();
+    }
+
+    @Test
+    void 없는_시도_코드는_존재_확인에서_걸린다() {
+        assertThat(regionRepository.existsBySidoCode("99")).isFalse();
+    }
+
+    @Test
     void 존재하지_않는_코드면_비어있다() {
         Optional<Region> found = regionRepository.findBySidoCodeAndSigunguCode("99", "99999");
 

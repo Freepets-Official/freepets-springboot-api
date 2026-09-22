@@ -23,14 +23,16 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 전체 시설 목록을 조회한다.
  *
- * <p>목록의 정본은 관광공사다. 조회 한 건이 관광공사 호출 한 건으로 남아야 해서, 우리 DB를 읽고
- * 마는 대신 요청마다 실제로 부른다. DB는 그 결과에 우리만 아는 정보(발자국 점수, 리뷰 수, 동반
- * 가능 여부)를 붙이는 데 쓴다 — 그쪽은 {@link FacilityListAssembler}가 맡는다.
+ * <p>시군구까지 좁힌 조회에서는 관광공사가 목록의 정본이다. 조회 한 건이 관광공사 호출 한 건으로
+ * 남아야 해서, 우리 DB를 읽고 마는 대신 요청마다 실제로 부른다. DB는 그 결과에 우리만 아는
+ * 정보(발자국 점수, 리뷰 수, 동반 가능 여부)를 붙이는 데 쓴다 — 그쪽은
+ * {@link FacilityListAssembler}가 맡는다.
  *
  * <p>조건에 맞는 전량을 한 응답에 받아 서버에서 거르고 자른다. 관광공사에서 페이지를 나눠 받으면
  * 동반 가능 필터를 건 뒤 페이지마다 남는 건수가 들쭉날쭉해지고, 관광공사가 주는 총 건수는 필터
- * 이전 값이라 마지막 페이지가 맞지 않는다. 시군구를 필수로 받는 것이 이 방식의 전제다
- * (시군구 단위 최대 700여 건, 시도는 9천 건이 넘는다).
+ * 이전 값이라 마지막 페이지가 맞지 않는다. 시군구까지 좁히는 것이 이 방식의 전제다(시군구 단위
+ * 최대 700여 건). 그보다 넓은 범위 — 시군구를 비운 시도 단위(9천 건 이상)와 전국(5만 건에 가까움)
+ * — 는 이 전제가 깨지므로 적재해둔 DB에서 내려간다.
  *
  * <p>이 클래스에는 트랜잭션을 걸지 않는다. 관광공사 호출이 최대 30초까지 블로킹되는데 그동안
  * DB 커넥션을 쥐고 있으면 안 되기 때문이다. DB 작업은 모두 {@link FacilityListAssembler} 안에서
@@ -78,11 +80,14 @@ public class FacilityListQueryService {
     public FacilityResponseDTO.FacilityListResult getFacilityList(FacilityRequestDTO.FacilityListRequest request) {
         validateRegion(request);
 
-        if (request.isNationwide()) {
-            // 전국은 관광공사에서 한 번에 받을 수 없다. 조건에 맞는 전량이 5만 건(30MB)이라
-            // 요청마다 받아 파싱하는 건 불가능하고, 나눠 받으면 동반 가능 필터를 건 뒤 페이지마다
-            // 남는 건수가 들쭉날쭉해진다. 적재해둔 데이터로 답한다.
-            log.info("전국 조회라 관광공사를 부르지 않고 DB로 응답합니다. category={}", request.getCategory());
+        // 관광공사 실시간 경로는 시군구까지 좁혔을 때만 쓸 수 있다. 전량을 한 번에 받는 구조라
+        // 시도 단위(9천 건)·전국(5만 건, 30MB)은 상한을 넘고, 나눠 받으면 동반 가능 필터를 건 뒤
+        // 페이지마다 남는 건수가 들쭉날쭉해진다. 그 둘은 적재해둔 데이터로 답한다.
+        if (request.sigunguCodeOrNull() == null) {
+            // sidoCode가 비어 있으면 전국, 값이 있으면 시도 단위다 — 관광공사를 부르지 않은
+            // 이유를 운영 로그에서 그대로 구분할 수 있게 둘 다 남긴다(#156).
+            log.info("시군구를 좁히지 않은 조회라 관광공사를 부르지 않고 DB로 응답합니다. "
+                    + "sidoCode={}, category={}", request.getSidoCode(), request.getCategory());
             return facilityListAssembler.assembleFromDatabase(request);
         }
 
@@ -102,13 +107,9 @@ public class FacilityListQueryService {
     /**
      * 지역 조건을 검증한다.
      *
-     * <p>시군구는 필수다. 다만 하위 시군구 행이 없는 시도는 비울 수 있어야 하므로, 그 시도에
-     * 시군구가 실재하는지를 보고 판단한다. 관광공사 법정동 코드에서는 세종특별자치시조차
-     * 시군구 코드를 시도와 같은 {@code 36110}으로 내려주므로, 지금 데이터에서는 모든 시도가
-     * 시군구를 갖는다. 코드 체계가 바뀔 때를 위해 조건으로 남긴다.
-     *
-     * <p>없는 코드를 조용히 넘기지 않는다. 관광공사는 모르는 코드에 빈 목록을 주는데, 그러면
-     * 사용자는 "그 지역에 시설이 없다"로 읽게 된다.
+     * <p>시군구는 선택이다(#154) — 비우면 시도 전체를 본다. 다만 없는 코드를 조용히 넘기지는
+     * 않는다. 관광공사도 우리 DB도 모르는 코드에는 빈 목록을 주는데, 그러면 사용자는 "그 지역에
+     * 시설이 없다"로 읽게 된다.
      */
     private void validateRegion(FacilityRequestDTO.FacilityListRequest request) {
         String sigunguCode = request.sigunguCodeOrNull();
@@ -125,11 +126,15 @@ public class FacilityListQueryService {
             return;
         }
 
-        if (sigunguCode == null && regionRepository.existsBySidoCodeAndSigunguCodeIsNotNull(request.getSidoCode())) {
-            throw new GeneralException(
-                    ErrorStatus.COMMON400,
-                    Map.of("sigunguCode", "시군구 코드는 필수입니다.")
-            );
+        if (sigunguCode == null) {
+            // 시도 단위 — 시군구 행이 있든 없든(세종처럼) 시도 자체가 실재하기만 하면 된다.
+            if (!regionRepository.existsBySidoCode(request.getSidoCode())) {
+                throw new GeneralException(
+                        ErrorStatus.COMMON400,
+                        Map.of("sidoCode", "존재하지 않는 지역입니다.")
+                );
+            }
+            return;
         }
 
         if (regionRepository.findBySidoCodeAndSigunguCode(request.getSidoCode(), sigunguCode).isEmpty()) {

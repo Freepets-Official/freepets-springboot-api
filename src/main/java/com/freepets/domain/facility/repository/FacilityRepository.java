@@ -431,7 +431,8 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
     Slice<Facility> findAllBy(Pageable pageable);
 
     /**
-     * 전체 시설 목록. 관광공사 실시간 조회가 실패했을 때 대신 쓴다.
+     * 전체 시설 목록. 관광공사를 부르지 않는 경로(시군구를 비운 시도 단위·전국)와 관광공사
+     * 실시간 조회가 실패했을 때 쓴다.
      *
      * <p>등급 조건이 없어 랭킹과 다르다. 전체 목록은 등급을 못 받은 시설도 보여준다.
      */

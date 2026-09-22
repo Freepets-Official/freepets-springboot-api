@@ -191,6 +191,32 @@ tasks.register('regionSync', Test) {
 	outputs.upToDateWhen { false }
 }
 
+// 전체 시설 목록 조회를 시군구 전체에 돌려 건수를 실측한다. 관광공사를 250회 안팎 호출한다.
+// 실행: ./gradlew facilityListAudit
+tasks.register('facilityListAudit', Test) {
+	group = 'verification'
+	description = '전체 시설 목록 조회의 전국 합계를 실측한다 (외부 API 호출)'
+
+	useJUnitPlatform()
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+
+	filter {
+		includeTestsMatching 'com.freepets.domain.facility.service.FacilityListCountAuditRunner'
+	}
+
+	systemProperty 'facility.list.audit', 'true'
+
+	timeout = Duration.ofMinutes(30)
+
+	testLogging {
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
+
+	outputs.upToDateWhen { false }
+}
+
 // 저장된 리뷰를 시설의 발자국 등급 캐시에 1회 반영한다. 캐시 도입 이전에 쌓인 리뷰를 채운다.
 // 실행: ./gradlew facilityGradeBackfill
 tasks.register('facilityGradeBackfill', Test) {

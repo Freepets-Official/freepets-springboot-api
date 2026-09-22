@@ -1,8 +1,10 @@
 package com.freepets.domain.course.dto;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.course.entity.CourseTheme;
@@ -126,11 +128,20 @@ public class CourseResponseDTO {
     ) {}
 
     // GET /api/v1/courses(내 코스), POST/PUT 응답 — CUSTOM 코스.
+    // 코스 안의 스톱 하나 — 순서는 배열 순서 그대로다. visitTime은 사용자가 정한 도착 시각이고,
+    // 안 정했으면 null이다.
+    public record Stop(
+            Long facilityId,
+
+            @JsonFormat(pattern = "HH:mm")
+            LocalTime visitTime
+    ) {}
+
     public record MyCourse(
             Long courseId,
             String name,
             String description,
-            List<Long> stopIds,
+            List<Stop> stops,
             LocalDateTime createdAt,
 
             // record 접근자가 isPublic()이므로 JSON 프로퍼티명을 ApiResponse.isSuccess와 같은
@@ -151,7 +162,7 @@ public class CourseResponseDTO {
     ) {}
 
     // GET /api/v1/courses/public 응답 — 다른 사용자가 공개한 CUSTOM 코스 둘러보기(트리플의
-    // "다른 여행자 코스" 참고). 그대로 stopIds를 담아 POST /courses에 넣으면 내 코스로 복사(fork)된다.
+    // "다른 여행자 코스" 참고). 그대로 stops를 담아 POST /courses에 넣으면 내 코스로 복사(fork)된다.
     public record PublicCourseResult(
             List<PublicCourse> items,
             long total
@@ -162,7 +173,7 @@ public class CourseResponseDTO {
             String name,
             String description,
             String ownerNickname,
-            List<Long> stopIds,
+            List<Stop> stops,
             LocalDateTime createdAt
     ) {}
 

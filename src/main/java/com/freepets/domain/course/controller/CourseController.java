@@ -83,7 +83,7 @@ public class CourseController {
     }
 
     /**
-     * 이름만 바꾼다 — updateCourse(PUT)와 달리 stopIds 없이 name만 보내면 된다. 본인 코스만
+     * 이름만 바꾼다 — updateCourse(PUT)와 달리 stops 없이 name만 보내면 된다. 본인 코스만
      * 가능하다(남이 만든 코스는 courseCommandService가 COURSE4042로 막는다).
      */
     @PatchMapping("/{courseId}/name")
@@ -98,7 +98,7 @@ public class CourseController {
     }
 
     /**
-     * 공개 여부만 바꾼다 — updateCourse(PUT)와 달리 name·stopIds 없이 isPublic만 보내면 된다.
+     * 공개 여부만 바꾼다 — updateCourse(PUT)와 달리 name·stops 없이 isPublic만 보내면 된다.
      * "공개" 토글 버튼처럼 가볍게 켜고 끄는 용도.
      */
     @PatchMapping("/{courseId}/visibility")
@@ -115,7 +115,7 @@ public class CourseController {
     /**
      * 그 자리(0부터 시작하는 순서)의 스톱만 다른 시설로 교체한다 — 예: 스톱이 5개(순서 0~4)일 때
      * stopOrder=3에 새 facilityId를 보내면 그 자리만 바뀌고 나머지 순서는 그대로 유지된다.
-     * 스톱 개수 자체가 바뀌는 추가·삭제는 여전히 updateCourse(전체 stopIds 교체)를 쓴다.
+     * 스톱 개수 자체가 바뀌는 추가·삭제는 여전히 updateCourse(전체 stops 교체)를 쓴다.
      */
     @PutMapping("/{courseId}/stops/{stopOrder}")
     public ApiResponse<CourseResponseDTO.MyCourse> replaceStop(
@@ -171,7 +171,7 @@ public class CourseController {
     /**
      * 저장하지 않고 스톱 순서만 최근접 이웃 방식으로 다듬어 미리 보여준다("경로 최적화").
      * AI 코스를 fork했거나 직접 검색해서 스톱을 추가한 뒤 동선이 왔다갔다 하면 이 결과를 그대로
-     * POST/PUT의 stopIds로 넣어 저장하면 된다.
+     * POST/PUT의 stops로 넣어 저장하면 된다.
      */
     @PostMapping("/optimize-order")
     public ApiResponse<CourseResponseDTO.OrderResult> optimizeOrder(

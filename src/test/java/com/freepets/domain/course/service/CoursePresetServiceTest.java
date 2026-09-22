@@ -27,6 +27,7 @@ import com.freepets.domain.course.dto.CourseResponseDTO;
 import com.freepets.domain.course.entity.Course;
 import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.course.entity.CourseSource;
+import com.freepets.domain.course.entity.CourseStopDraft;
 import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
@@ -66,7 +67,7 @@ class CoursePresetServiceTest {
                 .theme(CourseTheme.PET_CAFE)
                 .distanceOption(CourseDistanceOption.FIVE_KM)
                 .build();
-        cached.replaceStops(List.of(cafe));
+        cached.replaceStops(List.of(CourseStopDraft.withoutTime(cafe)));
         ReflectionTestUtils.setField(cached, "courseId", 101L);
 
         when(courseRepository.findBySourceAndSidoAndSigunguAndThemeAndDistanceOption(
@@ -238,7 +239,7 @@ class CoursePresetServiceTest {
                 .theme(CourseTheme.PET_CAFE)
                 .distanceOption(CourseDistanceOption.FIVE_KM)
                 .build();
-        course.replaceStops(stops);
+        course.replaceStops(stops.stream().map(CourseStopDraft::withoutTime).toList());
         return course;
     }
 
@@ -365,7 +366,7 @@ class CoursePresetServiceTest {
                 .theme(CourseTheme.PET_CAFE)
                 .distanceOption(CourseDistanceOption.FIVE_KM)
                 .build();
-        cached.replaceStops(List.of(cafeOld));
+        cached.replaceStops(List.of(CourseStopDraft.withoutTime(cafeOld)));
 
         when(courseRepository.findAllBySource(CourseSource.PRESET)).thenReturn(List.of(cached));
         when(facilityRepository.findPresetCandidates("강원", "강릉시", CourseTheme.PET_CAFE.getCategories()))

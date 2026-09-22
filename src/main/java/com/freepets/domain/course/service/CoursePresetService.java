@@ -18,6 +18,7 @@ import com.freepets.domain.course.dto.CourseResponseDTO;
 import com.freepets.domain.course.entity.Course;
 import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.course.entity.CourseSource;
+import com.freepets.domain.course.entity.CourseStopDraft;
 import com.freepets.domain.course.entity.CourseStop;
 import com.freepets.domain.course.entity.CourseTheme;
 import com.freepets.domain.course.repository.CourseRepository;
@@ -186,7 +187,11 @@ public class CoursePresetService {
         // 아니라 조합의 정체성(캐시 키)이므로 그대로 재사용한다. 캐시는 단일 테마 조합만 갖고
         // 있으므로(다중 테마는 애초에 저장되지 않는다) Set.of(theme)로 감싸도 안전하다.
         List<Facility> stops = computeStops(course.getSido(), course.getSigungu(), Set.of(course.getTheme()), course.getDistanceOption());
-        course.update(titleOf(course.getSido(), course.getSigungu(), Set.of(course.getTheme())), null, stops);
+        course.update(
+                titleOf(course.getSido(), course.getSigungu(), Set.of(course.getTheme())),
+                null,
+                stops.stream().map(CourseStopDraft::withoutTime).toList()
+        );
     }
 
     private Course newCourse(
@@ -205,7 +210,7 @@ public class CoursePresetService {
                 .theme(theme)
                 .distanceOption(distanceOption)
                 .build();
-        course.replaceStops(stops);
+        course.replaceStops(stops.stream().map(CourseStopDraft::withoutTime).toList());
 
         return course;
     }

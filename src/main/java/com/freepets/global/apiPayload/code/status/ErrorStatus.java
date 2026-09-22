@@ -57,6 +57,7 @@ public enum ErrorStatus implements BaseErrorCode {
     REVIEW4003(CONFLICT, "REVIEW4003", "이미 신고한 리뷰입니다."),
     REVIEW4004(CONFLICT, "REVIEW4004", "리뷰 저장 중 충돌이 발생했습니다. 다시 시도해주세요."),
     REVIEW4005(FORBIDDEN, "REVIEW4005", "본인 리뷰는 도움돼요로 표시할 수 없습니다."),
+    REVIEW4006(CONFLICT, "REVIEW4006", "처리할 대기 중인 신고가 없습니다."),
     REVIEW4041(NOT_FOUND, "REVIEW4041", "존재하지 않는 리뷰입니다."),
 
     // 반려동물 만족도 에러

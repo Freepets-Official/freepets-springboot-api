@@ -2,6 +2,9 @@ package com.freepets.domain.review.converter;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+
+import org.springframework.data.domain.Page;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.pet.entity.Pet;
@@ -9,8 +12,11 @@ import com.freepets.domain.review.dto.ReviewRequestDTO;
 import com.freepets.domain.review.dto.ReviewResponseDTO;
 import com.freepets.domain.review.entity.Review;
 import com.freepets.domain.review.entity.ReviewReport;
+import com.freepets.domain.review.entity.ReviewReportReason;
+import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.ReviewTag;
 import com.freepets.domain.review.entity.Tag;
+import com.freepets.domain.review.repository.ReportedReviewSummary;
 import com.freepets.domain.user.entity.User;
 
 public class ReviewConverter {
@@ -114,5 +120,60 @@ public class ReviewConverter {
 
     public static ReviewResponseDTO.HelpfulResult toHelpfulResult(Review review) {
         return new ReviewResponseDTO.HelpfulResult(review.getReviewId(), review.getHelpfulCount());
+    }
+
+    public static ReviewResponseDTO.AdminReportedReviewList toAdminReportedReviewList(
+            Page<ReportedReviewSummary> summaryPage,
+            Map<Long, Review> reviewById,
+            Map<Long, Map<ReviewReportReason, Long>> reasonCountsByReviewId
+    ) {
+        List<ReviewResponseDTO.AdminReportedReview> reviews = summaryPage.getContent().stream()
+                .map(summary -> toAdminReportedReview(
+                        summary,
+                        reviewById.get(summary.reviewId()),
+                        reasonCountsByReviewId.getOrDefault(summary.reviewId(), Map.of())
+                ))
+                .toList();
+
+        return new ReviewResponseDTO.AdminReportedReviewList(
+                reviews,
+                new ReviewResponseDTO.PageInfo(
+                        summaryPage.getNumber(),
+                        summaryPage.getSize(),
+                        summaryPage.getTotalElements(),
+                        summaryPage.hasNext()
+                )
+        );
+    }
+
+    private static ReviewResponseDTO.AdminReportedReview toAdminReportedReview(
+            ReportedReviewSummary summary,
+            Review review,
+            Map<ReviewReportReason, Long> reasonCounts
+    ) {
+        return new ReviewResponseDTO.AdminReportedReview(
+                review.getReviewId(),
+                review.getFacility().getFacilityId(),
+                review.getFacility().getName(),
+                review.getUser().getId(),
+                review.getUser().getNickname(),
+                review.getContent(),
+                review.getPhotoUrl(),
+                review.getRatingSpace(),
+                review.getRatingStaff(),
+                review.getRatingAmenity(),
+                review.getCreatedAt(),
+                summary.reportCount(),
+                reasonCounts,
+                summary.firstReportedAt()
+        );
+    }
+
+    public static ReviewResponseDTO.AdminReportActionResult toAdminReportActionResult(
+            Long reviewId,
+            ReviewReportStatus status,
+            int processedReportCount
+    ) {
+        return new ReviewResponseDTO.AdminReportActionResult(reviewId, status, processedReportCount);
     }
 }

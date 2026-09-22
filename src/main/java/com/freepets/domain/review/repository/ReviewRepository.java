@@ -45,6 +45,16 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     Optional<Review> findByReviewIdAndDeletedAtIsNull(Long reviewId);
 
+    // 관리자 신고 목록 한 페이지 분량의 리뷰를 시설·작성자와 함께 한 번에 가져온다 — 응답이 둘 다 쓰므로
+    // 리뷰마다 따로 불러오면 리뷰 수만큼 쿼리가 늘어난다(ReviewReportAdminQueryService 참고).
+    @Query("""
+            SELECT review FROM Review review
+            JOIN FETCH review.facility
+            JOIN FETCH review.user
+            WHERE review.reviewId IN :reviewIds
+            """)
+    List<Review> findAllWithFacilityAndUserByReviewIdIn(@Param("reviewIds") Collection<Long> reviewIds);
+
     /**
      * "도움됐어요" 카운트를 애플리케이션에서 읽고-고치고-flush하는 대신 DB 단에서 원자적으로
      * 1 올린다(Review.helpfulCount 주석 참고) — 다른 유저 두 명이 같은 리뷰에 거의 동시에

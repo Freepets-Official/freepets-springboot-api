@@ -1,5 +1,7 @@
 package com.freepets.domain.review.entity;
 
+import java.time.LocalDateTime;
+
 import com.freepets.domain.user.entity.User;
 import com.freepets.global.entity.BaseEntity;
 
@@ -46,6 +48,14 @@ public class ReviewReport extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ReviewReportStatus status;
 
+    // 운영자가 승인·반려한 시각과 운영자 userId. 아직 대기 중이면 둘 다 null이다
+    // (FacilityOwnerClaim.reviewedAt/reviewedByUserId와 같은 의미).
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
+    @Column(name = "reviewed_by_user_id")
+    private Long reviewedByUserId;
+
     @Builder
     private ReviewReport(
             Review review,
@@ -57,6 +67,19 @@ public class ReviewReport extends BaseEntity {
         this.user = user;
         this.reason = reason;
         this.status = status;
+    }
+
+    // 승인된 신고가 1건이라도 달린 리뷰는 목록·등급 집계에서 빠진다(ReviewRepository.aggregateByFacilityId 참고).
+    public void accept(Long adminUserId) {
+        this.status = ReviewReportStatus.ACCEPTED;
+        this.reviewedAt = LocalDateTime.now();
+        this.reviewedByUserId = adminUserId;
+    }
+
+    public void reject(Long adminUserId) {
+        this.status = ReviewReportStatus.REJECTED;
+        this.reviewedAt = LocalDateTime.now();
+        this.reviewedByUserId = adminUserId;
     }
 
 }

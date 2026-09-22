@@ -1,6 +1,5 @@
 package com.freepets.domain.facility.service;
 
-import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -45,8 +44,10 @@ public class FacilityListQueryService {
     /**
      * 관광공사에서 한 번에 받아올 최대 건수.
      *
-     * <p>관측된 시군구 단위 최대가 700여 건(경기 파주 736)이라 두 배 여유를 뒀다. 관광공사는
-     * {@code numOfRows}에 상한을 두지 않아 이 값이 곧 우리가 감당하기로 한 응답 크기다.
+     * <p>관광공사는 {@code numOfRows}에 상한을 두지 않아 이 값이 곧 우리가 감당하기로 한 응답
+     * 크기다. 실측 최대는 서울 강남구 1,134건으로 여유가 크지 않다 — 이 값을 정할 때 근거로 삼은
+     * "최대 736건(경기 파주)"은 실제와 달랐다. 시설은 계속 늘어나므로 언젠가 넘는다는 전제로,
+     * 넘었을 때 잘라 내보내지 않고 DB로 넘긴다({@link #fetchAndAssemble} 참고).
      */
     private static final int MAXIMUM_FETCH_ROWS = 1500;
 
@@ -87,17 +88,14 @@ public class FacilityListQueryService {
             return facilityListAssembler.assembleFromDatabase(request);
         }
 
-        List<AreaBasedItem> fetched;
         try {
-            fetched = fetchFromTourApi(request);
+            return fetchAndAssemble(request);
         } catch (TourApiException exception) {
             // 관광공사가 죽었다고 목록 화면까지 죽을 이유는 없다. 적재해둔 데이터로 대신 답한다.
             log.warn("관광공사 조회에 실패해 DB로 대신 응답합니다. sidoCode={}, sigunguCode={}",
                     request.getSidoCode(), request.getSigunguCode(), exception);
             return facilityListAssembler.assembleFromDatabase(request);
         }
-
-        return facilityListAssembler.assemble(fetched, request);
     }
 
     /**
@@ -142,12 +140,18 @@ public class FacilityListQueryService {
     }
 
     /**
-     * 조건에 맞는 시설을 관광공사에서 한 번에 받아온다.
+     * 조건에 맞는 시설을 관광공사에서 한 번에 받아 응답을 만든다.
      *
      * <p>카페는 음식점과 같은 {@code contentTypeId=39}를 쓰므로 분류체계 중분류까지 실어 좁힌다.
      * 반대로 음식점은 "카페가 아닌 39"라 관광공사에서 못 거르고 받은 뒤에 걷어낸다.
+     *
+     * <p>한 번에 받을 수 있는 수를 넘으면 받아온 앞부분을 쓰지 않고 DB로 넘긴다. 잘린 목록을
+     * 그대로 내보내면 총 건수만 맞고 목록은 모자란 응답이 나가는데, 사용자는 뒷부분이 빠졌다는
+     * 걸 알 수 없다. 시군구를 비운 범위와 같은 규칙이다 — 한 번에 못 받으면 DB가 답한다.
      */
-    private List<AreaBasedItem> fetchFromTourApi(FacilityRequestDTO.FacilityListRequest request) {
+    private FacilityResponseDTO.FacilityListResult fetchAndAssemble(
+            FacilityRequestDTO.FacilityListRequest request
+    ) {
         String body = tourApiClient.areaBasedList(
                 facilityCategoryMapper.toContentTypeId(request.getCategory()),
                 request.getSidoCode(),
@@ -159,14 +163,15 @@ public class FacilityListQueryService {
 
         int totalCount = tourApiResponseParser.parseTotalCount(body);
         if (totalCount > MAXIMUM_FETCH_ROWS) {
-            // 여기 걸리면 뒷부분이 잘려 나간다. 한 번에 받는 전제가 깨진 것이니 상한을 다시 봐야 한다.
-            log.warn("조건에 맞는 시설이 한 번에 받을 수 있는 수를 넘었습니다. sidoCode={}, sigunguCode={}, "
-                            + "category={}, totalCount={}, 상한={}",
+            log.warn("조건에 맞는 시설이 한 번에 받을 수 있는 수를 넘어 DB로 대신 응답합니다. "
+                            + "sidoCode={}, sigunguCode={}, category={}, totalCount={}, 상한={}",
                     request.getSidoCode(), request.getSigunguCode(), request.getCategory(),
                     totalCount, MAXIMUM_FETCH_ROWS);
+            return facilityListAssembler.assembleFromDatabase(request);
         }
 
-        return tourApiResponseParser.parseItems(body, AreaBasedItem.class);
+        return facilityListAssembler.assemble(
+                tourApiResponseParser.parseItems(body, AreaBasedItem.class), request);
     }
 
 }

@@ -29,8 +29,7 @@ public interface RegionRepository extends JpaRepository<Region, Long> {
 
     /**
      * 그 시도가 실재하는지 본다. 시군구를 비운 시도 단위 조회를 검증할 때 쓴다(#154) — 하위
-     * 시군구 행이 있든(대부분) 없든(세종처럼 시도와 같은 코드로 내려오는 경우) 시도 자체만
-     * 확인하면 된다.
+     * 시군구 행이 있든(대부분) 없든(세종특별자치시처럼) 시도 자체만 확인하면 된다.
      */
     boolean existsBySidoCode(String sidoCode);
 

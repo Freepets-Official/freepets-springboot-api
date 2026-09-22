@@ -74,16 +74,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<Role> findActiveRoleById(@Param("id") Long id);
 
     /**
-     * 전국 랭킹의 참여자 수(GamificationRanking) — 지금은 전국 단일 스코프뿐이라 "활성 계정
-     * 전체"가 곧 참여자 수다. 지역 스코프가 생기면 지역 필터가 추가된 버전이 따로 필요하다.
-     */
-    long countByDeletedAtIsNull();
-
-    /**
      * 내 순위 계산용 — "나보다 totalXp가 많은 활성 계정 수 + 1"이 곧 내 순위다. 동점은 같은
      * 순위를 받아야 해서(1,1,3) "많거나 같은 수"가 아니라 "많은 수"만 센다.
      */
     long countByDeletedAtIsNullAndTotalXpGreaterThan(long totalXp);
+
+    /**
+     * 랭킹 참여자 수 — {@link #findNationalRanking}과 같은 {@code minimumXp}를 넘겨야 "N명 중
+     * K번째"가 목록과 맞는다(#152). 위 메서드와 달리 경계를 포함한다(참여 자격은 "그 XP 이상").
+     *
+     * <p>지역 스코프가 생기면 지역 필터가 추가된 버전이 따로 필요하다.
+     */
+    long countByDeletedAtIsNullAndTotalXpGreaterThanEqual(long minimumXp);
 
     /**
      * 전국 랭킹 상위 목록 — RANK() 윈도우 함수로 동점자는 같은 순위를 받고 다음 순위가
@@ -91,6 +93,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * 매기면 동점 구간에서 실제 순위와 어긋난다. 동점자끼리는 id 오름차순(먼저 가입한 순)으로
      * 안정적인 순서를 준다 — "먼저 도달한 사람이 앞"을 정확히 재현할 별도 시각 기록이 아직
      * 없어서 쓰는 근사치다.
+     *
+     * <p>참여 기준 XP({@code minimumXp})에 못 미치는 계정은 제외한다(#152) — 활동이 없으면
+     * 순위도 없다. 동점을 같은 순위로 묶는 RANK() 특성상, 빼지 않으면 활동이 전혀 없는 계정이
+     * 전부 한 덩어리로 목록 뒤를 채운다. 기준값을 쿼리에 박지 않고 파라미터로 받는 이유는,
+     * 참여자 수({@link #countByDeletedAtIsNullAndTotalXpGreaterThanEqual})와 반드시 같은 값을
+     * 써야 하는데 양쪽에 따로 적어두면 한쪽만 바뀌어도 목록과 인원수가 조용히 어긋나서다.
      *
      * <p>{@code freepets.users}로 스키마를 명시한다 — {@link UserRepositoryRankingTest}로
      * 확인해보니 이 레포의 H2 테스트 DB·(추정)실제 배포 DB 모두 {@code freepets} 스키마를
@@ -104,12 +112,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
                 SELECT id, nickname, total_xp AS totalXp, level,
                        RANK() OVER (ORDER BY total_xp DESC) AS rnk
                 FROM freepets.users
-                WHERE deleted_at IS NULL
+                WHERE deleted_at IS NULL AND total_xp >= :minimumXp
             ) ranked
             ORDER BY rnk ASC, id ASC
             LIMIT :size OFFSET :offset
             """, nativeQuery = true)
     List<RankingRow> findNationalRanking(
+            @Param("minimumXp") long minimumXp,
             @Param("size") int size,
             @Param("offset") long offset
     );

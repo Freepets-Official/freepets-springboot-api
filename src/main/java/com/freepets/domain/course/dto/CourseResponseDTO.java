@@ -127,9 +127,9 @@ public class CourseResponseDTO {
             double distanceM
     ) {}
 
-    // GET /api/v1/courses(내 코스), POST/PUT 응답 — CUSTOM 코스.
     // 코스 안의 스톱 하나 — 순서는 배열 순서 그대로다. visitTime은 사용자가 정한 도착 시각이고,
-    // 안 정했으면 null이다.
+    // 안 정했으면 null이다. 요청(CourseRequestDTO.StopRequest)은 형식을 안 가리고 받지만,
+    // 응답은 여기서 "HH:mm"으로 고정해 내려간다.
     public record Stop(
             Long facilityId,
 
@@ -137,6 +137,7 @@ public class CourseResponseDTO {
             LocalTime visitTime
     ) {}
 
+    // GET /api/v1/courses(내 코스), POST/PUT 응답 — CUSTOM 코스.
     public record MyCourse(
             Long courseId,
             String name,
@@ -177,8 +178,10 @@ public class CourseResponseDTO {
             LocalDateTime createdAt
     ) {}
 
-    // POST /api/v1/courses/optimize-order 응답. 저장하지 않고 순서만 다듬어 미리 보여준다 —
-    // 그대로 쓰려면 이어서 이 stopIds를 POST/PUT /courses에 넣어 호출해야 한다.
+    // POST /api/v1/courses/optimize-order 응답. 저장하지 않고 순서만 다듬어 미리 보여준다.
+    // 순서만 다루는 엔드포인트라 시각을 주고받지 않는다 — 저장하려면 이 순서대로 stops를 다시
+    // 구성해 POST/PUT /courses에 넣어야 한다. 이때 시각은 시설을 따라가야 한다(재정렬된 자리에
+    // 원래 순서의 시각을 그대로 얹으면 엉뚱한 시설에 붙는다).
     public record OrderResult(
             List<Long> stopIds
     ) {}

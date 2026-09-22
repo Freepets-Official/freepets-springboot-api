@@ -170,8 +170,11 @@ public class CourseController {
 
     /**
      * 저장하지 않고 스톱 순서만 최근접 이웃 방식으로 다듬어 미리 보여준다("경로 최적화").
-     * AI 코스를 fork했거나 직접 검색해서 스톱을 추가한 뒤 동선이 왔다갔다 하면 이 결과를 그대로
-     * POST/PUT의 stops로 넣어 저장하면 된다.
+     * AI 코스를 fork했거나 직접 검색해서 스톱을 추가한 뒤 동선이 왔다갔다 할 때 쓴다.
+     *
+     * <p>주고받는 값은 시설 ID 순서뿐이다. 저장하려면 이 순서대로 stops를 다시 구성해 POST/PUT을
+     * 호출해야 하는데, 이때 도착 시각은 자리가 아니라 시설을 따라가야 한다 — 재정렬된 자리에
+     * 원래 순서의 시각을 그대로 얹으면 엉뚱한 시설에 붙는다.
      */
     @PostMapping("/optimize-order")
     public ApiResponse<CourseResponseDTO.OrderResult> optimizeOrder(

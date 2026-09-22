@@ -17,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Set;
 
@@ -303,6 +304,44 @@ class CourseControllerTest {
                         .content("{\"name\":\"몽이 코스\",\"description\":\"설명\",\"stops\":[{\"facilityId\":1,\"visitTime\":\"10:00\"},{\"facilityId\":2,\"visitTime\":\"11:30\"}]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.courseId").value(10));
+    }
+
+    @Test
+    @DisplayName("도착 시각은 HH:mm으로 내려가고, 요청은 ISO 형식도 받는다")
+    void 도착_시각은_HHmm으로_내려가고_요청은_ISO도_받는다() throws Exception {
+        // 응답 형식을 고정해두지 않으면 나중에 직렬화 설정이 바뀌었을 때 모든 클라이언트가
+        // 깨지는데도 테스트는 통과한다. 요청은 반대로 관대해야 한다 — 모바일 날짜 라이브러리가
+        // 흔히 내보내는 LocalTime.toString()("10:00:00")이 튕기면 앱이 저장을 못 한다.
+        when(courseCommandService.createCourse(isNull(), any()))
+                .thenReturn(new CourseResponseDTO.MyCourse(
+                        10L, "몽이 코스", null,
+                        List.of(new CourseResponseDTO.Stop(1L, LocalTime.of(10, 0))),
+                        LocalDateTime.now(), false
+                ));
+
+        mockMvc.perform(post("/api/v1/courses")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"몽이 코스\",\"stops\":[{\"facilityId\":1,\"visitTime\":\"10:00:00\"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.stops[0].visitTime").value("10:00"));
+
+        ArgumentCaptor<CourseRequestDTO.SaveRequest> captor =
+                ArgumentCaptor.forClass(CourseRequestDTO.SaveRequest.class);
+        verify(courseCommandService).createCourse(isNull(), captor.capture());
+        assertThat(captor.getValue().getStops().get(0).getVisitTime()).isEqualTo(LocalTime.of(10, 0));
+    }
+
+    @Test
+    @DisplayName("스톱 배열에 null이 섞여 있으면 400을 반환한다")
+    void 스톱_배열에_null이_섞여_있으면_400을_반환한다() throws Exception {
+        // 검증기는 리스트 안의 null 원소를 건너뛰어서, 원소에 @NotNull을 직접 걸지 않으면
+        // 여기서 통과한 뒤 서비스에서 NPE(500)가 된다.
+        mockMvc.perform(post("/api/v1/courses")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"몽이 코스\",\"stops\":[null]}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(courseCommandService);
     }
 
     @Test

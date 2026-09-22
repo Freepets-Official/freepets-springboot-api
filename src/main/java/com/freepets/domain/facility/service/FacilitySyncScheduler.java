@@ -26,7 +26,7 @@ import lombok.extern.slf4j.Slf4j;
  * </pre>
  *
  * <p><b>주의(현재 미해결):</b> 분산 락(예: ShedLock)이 없다 — 애플리케이션을 인스턴스 여러 대로
- * 띄우면 각 인스턴스가 매일 새벽 3시에 독립적으로 동기화·파싱을 돌려 Claude를 중복 호출하고
+ * 띄우면 각 인스턴스가 매일 새벽 5시에 독립적으로 동기화·파싱을 돌려 Claude를 중복 호출하고
  * 저장이 경합할 수 있다. 지금은 단일 인스턴스 배포를 전제로 한다 — 여러 대로 확장하게 되면
  * 이 클래스에 분산 락을 추가해야 한다.
  */
@@ -39,8 +39,11 @@ public class FacilitySyncScheduler {
     private final FacilitySyncService facilitySyncService;
     private final FacilityConditionLlmBatchService facilityConditionLlmBatchService;
 
-    /** 매일 새벽 3시(KST) — 트래픽이 적은 시간대. 필요하면 조정 가능. */
-    @Scheduled(cron = "0 0 3 * * *", zone = "Asia/Seoul")
+    /**
+     * 매일 새벽 5시(KST). 관광공사가 국내관광정보·반려동물 동반여행 콘텐츠를 매일 새벽 4:30에
+     * 갱신하므로, 그 이후로 여유를 두고 잡아야 그날 수정분을 놓치지 않는다.
+     */
+    @Scheduled(cron = "0 0 5 * * *", zone = "Asia/Seoul")
     public void syncAndParse() {
         log.info("일일 시설 동기화를 시작합니다.");
         FacilitySyncResult syncResult = facilitySyncService.syncAll();

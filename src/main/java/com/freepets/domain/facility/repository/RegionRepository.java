@@ -28,11 +28,10 @@ public interface RegionRepository extends JpaRepository<Region, Long> {
     );
 
     /**
-     * 그 시도에 하위 시군구가 있는지 본다.
-     *
-     * <p>전체 시설 목록이 시군구를 필수로 받는데, 하위 시군구 행이 없는 시도까지 막으면 그 지역은
-     * 아예 조회할 수 없어진다.
+     * 그 시도가 실재하는지 본다. 시군구를 비운 시도 단위 조회를 검증할 때 쓴다(#154) — 하위
+     * 시군구 행이 있든(대부분) 없든(세종처럼 시도와 같은 코드로 내려오는 경우) 시도 자체만
+     * 확인하면 된다.
      */
-    boolean existsBySidoCodeAndSigunguCodeIsNotNull(String sidoCode);
+    boolean existsBySidoCode(String sidoCode);
 
 }

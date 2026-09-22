@@ -78,10 +78,10 @@ public class FacilityListQueryService {
     public FacilityResponseDTO.FacilityListResult getFacilityList(FacilityRequestDTO.FacilityListRequest request) {
         validateRegion(request);
 
-        if (request.isNationwide()) {
-            // 전국은 관광공사에서 한 번에 받을 수 없다. 조건에 맞는 전량이 5만 건(30MB)이라
-            // 요청마다 받아 파싱하는 건 불가능하고, 나눠 받으면 동반 가능 필터를 건 뒤 페이지마다
-            // 남는 건수가 들쭉날쭉해진다. 적재해둔 데이터로 답한다.
+        // 관광공사 실시간 경로는 시군구까지 좁혔을 때만 쓸 수 있다. 전량을 한 번에 받는 구조라
+        // 시도 단위(9천 건)·전국(5만 건, 30MB)은 상한을 넘고, 나눠 받으면 동반 가능 필터를 건 뒤
+        // 페이지마다 남는 건수가 들쭉날쭉해진다. 그 둘은 적재해둔 데이터로 답한다.
+        if (request.sigunguCodeOrNull() == null) {
             return facilityListAssembler.assembleFromDatabase(request);
         }
 
@@ -101,13 +101,9 @@ public class FacilityListQueryService {
     /**
      * 지역 조건을 검증한다.
      *
-     * <p>시군구는 필수다. 다만 하위 시군구 행이 없는 시도는 비울 수 있어야 하므로, 그 시도에
-     * 시군구가 실재하는지를 보고 판단한다. 관광공사 법정동 코드에서는 세종특별자치시조차
-     * 시군구 코드를 시도와 같은 {@code 36110}으로 내려주므로, 지금 데이터에서는 모든 시도가
-     * 시군구를 갖는다. 코드 체계가 바뀔 때를 위해 조건으로 남긴다.
-     *
-     * <p>없는 코드를 조용히 넘기지 않는다. 관광공사는 모르는 코드에 빈 목록을 주는데, 그러면
-     * 사용자는 "그 지역에 시설이 없다"로 읽게 된다.
+     * <p>시군구는 선택이다(#154) — 비우면 시도 전체를 본다. 다만 없는 코드를 조용히 넘기지는
+     * 않는다. 관광공사도 우리 DB도 모르는 코드에는 빈 목록을 주는데, 그러면 사용자는 "그 지역에
+     * 시설이 없다"로 읽게 된다.
      */
     private void validateRegion(FacilityRequestDTO.FacilityListRequest request) {
         String sigunguCode = request.sigunguCodeOrNull();
@@ -124,11 +120,15 @@ public class FacilityListQueryService {
             return;
         }
 
-        if (sigunguCode == null && regionRepository.existsBySidoCodeAndSigunguCodeIsNotNull(request.getSidoCode())) {
-            throw new GeneralException(
-                    ErrorStatus.COMMON400,
-                    Map.of("sigunguCode", "시군구 코드는 필수입니다.")
-            );
+        if (sigunguCode == null) {
+            // 시도 단위 — 시군구 행이 있든 없든(세종처럼) 시도 자체가 실재하기만 하면 된다.
+            if (!regionRepository.existsBySidoCode(request.getSidoCode())) {
+                throw new GeneralException(
+                        ErrorStatus.COMMON400,
+                        Map.of("sidoCode", "존재하지 않는 지역입니다.")
+                );
+            }
+            return;
         }
 
         if (regionRepository.findBySidoCodeAndSigunguCode(request.getSidoCode(), sigunguCode).isEmpty()) {

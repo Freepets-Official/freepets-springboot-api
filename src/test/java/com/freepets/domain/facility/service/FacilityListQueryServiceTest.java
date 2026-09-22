@@ -85,12 +85,33 @@ class FacilityListQueryServiceTest {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("시군구를 비우면 400이다")
-    void 시군구를_비우면_400이다() {
+    @DisplayName("시군구를 비우면 관광공사를 부르지 않고 DB로 내려준다")
+    void 시군구를_비우면_DB로_내려준다() {
+        // #154 — 시도 단위는 9천 건이 넘어 관광공사 실시간 경로(한 번에 받는 상한 1500건)로는
+        // 못 받는다. 전국과 같은 이유로 적재해둔 데이터로 답한다.
         FacilityRequestDTO.FacilityListRequest request = createRequest(SIDO_CODE_GYEONGGI, null);
 
-        when(regionRepository.existsBySidoCodeAndSigunguCodeIsNotNull(SIDO_CODE_GYEONGGI))
-                .thenReturn(true);
+        when(regionRepository.existsBySidoCode(SIDO_CODE_GYEONGGI)).thenReturn(true);
+        when(facilityRepository.searchAll(isNull(), isNull(), eq(SIDO_CODE_GYEONGGI), isNull(), any(Pageable.class)))
+                .thenReturn(List.of(facility(1L, "100", "가게", PetAllowed.ALLOWED)));
+        when(facilityRepository.countAll(isNull(), isNull(), eq(SIDO_CODE_GYEONGGI), isNull())).thenReturn(9123L);
+        when(reviewRepository.countByFacilityIds(List.of(1L))).thenReturn(List.of());
+
+        FacilityResponseDTO.FacilityListResult result = facilityListQueryService.getFacilityList(request);
+
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.total()).isEqualTo(9123L);
+        verifyNoInteractions(tourApiClient);
+    }
+
+    @Test
+    @DisplayName("없는 시도 코드는 시군구를 비워도 400이다")
+    void 없는_시도_코드는_시군구를_비워도_400이다() {
+        // 관광공사도 우리 DB도 모르는 코드에는 빈 목록이 나가는데, 사용자는 그걸 "그 지역에
+        // 시설이 없다"로 읽는다.
+        FacilityRequestDTO.FacilityListRequest request = createRequest("999", null);
+
+        when(regionRepository.existsBySidoCode("999")).thenReturn(false);
 
         GeneralException exception = assertThrows(GeneralException.class,
                 () -> facilityListQueryService.getFacilityList(request));
@@ -154,21 +175,22 @@ class FacilityListQueryServiceTest {
     }
 
     @Test
-    @DisplayName("하위 시군구 행이 없는 시도는 시군구 없이 조회된다")
-    void 하위_시군구_행이_없는_시도는_시군구_없이_조회된다() {
+    @DisplayName("하위 시군구 행이 없는 시도도 시군구 없이 조회된다")
+    void 하위_시군구_행이_없는_시도도_시군구_없이_조회된다() {
+        // 세종처럼 시군구 행이 따로 없는 시도도 시도 존재 확인만 통과하면 된다.
         FacilityRequestDTO.FacilityListRequest request = createRequest(SIDO_CODE_WITHOUT_SIGUNGU, null);
 
-        when(regionRepository.existsBySidoCodeAndSigunguCodeIsNotNull(SIDO_CODE_WITHOUT_SIGUNGU))
-                .thenReturn(false);
-        when(regionRepository.findBySidoCodeAndSigunguCode(SIDO_CODE_WITHOUT_SIGUNGU, null))
-                .thenReturn(Optional.of(region()));
-        when(tourApiClient.areaBasedList(isNull(), eq(SIDO_CODE_WITHOUT_SIGUNGU), isNull(), isNull(), anyInt(), anyInt()))
-                .thenReturn(emptyResponse());
+        when(regionRepository.existsBySidoCode(SIDO_CODE_WITHOUT_SIGUNGU)).thenReturn(true);
+        when(facilityRepository.searchAll(isNull(), isNull(), eq(SIDO_CODE_WITHOUT_SIGUNGU), isNull(),
+                any(Pageable.class))).thenReturn(List.of());
+        when(facilityRepository.countAll(isNull(), isNull(), eq(SIDO_CODE_WITHOUT_SIGUNGU), isNull()))
+                .thenReturn(0L);
 
         FacilityResponseDTO.FacilityListResult result = facilityListQueryService.getFacilityList(request);
 
         assertThat(result.items()).isEmpty();
         assertThat(result.total()).isZero();
+        verifyNoInteractions(tourApiClient);
     }
 
     @Test

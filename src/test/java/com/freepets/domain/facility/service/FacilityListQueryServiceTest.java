@@ -7,6 +7,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -416,6 +418,33 @@ class FacilityListQueryServiceTest {
 
         assertThat(result.items()).hasSize(1);
         assertThat(result.total()).isEqualTo(7);
+    }
+
+    @Test
+    @DisplayName("한 번에 받을 수 있는 수를 넘으면 잘린 목록 대신 DB로 응답한다")
+    void 한_번에_받을_수_있는_수를_넘으면_DB로_응답한다() {
+        // #158 — 전에는 경고만 남기고 앞부분만 잘라 내보냈다. 총 건수는 맞는데 목록은 모자란
+        // 응답이라 사용자는 뒷부분이 빠졌다는 걸 알 수 없다. 실측 최대가 강남구 1,134건이라
+        // 상한 1500에 여유가 크지 않다.
+        givenValidRegion();
+        givenTourApiItems("""
+                {"contentid":"100","title":"가게"}
+                """, 1501);
+
+        when(facilityRepository.searchAll(isNull(), isNull(), eq(SIDO_CODE_GYEONGGI), eq(SIGUNGU_CODE_PAJU),
+                any(Pageable.class)))
+                .thenReturn(List.of(facility(1L, "100", "가게", PetAllowed.ALLOWED)));
+        when(facilityRepository.countAll(isNull(), isNull(), eq(SIDO_CODE_GYEONGGI), eq(SIGUNGU_CODE_PAJU)))
+                .thenReturn(1501L);
+        when(reviewRepository.countByFacilityIds(List.of(1L))).thenReturn(List.of());
+
+        FacilityResponseDTO.FacilityListResult result =
+                facilityListQueryService.getFacilityList(createRequest(SIDO_CODE_GYEONGGI, SIGUNGU_CODE_PAJU));
+
+        // DB 경로로 넘어갔다는 증거 — 관광공사 응답을 썼다면 contentId 매칭(findByContentIdIn)을
+        // 거쳤을 텐데, 그 경로를 아예 타지 않는다.
+        assertThat(result.total()).isEqualTo(1501L);
+        verify(facilityRepository, never()).findByContentIdIn(any());
     }
 
     // ------------------------------------------------------------------

@@ -14,8 +14,10 @@ import lombok.RequiredArgsConstructor;
  * ({@code PetCheckJudgeService})은 이 결과가 채운 {@code Facility} 컬럼만 읽고, 판별할 때마다
  * 재호출하지 않는다.
  *
- * <p>실측 데이터(facility_pet_db.xlsx, 9,678건) 기준 약 90%는 조건 원문 자체가 없어 LLM을
- * 아예 호출하지 않고 {@code NO_CONDITION}으로 바로 결정한다(docs/03-ai-prompts.md 상단 표 참고).
+ * <p>입력은 관광공사 원문 4종과 우리가 사람 손으로 정리한 안내문({@code petConditionRaw})
+ * 둘 다다. 관광공사 원문은 실측상 9,678건 중 1,090건에만 들어있는 반면 정리 안내문은 9,678건
+ * 전부에 있어서, 관광공사 원문만 보면 조건이 멀쩡히 적혀 있는 시설 8,600건을 조건 없음으로
+ * 흘려보내게 된다(#148). 둘 다 비어 있을 때만 LLM 없이 기계적으로 결정한다.
  *
  * <p>{@code status}는 LLM이 "애매한지"를 주관적으로 판단하는 게 아니라,
  * {@code unmappedConditionText}(컬럼으로 못 담는 잔여 텍스트)가 남아있는지로 기계적으로
@@ -39,7 +41,7 @@ public class FacilityConditionLlmParser {
 
     /**
      * 관광공사 {@code acmpyTypeCd}의 두 원자값 중 하나. 실측 데이터 기준 이 값이면 구역 제한이
-     * 없다는 뜻이라, 나머지 4종 원문이 전부 비어 있을 때 "조건 없음"으로 확정할 수 있다
+     * 없다는 뜻이라, 나머지 원문이 전부 비어 있을 때 "조건 없음"으로 확정할 수 있다
      * (PetConditionParser 클래스 주석 §"acmpyTypeCd가 2개뿐인 코드성 필드" 참고).
      */
     private static final String UNRESTRICTED_ACCOMPANY_TYPE = "전구역 동반가능";
@@ -75,19 +77,21 @@ public class FacilityConditionLlmParser {
             String allowedAnimalText,
             String requiredMatterText,
             String etcAccompanyText,
-            String accidentRiskText
+            String accidentRiskText,
+            String petConditionRaw
     ) {
         // accompanyType(동반구분)은 실측상 "전구역 동반가능"/"일부구역 동반가능" 두 값뿐인
         // 코드성 필드라 그 자체로는 구조화할 실질 문장이 없다 — isAllBlank 판정에서 뺀다.
-        // 나머지 4종(동반가능동물·필수준비물·기타·사고대비)이 전부 비어 있으면 LLM을 부를
-        // 이유가 없다: 89.4%(약 8,687건, "전구역 동반가능")는 조건 없음이고, 나머지는
-        // accompanyType만으로 결정한다.
-        if (isAllBlank(allowedAnimalText, requiredMatterText, etcAccompanyText, accidentRiskText)) {
+        // 나머지가 전부 비어 있을 때만 accompanyType만으로 결정한다.
+        if (isAllBlank(
+                allowedAnimalText, requiredMatterText, etcAccompanyText, accidentRiskText, petConditionRaw
+        )) {
             return resolveByAccompanyTypeOnly(accompanyType);
         }
 
         FacilityConditionExtraction extraction = extract(
-                accompanyType, allowedAnimalText, requiredMatterText, etcAccompanyText, accidentRiskText
+                accompanyType, allowedAnimalText, requiredMatterText, etcAccompanyText, accidentRiskText,
+                petConditionRaw
         );
 
         return FacilityConditionLlmParseResult.fromExtraction(extraction);
@@ -98,7 +102,8 @@ public class FacilityConditionLlmParser {
             String allowedAnimalText,
             String requiredMatterText,
             String etcAccompanyText,
-            String accidentRiskText
+            String accidentRiskText,
+            String petConditionRaw
     ) {
         StructuredMessageCreateParams<FacilityConditionExtraction> params = MessageCreateParams.builder()
                 .model(MODEL)
@@ -106,7 +111,8 @@ public class FacilityConditionLlmParser {
                 .system(SYSTEM_PROMPT)
                 .outputConfig(FacilityConditionExtraction.class)
                 .addUserMessage(buildUserMessage(
-                        accompanyType, allowedAnimalText, requiredMatterText, etcAccompanyText, accidentRiskText
+                        accompanyType, allowedAnimalText, requiredMatterText, etcAccompanyText, accidentRiskText,
+                        petConditionRaw
                 ))
                 .build();
 
@@ -122,7 +128,8 @@ public class FacilityConditionLlmParser {
             String allowedAnimalText,
             String requiredMatterText,
             String etcAccompanyText,
-            String accidentRiskText
+            String accidentRiskText,
+            String petConditionRaw
     ) {
         return """
                 동반 구분: %s
@@ -130,12 +137,14 @@ public class FacilityConditionLlmParser {
                 동반 시 필요사항: %s
                 기타 동반 정보: %s
                 사고 대비사항: %s
+                정리된 조건 안내문: %s
                 """.formatted(
                 nullToDash(accompanyType),
                 nullToDash(allowedAnimalText),
                 nullToDash(requiredMatterText),
                 nullToDash(etcAccompanyText),
-                nullToDash(accidentRiskText)
+                nullToDash(accidentRiskText),
+                nullToDash(petConditionRaw)
         );
     }
 
@@ -171,7 +180,7 @@ public class FacilityConditionLlmParser {
     }
 
     /**
-     * 나머지 4종이 전부 비어 있을 때 accompanyType만으로 상태를 기계적으로 정한다. 실측 데이터
+     * 나머지 원문이 전부 비어 있을 때 accompanyType만으로 상태를 기계적으로 정한다. 실측 데이터
      * 기준 값은 두 종류뿐이다: "전구역 동반가능"(구역 제한 없음)이거나 "일부구역 동반가능"류
      * (제한은 있는데 어느 구역인지 설명이 없음). 전자는 조건 없음, 후자는 사람이 확인해야 할
      * 신호로 AMBIGUOUS에 남긴다 — LLM에 넘겨도 구조화할 실질 문장이 없어 호출하지 않는다.

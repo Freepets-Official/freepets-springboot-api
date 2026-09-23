@@ -1,8 +1,12 @@
 package com.freepets.domain.facility.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,10 +38,10 @@ import lombok.extern.slf4j.Slf4j;
  * 같지만, 시설마다 개별 호출하는 대신 전량을 하나의 배치로 제출해 입력·출력 토큰을 50%
  * 할인받는다 — 실시간 응답이 필요 없는 순수 백그라운드 작업이라 이 할인에 맞는 경우다.
  *
- * <p>{@code pet_condition_hash}(원문 5종 필드의 해시)가 같은 시설은 원문이 완전히 동일해
- * {@link FacilityConditionLlmParser}의 결과도 항상 같다 — 같은 조건 문장을 쓰는 시설이 많아서
- * (docs/03 3장), 해시가 같은 시설을 묶어 요청 하나만 보내고 결과를 그룹 전체에 적용한다.
- * 시설 수만큼이 아니라 고유 해시 수만큼만 Claude를 호출한다.
+ * <p>보낼 프롬프트가 완전히 같은 시설은 {@link FacilityConditionLlmParser}의 결과도 항상 같다 —
+ * 같은 조건 문장을 쓰는 시설이 많아서(docs/03 3장), 프롬프트가 같은 시설을 묶어 요청 하나만
+ * 보내고 결과를 그룹 전체에 적용한다. 시설 수만큼이 아니라 고유 프롬프트 수만큼만 Claude를
+ * 호출한다.
  *
  * <p>대상 선정은 {@link FacilityRepository#findRequiringLlmParse}가 담당하고, 프롬프트·모델·
  * 구조화 출력 스키마·maxWeight 방어 로직은 {@link FacilityConditionLlmParser}와
@@ -121,12 +125,13 @@ public class FacilityConditionLlmBatchApiService {
     }
 
     /**
-     * {@code pet_condition_hash}로 묶는다. 원문 5종 필드가 전부 같아야 같은 해시가 나오므로
-     * ({@code TourApiFacilityConverter#hashOf}), 같은 그룹의 시설은 파싱 결과도 항상 같다.
+     * 실제로 보낼 프롬프트의 해시로 묶는다. 프롬프트가 같으면 결과도 같으므로, 그룹 대표
+     * 하나의 결과를 그룹 전체에 그대로 적용해도 된다.
      *
-     * <p>해시가 없는 시설(이론상 나올 일이 없다 — 대상 선정 자체가 원문이 있는 시설만 고른다)은
-     * 안전하게 시설 ID로 자기만의 그룹을 만든다. null을 그대로 묶는 키로 쓰면 서로 다른
-     * 원문의 시설이 우연히 한 그룹으로 섞일 수 있다.
+     * <p>{@code pet_condition_hash}로 묶지 않는다 — 그 해시는 관광공사 원문 5종만 담는데
+     * ({@code TourApiFacilityConverter#hashOf}) 파서는 정리 안내문({@code petConditionRaw})까지
+     * 읽으므로(#148), 관광공사 원문이 똑같이 비어 있고 안내문만 다른 시설들이 한 그룹으로
+     * 묶여 서로 남의 파싱 결과를 받게 된다.
      */
     private Map<String, List<Facility>> groupByConditionHash(List<Facility> targets) {
         Map<String, List<Facility>> grouped = new LinkedHashMap<>();
@@ -136,9 +141,26 @@ public class FacilityConditionLlmBatchApiService {
         return grouped;
     }
 
+    /** customId는 64자 제한이라 SHA-256 앞부분만 쓴다 — 32자면 충돌 확률이 사실상 없다. */
     private String groupKeyOf(Facility facility) {
-        String hash = facility.getPetConditionHash();
-        return (hash != null && !hash.isBlank()) ? hash : "facility:" + facility.getFacilityId();
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashed = digest.digest(userMessageOf(facility).getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hashed).substring(0, 32);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256을 사용할 수 없습니다.", exception);
+        }
+    }
+
+    private String userMessageOf(Facility facility) {
+        return FacilityConditionLlmParser.buildUserMessage(
+                facility.getAccompanyType(),
+                facility.getAllowedAnimalText(),
+                facility.getRequiredMatterText(),
+                facility.getEtcAccompanyText(),
+                facility.getAccidentRiskText(),
+                facility.getPetConditionRaw()
+        );
     }
 
     private String submit(Map<String, List<Facility>> groupedByHash) {
@@ -160,13 +182,7 @@ public class FacilityConditionLlmBatchApiService {
             Facility representative,
             OutputConfig outputConfig
     ) {
-        String userMessage = FacilityConditionLlmParser.buildUserMessage(
-                representative.getAccompanyType(),
-                representative.getAllowedAnimalText(),
-                representative.getRequiredMatterText(),
-                representative.getEtcAccompanyText(),
-                representative.getAccidentRiskText()
-        );
+        String userMessage = userMessageOf(representative);
 
         return BatchCreateParams.Request.builder()
                 .customId(groupKey)

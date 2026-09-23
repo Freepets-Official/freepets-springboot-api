@@ -86,7 +86,9 @@ public class PetSatisfactionCommandService {
         }
 
         if (isNewSatisfaction) {
-            gamificationService.grantXp(userId, XpSourceType.SATISFACTION, saved.getPetSatisfactionId(), SATISFACTION_XP);
+            gamificationService.grantXp(
+                    userId, XpSourceType.SATISFACTION, saved.getPetSatisfactionId(), SATISFACTION_XP
+            );
         }
 
         return PetSatisfactionConverter.toUpsertResult(saved);

@@ -18,6 +18,9 @@ public interface PetSatisfactionRepository extends JpaRepository<PetSatisfaction
             Long facilityId
     );
 
+    // "함께한 발자국"(반려동물별 만족도 평가 횟수) 계산용 — freepets-docs PR #49.
+    long countByPetPetId(Long petId);
+
     // 시설 하나에 대해 내 반려동물들 중 이미 기록이 있는 것만 가져와서, 서비스에서
     // "기록 전" 반려동물과 합친다.
     @EntityGraph(attributePaths = "pet")

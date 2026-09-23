@@ -6,10 +6,13 @@ import java.util.Set;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -80,9 +83,39 @@ public class CourseController {
     }
 
     /**
+     * 이름만 바꾼다 — updateCourse(PUT)와 달리 stops 없이 name만 보내면 된다. 본인 코스만
+     * 가능하다(남이 만든 코스는 courseCommandService가 COURSE4042로 막는다).
+     */
+    @PatchMapping("/{courseId}/name")
+    public ApiResponse<CourseResponseDTO.MyCourse> updateName(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long courseId,
+            @Valid @RequestBody CourseRequestDTO.NameRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                courseCommandService.updateName(userId, courseId, request.getName())
+        );
+    }
+
+    /**
+     * 공개 여부만 바꾼다 — updateCourse(PUT)와 달리 name·stops 없이 isPublic만 보내면 된다.
+     * "공개" 토글 버튼처럼 가볍게 켜고 끄는 용도.
+     */
+    @PatchMapping("/{courseId}/visibility")
+    public ApiResponse<CourseResponseDTO.MyCourse> updateVisibility(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long courseId,
+            @Valid @RequestBody CourseRequestDTO.VisibilityRequest request
+    ) {
+        return ApiResponse.onSuccess(
+                courseCommandService.updateVisibility(userId, courseId, request.isPublic())
+        );
+    }
+
+    /**
      * 그 자리(0부터 시작하는 순서)의 스톱만 다른 시설로 교체한다 — 예: 스톱이 5개(순서 0~4)일 때
      * stopOrder=3에 새 facilityId를 보내면 그 자리만 바뀌고 나머지 순서는 그대로 유지된다.
-     * 스톱 개수 자체가 바뀌는 추가·삭제는 여전히 updateCourse(전체 stopIds 교체)를 쓴다.
+     * 스톱 개수 자체가 바뀌는 추가·삭제는 여전히 updateCourse(전체 stops 교체)를 쓴다.
      */
     @PutMapping("/{courseId}/stops/{stopOrder}")
     public ApiResponse<CourseResponseDTO.MyCourse> replaceStop(
@@ -137,8 +170,11 @@ public class CourseController {
 
     /**
      * 저장하지 않고 스톱 순서만 최근접 이웃 방식으로 다듬어 미리 보여준다("경로 최적화").
-     * AI 코스를 fork했거나 직접 검색해서 스톱을 추가한 뒤 동선이 왔다갔다 하면 이 결과를 그대로
-     * POST/PUT의 stopIds로 넣어 저장하면 된다.
+     * AI 코스를 fork했거나 직접 검색해서 스톱을 추가한 뒤 동선이 왔다갔다 할 때 쓴다.
+     *
+     * <p>주고받는 값은 시설 ID 순서뿐이다. 저장하려면 이 순서대로 stops를 다시 구성해 POST/PUT을
+     * 호출해야 하는데, 이때 도착 시각은 자리가 아니라 시설을 따라가야 한다 — 재정렬된 자리에
+     * 원래 순서의 시각을 그대로 얹으면 엉뚱한 시설에 붙는다.
      */
     @PostMapping("/optimize-order")
     public ApiResponse<CourseResponseDTO.OrderResult> optimizeOrder(
@@ -150,6 +186,11 @@ public class CourseController {
     }
 
     // 로그인 불필요 — 다른 사용자가 공개한 코스를 로그인 전에도 둘러보고 담아갈 마음이 들게 한다.
+    // 다만 로그인 상태면 그 정보로 개인화 정렬을 해준다(CourseQueryService.getPublicCourses 참고)
+    // — permitAll 경로라 @AuthenticationPrincipal을 그대로 못 쓴다. 비로그인 요청은 Spring
+    // Security의 AnonymousAuthenticationToken(principal이 "anonymousUser" 문자열)이 채워지는데,
+    // @AuthenticationPrincipal Long userId로 받으면 이 문자열을 Long에 그대로 대입하려다 타입
+    // 불일치로 500이 난다 — 그래서 직접 SecurityContext를 보고 Long인 경우에만 값을 쓴다.
     @GetMapping("/public")
     public ApiResponse<CourseResponseDTO.PublicCourseResult> getPublicCourses(
             @RequestParam(defaultValue = "0")
@@ -161,8 +202,15 @@ public class CourseController {
             int size
     ) {
         return ApiResponse.onSuccess(
-                courseQueryService.getPublicCourses(PageRequest.of(page, size))
+                courseQueryService.getPublicCourses(resolveOptionalUserId(), PageRequest.of(page, size))
         );
+    }
+
+    private Long resolveOptionalUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getPrincipal() instanceof Long userId
+                ? userId
+                : null;
     }
 
     // 로그인 불필요 — preset과 마찬가지로 로그인 전 지역 선택 드롭다운에 쓴다.

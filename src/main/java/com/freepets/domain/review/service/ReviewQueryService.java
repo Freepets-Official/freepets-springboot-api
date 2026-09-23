@@ -18,6 +18,8 @@ import com.freepets.domain.review.entity.Review;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.ReviewTag;
 import com.freepets.domain.review.entity.Tag;
+import com.freepets.domain.review.repository.ReviewHelpfulRepository;
+import com.freepets.domain.review.repository.ReviewPetRepository;
 import com.freepets.domain.review.repository.ReviewReportRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
@@ -42,6 +44,8 @@ public class ReviewQueryService {
     private final FacilityRepository facilityRepository;
     private final ReviewRepository reviewRepository;
     private final ReviewReportRepository reviewReportRepository;
+    private final ReviewHelpfulRepository reviewHelpfulRepository;
+    private final ReviewPetRepository reviewPetRepository;
 
     public ReviewResponseDTO.ReviewListResult getReviews(
             Long facilityId,
@@ -73,6 +77,11 @@ public class ReviewQueryService {
                 .stream()
                 .map(reviewReport -> reviewReport.getReview().getReviewId())
                 .collect(Collectors.toSet());
+        Set<Long> helpfulByMeReviewIds = reviewHelpfulRepository
+                .findAllByUserIdAndReviewReviewIdIn(userId, reviewIds)
+                .stream()
+                .map(reviewHelpful -> reviewHelpful.getReview().getReviewId())
+                .collect(Collectors.toSet());
 
         List<Review> eligibleReviews = reviews.stream()
                 .filter(review -> !excludedReviewIds.contains(review.getReviewId()))
@@ -84,13 +93,33 @@ public class ReviewQueryService {
 
         List<Review> pageContent = paginate(reviews, safePage, safeSize);
         List<ReviewResponseDTO.ReviewDetail> reviewDetails = pageContent.stream()
-                .map(review -> ReviewConverter.toReviewDetail(review, reportedByMeReviewIds.contains(review.getReviewId())))
+                .map(review -> ReviewConverter.toReviewDetail(
+                        review,
+                        reportedByMeReviewIds.contains(review.getReviewId()),
+                        helpfulByMeReviewIds.contains(review.getReviewId())
+                ))
                 .toList();
 
         boolean hasNext = (long) (safePage + 1) * safeSize < reviews.size();
         ReviewResponseDTO.PageInfo pageInfo = new ReviewResponseDTO.PageInfo(safePage, safeSize, reviews.size(), hasNext);
 
         return new ReviewResponseDTO.ReviewListResult(grade, categoryAverages, topTags, reviewDetails, pageInfo);
+    }
+
+    /**
+     * 게이미피케이션 "구원자" 진행도(progress[])가 쓰는 값 — 이 유저가 쓴 리뷰 전체가 지금까지
+     * 받은 "도움됐어요" 총합. 리뷰 도메인이 소유한 집계를 그대로 노출하는 조회 전용 메소드다 —
+     * 게이미피케이션 쪽이 이 리포지토리를 직접 참조하지 않고 이 메소드를 통해서만 가져가게
+     * 해서, 의존 방향이 항상 "게이미피케이션 → 리뷰의 서비스"로만 흐르게 한다(리포지토리까지
+     * 뚫고 들어가지 않는다).
+     */
+    public long getTotalHelpfulReceived(Long userId) {
+        return reviewRepository.sumHelpfulCountByUserId(userId);
+    }
+
+    // GET /pets/{petId}/stats의 reviewCount(참고용) — 이 반려동물이 낀(삭제 안 된) 리뷰 수.
+    public long countForPet(Long petId) {
+        return reviewPetRepository.countByPetPetIdAndReviewDeletedAtIsNull(petId);
     }
 
     // 등급 집계는 시설 전체 리뷰가 필요해서 페이지네이션 없이 다 불러온 뒤, 화면에 내려줄

@@ -105,6 +105,10 @@ class CalendarEventQueryServiceTest {
         assertThat(result.events()).allMatch(occurrence -> occurrence.eventId().equals(10L));
         assertThat(result.events().get(0).date()).isEqualTo(LocalDate.of(2026, 9, 26));
         assertThat(result.events().get(4).date()).isEqualTo(LocalDate.of(2026, 9, 30));
+        // startDate는 발생일과 달리 5건 전부 원래 시작일(9/26) 그대로다 — 프론트가 마지막
+        // 발생일(9/30)에서 이 일정을 수정하더라도 startDate를 9/30이 아니라 9/26으로 보내야
+        // 반복 일정의 시작일이 밀리지 않는다.
+        assertThat(result.events()).allMatch(occurrence -> occurrence.startDate().equals(LocalDate.of(2026, 9, 26)));
     }
 
     @Test

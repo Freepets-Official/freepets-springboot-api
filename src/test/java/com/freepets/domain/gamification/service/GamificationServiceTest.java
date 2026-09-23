@@ -5,18 +5,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.function.IntSupplier;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.freepets.domain.gamification.entity.XpEvent;
@@ -57,7 +62,8 @@ class GamificationServiceTest {
 
     private void setUpService() {
         gamificationService = new GamificationService(
-                userRepository, xpEventRepository, gamificationNotificationService, badgeEvaluationService
+                userRepository, xpEventRepository,
+                gamificationNotificationService, badgeEvaluationService
         );
     }
 
@@ -121,7 +127,7 @@ class GamificationServiceTest {
         when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.REVIEW, 100L))
                 .thenReturn(false);
         when(xpEventRepository.save(any(XpEvent.class)))
-                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("uk_xp_events_user_source"));
+                .thenThrow(new DataIntegrityViolationException("uk_xp_events_user_source"));
 
         gamificationService.grantXp(1L, XpSourceType.REVIEW, 100L, 150);
 
@@ -148,6 +154,24 @@ class GamificationServiceTest {
         verify(xpEventRepository, never()).save(any());
         verifyNoInteractions(gamificationNotificationService);
         verifyNoInteractions(badgeEvaluationService);
+    }
+
+    @Test
+    void 리뷰도_하루_상한이_있다() {
+        // 시설당 리뷰는 1개뿐이라 sourceId(reviewId)가 매번 달라 평생 1회 검사는 항상 통과하지만,
+        // 서로 다른 시설을 여러 곳 판별받고 리뷰를 남기면 하루에도 여러 번 지급될 수 있어
+        // 다른 도메인처럼 하루 상한(5)으로 막혀야 한다.
+        setUpService();
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.REVIEW, 777L))
+                .thenReturn(false);
+        when(xpEventRepository.countByUser_IdAndSourceTypeAndCreatedAtGreaterThanEqual(
+                eq(1L), eq(XpSourceType.REVIEW), any(LocalDateTime.class)
+        )).thenReturn(5L); // REVIEW 하루 상한(5) 도달
+
+        gamificationService.grantXp(1L, XpSourceType.REVIEW, 777L, 20);
+
+        verifyNoInteractions(userRepository);
+        verify(xpEventRepository, never()).save(any());
     }
 
     @Test
@@ -200,5 +224,90 @@ class GamificationServiceTest {
 
         assertThatThrownBy(() -> gamificationService.updateLevelUpNotification(1L, false))
                 .isInstanceOf(GeneralException.class);
+    }
+
+    @Test
+    void 구원자_배지_평가는_badgeEvaluationService에_그대로_위임한다() {
+        setUpService();
+        User author = newUser();
+
+        gamificationService.evaluateHelpfulSaviorBadge(author, 10L);
+
+        verify(badgeEvaluationService).evaluateHelpfulSaviorBadge(author, 10L);
+    }
+
+    @Test
+    void 이미_지급된_componentSignature면_스킵한다() {
+        // sourceId(courseId)는 매번 새로 발급되는 값이라 평생 1회 검사를 못 걸러내지만,
+        // componentSignature(스톱 구성)로 이미 지급받은 적이 있으면 새 courseId로도 막혀야 한다.
+        setUpService();
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.COURSE_PUBLISHED, 20L))
+                .thenReturn(false);
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndComponentSignature(1L, XpSourceType.COURSE_PUBLISHED, "1,2"))
+                .thenReturn(true);
+
+        gamificationService.grantXp(1L, XpSourceType.COURSE_PUBLISHED, 20L, 30, "1,2");
+
+        verifyNoInteractions(userRepository);
+        verify(xpEventRepository, never()).save(any());
+    }
+
+    @Test
+    void amountSupplier는_User_행_잠금을_잡은_뒤에만_호출된다() {
+        // 코스 공개처럼 "오늘 이미 쓴 스톱을 뺀 나머지로 금액 계산"이 필요한 호출부를 위한
+        // 오버로드 — 잠금(findByIdForUpdate) 전에는 절대 호출되면 안 된다. 잠금 밖에서
+        // 계산하면 동시 요청이 같은 스톱을 똑같이 "아직 안 쓴 것"으로 보는 레이스가 생긴다.
+        setUpService();
+        User user = newUser();
+        List<String> callOrder = new ArrayList<>();
+
+        when(userRepository.findByIdForUpdate(1L)).thenAnswer(invocation -> {
+            callOrder.add("lock");
+            return Optional.of(user);
+        });
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.COURSE_PUBLISHED, 30L))
+                .thenReturn(false);
+
+        IntSupplier amountSupplier = () -> {
+            callOrder.add("amount");
+            return 25;
+        };
+
+        gamificationService.grantXp(1L, XpSourceType.COURSE_PUBLISHED, 30L, amountSupplier, null);
+
+        assertThat(callOrder).containsExactly("lock", "amount");
+        assertThat(user.getTotalXp()).isEqualTo(25);
+    }
+
+    @Test
+    void amountSupplier가_0_이하를_반환하면_지급_자체를_완전히_스킵한다() {
+        // 코스 공개에서 "오늘 이미 쓴 스톱뿐"인 경우(새 스톱 0개) — 기본 지급조차 없이 스킵돼야
+        // 한다. XpEvent도 안 남고 하루 상한 카운트도 안 늘어야 한다.
+        setUpService();
+        User user = newUser();
+
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+        when(xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(1L, XpSourceType.COURSE_PUBLISHED, 40L))
+                .thenReturn(false);
+
+        gamificationService.grantXp(1L, XpSourceType.COURSE_PUBLISHED, 40L, () -> 0, "1,2");
+
+        assertThat(user.getTotalXp()).isZero();
+        verify(xpEventRepository, never()).save(any());
+        verifyNoInteractions(gamificationNotificationService);
+        verifyNoInteractions(badgeEvaluationService);
+    }
+
+    @Test
+    void findAllComponentSignaturesGranted는_오늘로_기간을_제한하지_않는다() {
+        // "오늘"로 좁히면 스톱 하나만 바꿔가며 하루 지나서 반복하는 코스 공개 파밍을 못 막는다
+        // (CourseCommandService.resolveCoursePublishedXp 참고) — 이 조회는 기간 제한이 아예
+        // 없어야 한다. 리포지토리 자체가 시간 필터를 갖고 있으니, 여기서는 그 필터에
+        // LocalDateTime.MIN(사실상 무제한)이 넘어가는지만 확인한다.
+        setUpService();
+
+        gamificationService.findAllComponentSignaturesGranted(1L, XpSourceType.COURSE_PUBLISHED);
+
+        verify(xpEventRepository).findComponentSignaturesGrantedSince(1L, XpSourceType.COURSE_PUBLISHED, LocalDateTime.MIN);
     }
 }

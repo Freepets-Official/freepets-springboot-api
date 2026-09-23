@@ -3,7 +3,6 @@ package com.freepets.domain.course.entity;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.user.entity.User;
 import com.freepets.global.entity.BaseEntity;
 
@@ -99,6 +98,13 @@ public class Course extends BaseEntity {
     @Column(name = "share_code", unique = true, length = 20)
     private String shareCode;
 
+    // 공유 코드로 이 코스가 복사된 누적 횟수(GET /courses/public 인기순 폴백의 신호). isPublic과
+    // 무관하게 셈한다 — 비공개 코스도 지인에게 공유 코드로만 알려주는 쓰임이 있고, 이후 공개로
+    // 전환됐을 때 그동안의 인기를 반영해야 하기 때문. 기존 라이브 코스는 전부 0부터 시작한다.
+    @ColumnDefault("0")
+    @Column(name = "copy_count", nullable = false)
+    private int copyCount;
+
     @Builder
     private Course(
             User user,
@@ -129,21 +135,22 @@ public class Course extends BaseEntity {
     public void update(
             String name,
             String description,
-            List<Facility> stopFacilitiesInOrder
+            List<CourseStopDraft> stopsInOrder
     ) {
         this.name = name;
         this.description = description;
-        replaceStops(stopFacilitiesInOrder);
+        replaceStops(stopsInOrder);
     }
 
-    public void replaceStops(List<Facility> stopFacilitiesInOrder) {
+    public void replaceStops(List<CourseStopDraft> stopsInOrder) {
         this.stops.clear();
         int order = 0;
-        for (Facility facility : stopFacilitiesInOrder) {
+        for (CourseStopDraft draft : stopsInOrder) {
             this.stops.add(CourseStop.builder()
                     .course(this)
-                    .facility(facility)
+                    .facility(draft.facility())
                     .stopOrder(order++)
+                    .visitTime(draft.visitTime())
                     .build());
         }
     }
@@ -167,6 +174,18 @@ public class Course extends BaseEntity {
      */
     public void issueShareCode(String shareCode) {
         this.shareCode = shareCode;
+    }
+
+    public void incrementCopyCount() {
+        this.copyCount++;
+    }
+
+    /**
+     * 이름만 바꾼다. update()는 스톱까지 같이 바꾸는 전체 교체라, 이름만 고치고 싶은 요청에도
+     * stops를 다시 보내야 하는 부담이 있었다 — updateVisibility()와 같은 이유로 분리한다.
+     */
+    public void rename(String name) {
+        this.name = name;
     }
 
 }

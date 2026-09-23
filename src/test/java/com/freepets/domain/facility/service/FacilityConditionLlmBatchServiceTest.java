@@ -56,7 +56,7 @@ class FacilityConditionLlmBatchServiceTest {
                 .thenReturn(new SliceImpl<>(List.of(facility1, facility2)))
                 .thenReturn(new SliceImpl<>(List.of()));
 
-        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.noCondition());
 
         FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
@@ -75,7 +75,7 @@ class FacilityConditionLlmBatchServiceTest {
                 .thenReturn(new SliceImpl<>(List.of(ok, broken)))
                 .thenReturn(new SliceImpl<>(List.of()));
 
-        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
                         new FacilityConditionExtraction(new BigDecimal("10.0"), null, false, List.of(), List.of(), null, null)
                 ))
@@ -107,7 +107,7 @@ class FacilityConditionLlmBatchServiceTest {
 
         // LLM은 (규칙 엔진이 못 보는) 맹견 배제를 찾아내지만, maxWeight·maxWeightInclusive는
         // 임의로 다르게 읽었다고 가정 — 둘 다 규칙 엔진 값으로 덮어써야 한다.
-        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
                         new FacilityConditionExtraction(new BigDecimal("999.0"), true, true, List.of(), List.of(), null, null)
                 ));
@@ -115,7 +115,7 @@ class FacilityConditionLlmBatchServiceTest {
         FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
 
         assertThat(result.getProcessed()).isEqualTo(1);
-        verify(facilityConditionLlmParser, times(1)).parse(any(), any(), any(), any(), any());
+        verify(facilityConditionLlmParser, times(1)).parse(any(), any(), any(), any(), any(), any());
         assertThat(alreadyHasWeight.getMaxWeight()).isEqualByComparingTo(new BigDecimal("10.0"));
         assertThat(alreadyHasWeight.getMaxWeightInclusive()).isFalse();
         assertThat(alreadyHasWeight.isDangerousBreedExcluded()).isTrue();
@@ -136,7 +136,7 @@ class FacilityConditionLlmBatchServiceTest {
 
         assertThat(result.getProcessed()).isEqualTo(1);
         assertThat(result.countOf(PetConditionStatus.NO_CONDITION)).isEqualTo(1);
-        verify(facilityConditionLlmParser, never()).parse(any(), any(), any(), any(), any());
+        verify(facilityConditionLlmParser, never()).parse(any(), any(), any(), any(), any(), any());
         verify(facilityRepository, times(1)).save(any(Facility.class));
     }
 
@@ -152,7 +152,7 @@ class FacilityConditionLlmBatchServiceTest {
                 .thenReturn(new SliceImpl<>(List.of(guideDogOnly)))
                 .thenReturn(new SliceImpl<>(List.of()));
 
-        when(facilityConditionLlmParser.parse(any(), eq("안내견만 가능"), any(), any(), any()))
+        when(facilityConditionLlmParser.parse(any(), eq("안내견만 가능"), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
                         new FacilityConditionExtraction(null, null, false, List.of(), List.of(), null, "안내견만 동반 가능")
                 ));
@@ -161,7 +161,7 @@ class FacilityConditionLlmBatchServiceTest {
 
         assertThat(result.getProcessed()).isEqualTo(1);
         assertThat(result.countOf(PetConditionStatus.AMBIGUOUS)).isEqualTo(1);
-        verify(facilityConditionLlmParser, times(1)).parse(any(), any(), any(), any(), any());
+        verify(facilityConditionLlmParser, times(1)).parse(any(), any(), any(), any(), any(), any());
         assertThat(guideDogOnly.getPetAllowed()).isEqualTo(PetAllowed.PENDING);
     }
 
@@ -180,7 +180,7 @@ class FacilityConditionLlmBatchServiceTest {
                 .thenReturn(new SliceImpl<>(List.of(corruptedWeight)))
                 .thenReturn(new SliceImpl<>(List.of()));
 
-        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
                         new FacilityConditionExtraction(null, null, true, List.of(), List.of(), null, null)
                 ));
@@ -205,7 +205,7 @@ class FacilityConditionLlmBatchServiceTest {
                 .thenReturn(new SliceImpl<>(List.of(noWeightMention)))
                 .thenReturn(new SliceImpl<>(List.of()));
 
-        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
                         new FacilityConditionExtraction(
                                 new BigDecimal("12.00"), null, false, List.of(), List.of(),
@@ -229,7 +229,7 @@ class FacilityConditionLlmBatchServiceTest {
                 .thenReturn(new SliceImpl<>(List.of(hasWeightMention)))
                 .thenReturn(new SliceImpl<>(List.of()));
 
-        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any(), any()))
                 .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
                         new FacilityConditionExtraction(BigDecimal.TEN, null, false, List.of(), List.of(), null, null)
                 ));
@@ -238,6 +238,53 @@ class FacilityConditionLlmBatchServiceTest {
 
         assertThat(result.getProcessed()).isEqualTo(1);
         assertThat(hasWeightMention.getMaxWeight()).isEqualByComparingTo(BigDecimal.TEN);
+    }
+
+    @Test
+    void 정리_안내문에만_체중_언급이_있어도_maxWeight를_그대로_저장한다() {
+        // #148 회귀 방지 — 관광공사 원문에는 kg이 없고 정리 안내문에만 있는 시설이 실측
+        // 8,600건이다. 가드가 정리 안내문을 근거로 안 쳐주면 이 시설들의 정상 추출값이 전부
+        // "LLM 추측"으로 몰려 버려진다.
+        Facility rawOnly = facility(1L);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                rawOnly, "petConditionRaw", "일부 구역에 한해 9kg 이하 반려동물과 함께 이용할 수 있습니다."
+        );
+
+        when(facilityRepository.findByPetConditionStatus(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of(rawOnly)))
+                .thenReturn(new SliceImpl<>(List.of()));
+
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any(), any()))
+                .thenReturn(FacilityConditionLlmParseResult.fromExtraction(
+                        new FacilityConditionExtraction(
+                                new BigDecimal("9.00"), true, false, List.of(), List.of(), null, null
+                        )
+                ));
+
+        FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();
+
+        assertThat(result.getProcessed()).isEqualTo(1);
+        assertThat(rawOnly.getMaxWeight()).isEqualByComparingTo(new BigDecimal("9.00"));
+    }
+
+    @Test
+    void 파서에_정리_안내문을_함께_넘긴다() {
+        // 넘기는 걸 빼먹으면 파서가 관광공사 원문만 보고 조건 없음으로 흘려보낸다(#148).
+        Facility facility = facility(1L);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                facility, "petConditionRaw", "리드줄을 착용해 주세요."
+        );
+
+        when(facilityRepository.findByPetConditionStatus(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of(facility)))
+                .thenReturn(new SliceImpl<>(List.of()));
+
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any(), any()))
+                .thenReturn(FacilityConditionLlmParseResult.noCondition());
+
+        facilityConditionLlmBatchService.parseAll();
+
+        verify(facilityConditionLlmParser).parse(any(), any(), any(), any(), any(), eq("리드줄을 착용해 주세요."));
     }
 
     @Test
@@ -272,7 +319,7 @@ class FacilityConditionLlmBatchServiceTest {
         when(facilityRepository.findByPetConditionStatus(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
                 .thenReturn(new SliceImpl<>(List.of(broken)));
 
-        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any()))
+        when(facilityConditionLlmParser.parse(any(), any(), any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("Claude 호출 실패"));
 
         FacilityConditionLlmBatchResult result = facilityConditionLlmBatchService.parseAll();

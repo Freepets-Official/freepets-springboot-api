@@ -33,6 +33,15 @@ public class GamificationController {
         );
     }
 
+    @GetMapping("/quests")
+    public ApiResponse<GamificationResponseDTO.QuestList> getTodayQuests(
+            @AuthenticationPrincipal Long userId
+    ) {
+        return ApiResponse.onSuccess(
+                gamificationQueryService.getTodayQuests(userId)
+        );
+    }
+
     @PatchMapping("/notification")
     public ApiResponse<GamificationResponseDTO.NotificationResult> updateNotification(
             @AuthenticationPrincipal Long userId,

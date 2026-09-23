@@ -1,8 +1,10 @@
 package com.freepets.domain.course.dto;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.freepets.domain.course.entity.CourseDistanceOption;
 import com.freepets.domain.course.entity.CourseTheme;
@@ -125,12 +127,22 @@ public class CourseResponseDTO {
             double distanceM
     ) {}
 
+    // 코스 안의 스톱 하나 — 순서는 배열 순서 그대로다. visitTime은 사용자가 정한 도착 시각이고,
+    // 안 정했으면 null이다. 요청(CourseRequestDTO.StopRequest)은 형식을 안 가리고 받지만,
+    // 응답은 여기서 "HH:mm"으로 고정해 내려간다.
+    public record Stop(
+            Long facilityId,
+
+            @JsonFormat(pattern = "HH:mm")
+            LocalTime visitTime
+    ) {}
+
     // GET /api/v1/courses(내 코스), POST/PUT 응답 — CUSTOM 코스.
     public record MyCourse(
             Long courseId,
             String name,
             String description,
-            List<Long> stopIds,
+            List<Stop> stops,
             LocalDateTime createdAt,
 
             // record 접근자가 isPublic()이므로 JSON 프로퍼티명을 ApiResponse.isSuccess와 같은
@@ -151,7 +163,7 @@ public class CourseResponseDTO {
     ) {}
 
     // GET /api/v1/courses/public 응답 — 다른 사용자가 공개한 CUSTOM 코스 둘러보기(트리플의
-    // "다른 여행자 코스" 참고). 그대로 stopIds를 담아 POST /courses에 넣으면 내 코스로 복사(fork)된다.
+    // "다른 여행자 코스" 참고). 그대로 stops를 담아 POST /courses에 넣으면 내 코스로 복사(fork)된다.
     public record PublicCourseResult(
             List<PublicCourse> items,
             long total
@@ -162,12 +174,14 @@ public class CourseResponseDTO {
             String name,
             String description,
             String ownerNickname,
-            List<Long> stopIds,
+            List<Stop> stops,
             LocalDateTime createdAt
     ) {}
 
-    // POST /api/v1/courses/optimize-order 응답. 저장하지 않고 순서만 다듬어 미리 보여준다 —
-    // 그대로 쓰려면 이어서 이 stopIds를 POST/PUT /courses에 넣어 호출해야 한다.
+    // POST /api/v1/courses/optimize-order 응답. 저장하지 않고 순서만 다듬어 미리 보여준다.
+    // 순서만 다루는 엔드포인트라 시각을 주고받지 않는다 — 저장하려면 이 순서대로 stops를 다시
+    // 구성해 POST/PUT /courses에 넣어야 한다. 이때 시각은 시설을 따라가야 한다(재정렬된 자리에
+    // 원래 순서의 시각을 그대로 얹으면 엉뚱한 시설에 붙는다).
     public record OrderResult(
             List<Long> stopIds
     ) {}

@@ -4,7 +4,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.Map;
+import java.util.List;
+import java.util.function.IntSupplier;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.global.util.BusinessZone;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,25 +38,7 @@ import lombok.extern.slf4j.Slf4j;
 @Transactional
 public class GamificationService {
 
-    // 기획 결정: "도메인별 하루 상한" — 구체 값은 엔지니어링 제안(LevelCurve와 같은 성격의 상수).
-    // REVIEW는 시설당 리뷰가 1개라 자연히 제한되고, 이 표에 없는 sourceType은 하루 상한이 없는
-    // 것으로 취급한다.
-    //
-    // COURSE_PUBLISHED는 "평생 1회"가 courseId 단위라 같은 시설을 스톱으로 재사용하는 트리비얼한
-    // 코스를 무한정 새로 만들어 공개하면(코스 공개 게이트가 스톱마다 판별·리뷰는 확인하지만 그
-    // 시설을 다른 코스에서 이미 썼는지는 확인하지 않는다) 하루 상한 없이 XP를 무제한으로 쌓을 수
-    // 있었다 — 그래서 다른 도메인처럼 하루 상한을 둔다.
-    private static final Map<XpSourceType, Integer> DAILY_CAP = Map.of(
-            XpSourceType.PETCHECK, 10,
-            XpSourceType.REPORT, 5,
-            XpSourceType.SATISFACTION, 5,
-            XpSourceType.COURSE_PUBLISHED, 5,
-            XpSourceType.COURSE_SHARED_COPY, 10
-    );
-
-    // 서버 프로세스는 항상 UTC로 고정돼 있다(FreepetsServerApplication의 static 블록) —
-    // "하루"의 경계는 서버 타임존이 아니라 실제 사용자가 있는 KST 기준이어야 한다.
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
+    private static final ZoneId BUSINESS_ZONE = BusinessZone.ZONE;
 
     private final UserRepository userRepository;
     private final XpEventRepository xpEventRepository;
@@ -67,11 +51,49 @@ public class GamificationService {
             Long sourceId,
             int amount
     ) {
+        grantXp(userId, sourceType, sourceId, () -> amount, null);
+    }
+
+    /**
+     * componentSignature가 있는 지급(코스 공개 등) 전용 — sourceId(예: courseId)는 대상을 새로
+     * 만들 때마다 값이 바뀌어서 "구성요소 조합(예: 스톱 시설 집합) 기준 평생 1회"를 sourceId
+     * 검사만으로는 못 지킨다. 그래서 sourceId 중복 검사에 더해 componentSignature 중복 검사를
+     * 하나 더 거친다 — 둘 중 하나라도 걸리면 지급하지 않는다. null이면 이 검사 자체를 건너뛰고
+     * 기존 sourceId 기준 평생 1회만 적용한다(호출부 대부분이 여기 해당).
+     */
+    public void grantXp(
+            Long userId,
+            XpSourceType sourceType,
+            Long sourceId,
+            int amount,
+            String componentSignature
+    ) {
+        grantXp(userId, sourceType, sourceId, () -> amount, componentSignature);
+    }
+
+    /**
+     * 지급액을 User 행 잠금을 잡은 "뒤"에 계산해야 하는 호출부(코스 공개 등) 전용.
+     *
+     * <p>"오늘 이미 크레딧된 구성요소를 뺀 나머지로 금액을 계산"하는 경우, 그 계산을 잠금 밖에서
+     * 미리 해버리면 동시에 들어온 두 요청이 같은 구성요소를 똑같이 "아직 안 쓴 것"으로 보고
+     * 중복 계산할 수 있다 — 그래서 이 오버로드는 금액을 즉시 값으로 받지 않고 {@link IntSupplier}로
+     * 받아, 잠금을 잡고 사전 검사(하루 상한·평생 1회)를 통과한 뒤에야 호출한다. 0 이하를 반환하면
+     * "받을 자격이 없다"는 뜻으로 보고 지급 자체를 스킵한다(XpEvent도 안 남기고, 하루 상한 카운트도
+     * 건드리지 않는다).
+     */
+    public void grantXp(
+            Long userId,
+            XpSourceType sourceType,
+            Long sourceId,
+            IntSupplier amountSupplier,
+            String componentSignature
+    ) {
         // 유저 행을 잠그기 전에 값싼 사전 검사부터 한다 — 이미 상한/중복으로 막힐 호출
         // (예: 판별을 하루에 10번 넘게 반복하는 흔한 케이스)이 매번 User row를 잠글 필요는
         // 없다. 그래도 이 사전 검사만으로는 두 요청이 동시에 통과해버릴 수 있어(아래 참고),
         // 잠금을 잡은 뒤 같은 검사를 한 번 더 한다.
-        if (isAlreadyGrantedForSource(userId, sourceType, sourceId)) {
+        if (isAlreadyGrantedForSource(userId, sourceType, sourceId)
+                || isAlreadyGrantedForComponentSignature(userId, sourceType, componentSignature)) {
             return;
         }
         if (isDailyCapReached(userId, sourceType)) {
@@ -89,7 +111,16 @@ public class GamificationService {
         }
         // 잠금을 잡기 전에 두 요청이 동시에 위 사전 검사를 통과했을 수 있으므로, 직렬화된
         // 상태에서 같은 검사를 다시 한다 — 여기서는 앞선 요청이 커밋한 결과가 보인다.
-        if (isAlreadyGrantedForSource(userId, sourceType, sourceId) || isDailyCapReached(userId, sourceType)) {
+        if (isAlreadyGrantedForSource(userId, sourceType, sourceId)
+                || isAlreadyGrantedForComponentSignature(userId, sourceType, componentSignature)
+                || isDailyCapReached(userId, sourceType)) {
+            return;
+        }
+
+        // 잠금(직렬화)이 걸린 뒤에야 실제 지급액을 계산한다 — amountSupplier가 "오늘 이미 크레딧된
+        // 구성요소" 같은 걸 다시 조회하는 경우, 앞선 요청이 커밋한 결과가 이 시점엔 이미 보인다.
+        int amount = amountSupplier.getAsInt();
+        if (amount <= 0) {
             return;
         }
 
@@ -100,12 +131,17 @@ public class GamificationService {
                             .sourceType(sourceType)
                             .sourceId(sourceId)
                             .amount(amount)
+                            .componentSignature(componentSignature)
                             .build()
             );
         } catch (DataIntegrityViolationException e) {
-            // uk_xp_events_user_source가 막아준 마지막 방어선 — 두 검사 사이에도 남는 레이스를
-            // 여기서 잡는다. 원래 액션은 그대로 성공해야 하므로 예외를 올리지 않는다.
-            log.warn("이미 지급된 경험치라 스킵합니다 — userId={}, sourceType={}, sourceId={}", userId, sourceType, sourceId);
+            // uk_xp_events_user_source·uk_xp_events_user_source_type_component_signature가
+            // 막아준 마지막 방어선 — 두 검사 사이에도 남는 레이스를 여기서 잡는다. 원래 액션은
+            // 그대로 성공해야 하므로 예외를 올리지 않는다.
+            log.warn(
+                    "이미 지급된 경험치라 스킵합니다 — userId={}, sourceType={}, sourceId={}, componentSignature={}",
+                    userId, sourceType, sourceId, componentSignature
+            );
             return;
         }
 
@@ -118,6 +154,41 @@ public class GamificationService {
         }
 
         badgeEvaluationService.evaluateAfterXpEvent(user, sourceType);
+    }
+
+    /**
+     * "구원자" 배지 평가 — 리뷰 도메인(ReviewCommandService)이 "도움됐어요" 표시
+     * 성공 뒤에 부른다. grantXp와 달리 XP 지급이나 하루 상한이 없다 — 남이 눌러주는 게
+     * 트리거라 본인 행동 기반 상한 개념이 안 맞고, 기획 결정으로 이 배지는 XP도 안 준다.
+     * 총합 계산은 리뷰 도메인이 소유한 개념이라 호출부가 이미 계산해서 넘긴다.
+     */
+    public void evaluateHelpfulSaviorBadge(
+            User reviewAuthor,
+            long totalHelpfulReceived
+    ) {
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(reviewAuthor, totalHelpfulReceived);
+    }
+
+    /**
+     * 여권 도장(STAMP) 배지 평가 — stamp 도메인(StampCommandService)이 도장을 저장한 뒤 부른다.
+     * evaluateHelpfulSaviorBadge와 같은 이유로 XP 지급이나 하루 상한이 없다.
+     */
+    public void evaluateStampBadge(
+            User user,
+            long totalStamps
+    ) {
+        badgeEvaluationService.evaluateStampBadge(user, totalStamps);
+    }
+
+    /**
+     * 정복자(REGION) 배지 평가 — stamp 도메인이 이번 도장으로 늘어난 distinct 지역 수를 계산해
+     * 넘긴다.
+     */
+    public void evaluateRegionBadge(
+            User user,
+            long distinctRegionCount
+    ) {
+        badgeEvaluationService.evaluateRegionBadge(user, distinctRegionCount);
     }
 
     /**
@@ -135,6 +206,24 @@ public class GamificationService {
         return user.isLevelUpNotificationEnabled();
     }
 
+    // 이 유저가 이 sourceType으로 지금까지(오늘만이 아니라 평생) 지급받은 componentSignature
+    // 전체 — 코스 공개의 "이미 쓴 스톱" 계산에 쓰인다. "오늘"로만 좁히면, 스톱 하나만 바꿔
+    // 가며 하루 상한까지 파밍하던 구멍을 오늘 안에서는 막아도 그냥 하루 지나서 반복하면 그대로
+    // 뚫린다 — 어제 쓴 시설 9개에 새 시설 1개만 더해 오늘 다시 공개하면, "오늘 쓴 스톱"은
+    // 0개라 9개 전부 "새 스톱"으로 잡혀 사실상 매일 거의 풀 XP를 다시 받는다. 그래서 이 조회는
+    // 시간 제한 없이 이 유저가 이 sourceType으로 componentSignature와 함께 지급받은 이력
+    // 전체를 본다 — 하루에 몇 번까지 받을 수 있는지는 별도의 일일 상한(isDailyCapReached)이
+    // 맡는다. 평생 1회(componentSignature 완전 일치) 판정은 이 서비스 내부에서만 쓰고
+    // 호출부에 따로 안 열어준다 — grantXp 자체가 잠금 전/후로 이미 그 판정을 하기 때문에,
+    // 호출부가 grantXp 호출 전에 똑같은 판정을 미리 하면 잠금 밖에서 계산한 값이라 레이스에
+    // 취약해진다(IntSupplier 오버로드의 문서 참고).
+    public List<String> findAllComponentSignaturesGranted(
+            Long userId,
+            XpSourceType sourceType
+    ) {
+        return xpEventRepository.findComponentSignaturesGrantedSince(userId, sourceType, LocalDateTime.MIN);
+    }
+
     private boolean isAlreadyGrantedForSource(
             Long userId,
             XpSourceType sourceType,
@@ -144,26 +233,35 @@ public class GamificationService {
                 && xpEventRepository.existsByUser_IdAndSourceTypeAndSourceId(userId, sourceType, sourceId);
     }
 
+    private boolean isAlreadyGrantedForComponentSignature(
+            Long userId,
+            XpSourceType sourceType,
+            String componentSignature
+    ) {
+        return componentSignature != null
+                && xpEventRepository.existsByUser_IdAndSourceTypeAndComponentSignature(userId, sourceType, componentSignature);
+    }
+
     private boolean isDailyCapReached(
             Long userId,
             XpSourceType sourceType
     ) {
-        Integer dailyCap = DAILY_CAP.get(sourceType);
-        if (dailyCap == null) {
-            return false;
-        }
-
         long todayCount = xpEventRepository
                 .countByUser_IdAndSourceTypeAndCreatedAtGreaterThanEqual(userId, sourceType, startOfTodayInBusinessZone());
-        return todayCount >= dailyCap;
+        return todayCount >= sourceType.getDailyCap();
     }
 
     /**
      * "오늘 자정"을 KST 기준으로 계산해, {@code createdAt}(서버가 항상 UTC로 고정해 저장하는
      * naive LocalDateTime)과 같은 좌표로 맞춰 돌려준다. 서버 프로세스 타임존(UTC)을 그대로
      * 썼다면 하루 상한이 자정이 아니라 오전 9시(KST)에 풀렸을 것이다.
+     *
+     * <p>인스턴스 상태를 안 쓰는 순수 계산이라 static이다 — GamificationQueryService(오늘의
+     * 퀘스트 조회)도 이 메소드를 그대로 쓴다. "오늘"의 기준(하루 상한 판단·퀘스트 표시)이
+     * 두 클래스에 따로 있으면 한쪽만 고쳤을 때 지급 여부와 화면 표시가 어긋날 수 있어, 상한을
+     * 실제로 적용하는 이 클래스가 기준을 소유하고 조회 쪽은 가져다 쓰기만 한다.
      */
-    private LocalDateTime startOfTodayInBusinessZone() {
+    static LocalDateTime startOfTodayInBusinessZone() {
         return LocalDate.now(BUSINESS_ZONE)
                 .atStartOfDay(BUSINESS_ZONE)
                 .withZoneSameInstant(ZoneOffset.UTC)

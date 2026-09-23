@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.freepets.domain.pet.entity.Kind;
 import com.freepets.domain.review.entity.Tag;
@@ -38,6 +39,7 @@ public class ReviewResponseDTO {
             BigDecimal weight
     ) {}
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ReviewDetail(
             Long reviewId,
             Long facilityId,
@@ -55,7 +57,15 @@ public class ReviewResponseDTO {
             String content,
             List<Tag> tags,
             LocalDate visitedAt,
-            boolean reportedByMe
+            boolean reportedByMe,
+            long helpfulCount,
+
+            // record 접근자가 isHelpfulByMe()이므로 JSON 프로퍼티명을 helpfulByMe로 명시 고정
+            @JsonProperty("helpfulByMe")
+            boolean isHelpfulByMe,
+
+            // 방문 인증샷(선택). 없으면 @JsonInclude(NON_NULL)로 응답 JSON에서 키 자체가 빠진다.
+            String photoUrl
     ) {}
 
     public record PageInfo(
@@ -73,6 +83,7 @@ public class ReviewResponseDTO {
             PageInfo pageInfo
     ) {}
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record UpsertResult(
             Long reviewId,
             Long facilityId,
@@ -85,7 +96,8 @@ public class ReviewResponseDTO {
             Integer ratingAmenity,
             String content,
             List<Tag> tags,
-            LocalDate visitedAt
+            LocalDate visitedAt,
+            String photoUrl
     ) {}
 
     public record DeleteResult(
@@ -94,5 +106,10 @@ public class ReviewResponseDTO {
 
     public record ReportResult(
             Long reviewId
+    ) {}
+
+    public record HelpfulResult(
+            Long reviewId,
+            long helpfulCount
     ) {}
 }

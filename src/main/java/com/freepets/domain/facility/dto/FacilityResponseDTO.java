@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.freepets.domain.facility.entity.Confidence;
 import com.freepets.domain.facility.entity.ConfidenceSource;
+import com.freepets.domain.facility.entity.FacilityAmenity;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
@@ -28,6 +29,11 @@ public class FacilityResponseDTO {
             long distanceM,
             PetAllowed petAllowed,
             BigDecimal maxWeight,
+
+            // maxWeight 경계 포함 여부. TRUE="이하"(그 체중까지 포함), FALSE="미만"(그 체중은
+            // 제외), null=maxWeight가 없거나 원문에서 경계 종류를 알 수 없음(Facility 엔티티
+            // 주석 참고). maxWeight가 null이면 이 값도 항상 null이다.
+            Boolean maxWeightInclusive,
             List<Requirement> requirements,
 
             // 시설에 저장된 친화도 점수를 반올림한 값. 등급 판정은 반올림 전 원점수로 하므로
@@ -39,6 +45,38 @@ public class FacilityResponseDTO {
 
     public record FacilitySearchResult(
             List<FacilitySummary> items,
+            long total
+    ) {}
+
+    /**
+     * 전체 시설 목록 한 건.
+     *
+     * <p>{@link FacilitySummary}를 쓰지 않는 이유는 거리 때문이다. 그쪽은 {@code distanceM}이
+     * 필수라 좌표를 받지 않는 이 조회에서는 채울 값이 없다. 대신 지역으로 거르는 목록이라
+     * 시도·시군구를 담는다.
+     */
+    public record FacilityListItem(
+            Long facilityId,
+            String name,
+            FacilityCategory category,
+            String address,
+            String sido,
+            String sigungu,
+            PetAllowed petAllowed,
+            BigDecimal maxWeight,
+
+            // maxWeight 경계 포함 여부. FacilitySummary와 같은 규칙이다.
+            Boolean maxWeightInclusive,
+            List<Requirement> requirements,
+
+            // 시설에 저장된 친화도 점수를 반올림한 값. 리뷰가 한 건도 없는 시설은 null이다.
+            Integer petScore,
+            String rating,
+            long reviewCnt
+    ) {}
+
+    public record FacilityListResult(
+            List<FacilityListItem> items,
             long total
     ) {}
 
@@ -147,6 +185,13 @@ public class FacilityResponseDTO {
 
             // 화면에 그대로 보여줄 동반 조건 안내문. 아직 채우지 않은 시설은 null이다.
             String petConditionRaw,
+
+            // 목록(FacilitySummary)엔 있었는데 상세엔 없어서, 탐색에서 상세로 넘어오면 체중
+            // 제한 표시가 사라지는 문제가 있었다(프론트가 목록 값을 캐시에 남겨 병합하는
+            // 임시 대응으로 버티던 상태 — freepets-docs facility.md 참고). maxWeightInclusive는
+            // FacilitySummary와 같은 규칙.
+            BigDecimal maxWeight,
+            Boolean maxWeightInclusive,
             LocalDateTime confirmedAt,
 
             // 이 조건 정보를 얼마나 믿을 수 있는지 — 저장값이 아니라 조회 시점에 계산한다
@@ -158,6 +203,33 @@ public class FacilityResponseDTO {
             PawGrade pawGrade,
             Ratings ratings,
             List<OwnedPet> pets,
-            boolean hasNonDogCatPet
+            boolean hasNonDogCatPet,
+
+            // 사장님이 전하는 우리 매장. 소개글도 없고 편의시설 태그도 비어 있으면 null이라, 화면이
+            // 이 블록 자체를 숨긴다.
+            OwnerIntroduction ownerIntroduction,
+
+            // 방문 혜택. 켜진 것만, 등록순. 없으면 빈 목록이라 화면이 섹션을 숨긴다.
+            List<VisitBenefit> visitBenefits
+    ) {}
+
+    /**
+     * "사장님이 전하는 우리 매장" 블록. 사업자 대시보드 DTO({@code BusinessResponseDTO.FacilityProfile})와
+     * 모양은 같지만, 도메인 간 상호 의존을 피하기 위해 별도로 둔다 — 둘 다 {@code Facility} 엔티티에서
+     * 각자 변환한다.
+     */
+    public record OwnerIntroduction(
+            String introduction,
+            List<FacilityAmenity> amenityTags
+    ) {}
+
+    /**
+     * 방문 혜택 한 건. 사업자 대시보드 DTO({@code BusinessResponseDTO.VisitBenefit})와 모양은 비슷하지만
+     * {@code benefitId}·{@code isEnabled}는 손님에게 줄 이유가 없어 뺀다 — 켜진 것만 내려가므로 손님
+     * 쪽에서는 토글 상태를 알 필요가 없다.
+     */
+    public record VisitBenefit(
+            String title,
+            String description
     ) {}
 }

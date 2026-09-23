@@ -81,6 +81,15 @@ public class Pet extends BaseEntity {
     @Column(name = "is_vaccinated", nullable = false)
     private boolean isVaccinated;
 
+    // 둘 다 선택 입력 — 반려동물 등록증 카드 표시용으로 뒤늦게 추가됐고, 기존 반려동물은
+    // 채울 값이 없어 nullable로 두고 백필하지 않는다.
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private Gender gender;
+
+    @Column(name = "birth_date")
+    private LocalDate birthDate;
+
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
@@ -104,7 +113,9 @@ public class Pet extends BaseEntity {
             String profile,
             LocalDate vaccinationDate,
             LocalDate nextVaccinationDate,
-            boolean isVaccinated
+            boolean isVaccinated,
+            Gender gender,
+            LocalDate birthDate
     ) {
         this.user = user;
         this.name = name;
@@ -116,6 +127,8 @@ public class Pet extends BaseEntity {
         this.vaccinationDate = vaccinationDate;
         this.nextVaccinationDate = nextVaccinationDate;
         this.isVaccinated = isVaccinated;
+        this.gender = gender;
+        this.birthDate = birthDate;
     }
 
     public void update(
@@ -127,7 +140,9 @@ public class Pet extends BaseEntity {
             String profile,
             LocalDate vaccinationDate,
             LocalDate nextVaccinationDate,
-            boolean isVaccinated
+            boolean isVaccinated,
+            Gender gender,
+            LocalDate birthDate
     ) {
         this.name = name;
         this.kind = kind;
@@ -138,6 +153,8 @@ public class Pet extends BaseEntity {
         this.vaccinationDate = vaccinationDate;
         this.nextVaccinationDate = nextVaccinationDate;
         this.isVaccinated = isVaccinated;
+        this.gender = gender;
+        this.birthDate = birthDate;
     }
 
     public void delete() {

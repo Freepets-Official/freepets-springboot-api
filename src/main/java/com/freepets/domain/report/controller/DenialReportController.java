@@ -38,6 +38,10 @@ public class DenialReportController {
         );
     }
 
+    /**
+     * 게스트(토큰 없음)도 호출할 수 있다. 이때 {@code userId}는 null로 들어오며, 모든 제보가
+     * 내 제보가 아닌 것으로 표시될 뿐 목록 자체는 그대로 내려간다.
+     */
     @GetMapping("/facilities/{facilityId}/denial-reports/recent")
     public ApiResponse<List<DenialReportResponseDTO.Report>> getRecentDenialReports(
             @AuthenticationPrincipal Long userId,

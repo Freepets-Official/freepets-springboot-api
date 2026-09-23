@@ -75,11 +75,7 @@ public class PetSatisfactionQueryService {
         List<PetSatisfactionResponseDTO.PetTopFacilities> pets = byPetId.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> {
-                    List<PetSatisfaction> top = entry.getValue().stream()
-                            .sorted(Comparator.comparingDouble(PetSatisfaction::getScore).reversed()
-                                    .thenComparing(petSatisfaction -> petSatisfaction.getFacility().getFacilityId()))
-                            .limit(TOP_FACILITIES_LIMIT)
-                            .toList();
+                    List<PetSatisfaction> top = topByScore(entry.getValue());
                     String petName = top.get(0).getPet().getName();
 
                     return PetSatisfactionConverter.toPetTopFacilities(entry.getKey(), petName, top);
@@ -87,5 +83,29 @@ public class PetSatisfactionQueryService {
                 .toList();
 
         return new PetSatisfactionResponseDTO.MySatisfactionList(pets);
+    }
+
+    // 반려동물 등록증 카드(GET /pets/{petId}/card)용 — getMySatisfactions와 같은 계산을 반려동물
+    // 한 마리로만 좁힌다. 기록이 없으면 빈 리스트.
+    public List<PetSatisfactionResponseDTO.TopFacility> getTopFacilitiesForPet(Long petId) {
+        List<PetSatisfaction> satisfactions = petSatisfactionRepository.findAllByPetPetIdIn(List.of(petId));
+
+        return topByScore(satisfactions).stream()
+                .map(PetSatisfactionConverter::toTopFacility)
+                .toList();
+    }
+
+    // "함께한 발자국"(GET /pets/{petId}/stats)이 쓰는 값 — 이 반려동물의 만족도 평가 횟수.
+    public long countForPet(Long petId) {
+        return petSatisfactionRepository.countByPetPetId(petId);
+    }
+
+    // 점수 높은 순(동점이면 facilityId 오름차순)으로 정렬해 상위 TOP_FACILITIES_LIMIT개만 남긴다.
+    private List<PetSatisfaction> topByScore(List<PetSatisfaction> satisfactions) {
+        return satisfactions.stream()
+                .sorted(Comparator.comparingDouble(PetSatisfaction::getScore).reversed()
+                        .thenComparing(petSatisfaction -> petSatisfaction.getFacility().getFacilityId()))
+                .limit(TOP_FACILITIES_LIMIT)
+                .toList();
     }
 }

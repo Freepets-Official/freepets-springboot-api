@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.ColumnDefault;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.pet.entity.Pet;
@@ -65,6 +66,10 @@ public class Review extends BaseEntity {
     @Column(name = "visited_at", nullable = false)
     private LocalDate visitedAt;
 
+    // 방문 인증샷(선택). CalendarEvent.photoUrl과 같은 방식 — S3에 올린 뒤 URL만 저장한다.
+    @Column(name = "photo_url", columnDefinition = "TEXT")
+    private String photoUrl;
+
     // Pet과 동일하게 소프트 삭제로 둔다 — 하드 삭제로 지우면 신고 이력(reports)까지
     // cascade로 함께 사라져서 운영·감사 기록이 날아간다. Review.delete() 참고.
     @Column(name = "deleted_at")
@@ -83,6 +88,19 @@ public class Review extends BaseEntity {
     @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReviewReport> reports = new ArrayList<>();
 
+    // "도움됐어요" 누적 카운트 — 매번 review_helpfuls를 COUNT하지 않도록 캐시해둔다
+    // (Course.copyCount와 같은 이유). 실제 중복 방지·존재 확인은 ReviewHelpful 유니크 제약이
+    // 한다 — 이 값은 그 결과를 반영한 표시용 캐시일 뿐이다. 기존 라이브 리뷰가 있어
+    // Course.isPublic과 같은 이유로 @ColumnDefault 필요.
+    //
+    // 증가는 엔티티 메소드(읽고-고치고-flush)가 아니라 ReviewRepository.incrementHelpfulCount의
+    // DB 단 원자적 UPDATE로만 한다 — 다른 유저 두 명이 같은 리뷰를 거의 동시에 "도움됐어요"
+    // 표시하면, 각자 메모리에 들고 있던 옛 값에 +1씩 해서 flush하는 방식은 한쪽이 사라지는
+    // lost update가 난다. 그래서 이 필드를 애플리케이션에서 직접 증가시키는 메소드를 두지 않는다.
+    @ColumnDefault("0")
+    @Column(name = "helpful_count", nullable = false)
+    private long helpfulCount;
+
     @Builder
     private Review(
             Facility facility,
@@ -92,7 +110,8 @@ public class Review extends BaseEntity {
             Integer ratingAmenity,
             String content,
             boolean isShowPetInfo,
-            LocalDate visitedAt
+            LocalDate visitedAt,
+            String photoUrl
     ) {
         this.facility = facility;
         this.user = user;
@@ -102,6 +121,7 @@ public class Review extends BaseEntity {
         this.content = content;
         this.isShowPetInfo = isShowPetInfo;
         this.visitedAt = visitedAt;
+        this.photoUrl = photoUrl;
     }
 
     // visitedAt은 실제 방문한 날짜라 수정 시 함께 바뀌면 안 된다 — 여기서 받지 않고
@@ -111,13 +131,15 @@ public class Review extends BaseEntity {
             Integer ratingStaff,
             Integer ratingAmenity,
             String content,
-            boolean isShowPetInfo
+            boolean isShowPetInfo,
+            String photoUrl
     ) {
         this.ratingSpace = ratingSpace;
         this.ratingStaff = ratingStaff;
         this.ratingAmenity = ratingAmenity;
         this.content = content;
         this.isShowPetInfo = isShowPetInfo;
+        this.photoUrl = photoUrl;
     }
 
     // 기존 반려동물 연결을 통째로 교체한다 — 서비스가 reviewPets 컬렉션을 직접 clear/add하지

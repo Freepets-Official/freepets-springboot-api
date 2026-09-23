@@ -22,4 +22,7 @@ public interface PetCheckVerdictRepository extends JpaRepository<PetCheckVerdict
             WHERE v.verifyCode = :verifyCode
             """)
     Optional<PetCheckVerdict> findByVerifyCode(@Param("verifyCode") String verifyCode);
+
+    // "함께한 발자국"(반려동물별 판별 참여 횟수) 계산용 — freepets-docs PR #49.
+    long countByPet_PetId(Long petId);
 }

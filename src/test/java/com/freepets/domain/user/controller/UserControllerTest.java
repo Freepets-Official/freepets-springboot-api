@@ -96,13 +96,14 @@ class UserControllerTest {
     @Test
     void login_성공하면_200과_토큰을_반환한다() throws Exception {
         when(userQueryService.login(any()))
-                .thenReturn(new UserResponseDTO.LoginResult("access-token", "refresh-token"));
+                .thenReturn(new UserResponseDTO.LoginResult("1", "access-token", "refresh-token"));
 
         mockMvc.perform(post("/api/v1/users/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"test@test.com\",\"password\":\"password1\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.userId").value("1"))
                 .andExpect(jsonPath("$.result.accessToken").value("access-token"))
                 .andExpect(jsonPath("$.result.refreshToken").value("refresh-token"));
     }
@@ -147,6 +148,7 @@ class UserControllerTest {
     @Test
     void getAccount_성공하면_프로필과_소유_매장_목록을_함께_반환한다() throws Exception {
         when(userQueryService.getAccount(any())).thenReturn(new UserResponseDTO.AccountResult(
+                "1",
                 "tester",
                 null,
                 List.of(Profile.CONSUMER, Profile.OWNER),
@@ -156,6 +158,7 @@ class UserControllerTest {
         mockMvc.perform(get("/api/v1/users/account"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.userId").value("1"))
                 .andExpect(jsonPath("$.result.nickname").value("tester"))
                 .andExpect(jsonPath("$.result.profiles[0]").value("CONSUMER"))
                 .andExpect(jsonPath("$.result.profiles[1]").value("OWNER"))

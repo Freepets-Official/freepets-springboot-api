@@ -45,6 +45,7 @@ public enum ErrorStatus implements BaseErrorCode {
     IMAGE4001(BAD_REQUEST, "IMAGE4001", "이미지 파일이 비어있습니다."),
     IMAGE4002(BAD_REQUEST, "IMAGE4002", "파일 확장자가 없습니다."),
     IMAGE4003(BAD_REQUEST, "IMAGE4003", "지원하지 않는 이미지 확장자입니다. (jpg, jpeg, png, gif만 가능)"),
+    IMAGE4004(BAD_REQUEST, "IMAGE4004", "지원하지 않는 파일 형식입니다. (jpg, jpeg, png, pdf만 가능)"),
     IMAGE5001(INTERNAL_SERVER_ERROR, "IMAGE5001", "이미지 업로드 중 오류가 발생했습니다."),
 
     // 시설 에러
@@ -52,9 +53,10 @@ public enum ErrorStatus implements BaseErrorCode {
 
     // 리뷰 에러
     REVIEW4001(BAD_REQUEST, "REVIEW4001", "이 시설에서 반려동물 판별 이력이 없어 리뷰를 작성할 수 없습니다."),
-    REVIEW4002(FORBIDDEN, "REVIEW4002", "본인 리뷰만 삭제할 수 있습니다."),
+    REVIEW4002(FORBIDDEN, "REVIEW4002", "본인 리뷰만 수정·삭제할 수 있습니다."),
     REVIEW4003(CONFLICT, "REVIEW4003", "이미 신고한 리뷰입니다."),
     REVIEW4004(CONFLICT, "REVIEW4004", "리뷰 저장 중 충돌이 발생했습니다. 다시 시도해주세요."),
+    REVIEW4005(FORBIDDEN, "REVIEW4005", "본인 리뷰는 도움돼요로 표시할 수 없습니다."),
     REVIEW4041(NOT_FOUND, "REVIEW4041", "존재하지 않는 리뷰입니다."),
 
     // 반려동물 만족도 에러
@@ -69,6 +71,7 @@ public enum ErrorStatus implements BaseErrorCode {
     COURSE4043(NOT_FOUND, "COURSE4043", "존재하지 않는 스톱 순서입니다."),
     COURSE4044(NOT_FOUND, "COURSE4044", "존재하지 않는 공유 코드입니다."),
     COURSE4045(BAD_REQUEST, "COURSE4045", "공개하려면 코스에 담긴 모든 시설에 판별 기록과 리뷰가 있어야 합니다."),
+    COURSE4046(BAD_REQUEST, "COURSE4046", "반려동물 동반이 불가능한 시설은 코스에 담을 수 없습니다."),
 
     // 제보 에러
     REPORT4001(CONFLICT, "REPORT4001", "24시간 내 이미 제보한 시설입니다."),
@@ -87,7 +90,17 @@ public enum ErrorStatus implements BaseErrorCode {
     BUSINESS4001(BAD_REQUEST, "BUSINESS4001", "사업자등록정보가 일치하지 않습니다."),
     BUSINESS4002(BAD_REQUEST, "BUSINESS4002", "휴업 또는 폐업한 사업자입니다."),
     BUSINESS4003(CONFLICT, "BUSINESS4003", "이미 다른 사업자가 등록한 매장입니다."),
-    BUSINESS5001(BAD_GATEWAY, "BUSINESS5001", "국세청 사업자등록정보 서비스와의 통신에 실패했습니다.");
+    BUSINESS4004(CONFLICT, "BUSINESS4004", "이미 심사 중인 신청이 있습니다."),
+    BUSINESS4005(CONFLICT, "BUSINESS4005", "이미 등록된 내 매장입니다."),
+    BUSINESS4006(NOT_FOUND, "BUSINESS4006", "존재하지 않는 신청입니다."),
+    BUSINESS4007(CONFLICT, "BUSINESS4007", "처리할 수 없는 신청 상태입니다."),
+    BUSINESS4008(FORBIDDEN, "BUSINESS4008", "해당 매장의 소유자가 아닙니다."),
+    BUSINESS4009(NOT_FOUND, "BUSINESS4009", "해당 방문 혜택을 찾을 수 없습니다."),
+    BUSINESS4010(CONFLICT, "BUSINESS4010", "근처에 이름이 비슷한 시설이 있어 확인이 필요합니다."),
+    BUSINESS4011(BAD_REQUEST, "BUSINESS4011", "입력한 주소로 좌표를 찾지 못했습니다."),
+    BUSINESS4012(BAD_REQUEST, "BUSINESS4012", "존재하지 않는 지역코드입니다."),
+    BUSINESS5001(BAD_GATEWAY, "BUSINESS5001", "국세청 사업자등록정보 서비스와의 통신에 실패했습니다."),
+    BUSINESS5002(BAD_GATEWAY, "BUSINESS5002", "지도 서비스와의 통신에 실패했습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

@@ -1,51 +1,48 @@
 package com.freepets.domain.gamification.entity;
 
 /**
- * 그 레벨의 발바닥 배지. 테일즈런너·카트라이더처럼 <b>레벨 하나마다</b> 발바닥 색이 무지개
- * 순서(빨주노초파남보)로 한 칸씩 바뀌고, 7색을 다 돌면 다음 동물로 넘어가 다시 빨강부터 돈다
- * ({@link PawAnimal} 10종 × {@link PawColor} 7색 = 70단계 — 레벨 상한(70)과 정확히 맞아떨어져
- * 레벨 1~70이 전부 서로 다른 배지를 가진다).
+ * 그 레벨의 발바닥 배지. 색(7색+무지개, 8슬롯)이 바깥 축이고 투명도(80→60→40→20→0%, 5단계)가
+ * 안쪽 축이다 — 한 색 안에서 5레벨 동안 투명도가 옅어지다가, 다섯 칸을 다 채우면(5레벨마다) 다음
+ * 색으로 넘어간다. 7색(35레벨)을 다 돌면 마지막 슬롯인 {@link PawColor#RAINBOW}가 만렙(40)까지
+ * 다섯 레벨을 채운다. 8슬롯 × 5단계 = 40단계로, 레벨 상한(40)과 정확히 맞아떨어진다.
  *
  * <p>구간(min~max)을 갖는 열거형이 아니라 레벨 하나당 값 하나를 그때그때 계산하는 값 객체다 —
- * 70개를 일일이 나열하는 대신 {@link #of}가 나눗셈·나머지로 계산한다. 동물이나 색이 늘어나도
- * (예: 11번째 동물 추가) 이 계산 로직은 그대로 두고 {@link PawAnimal}에 상수만 추가하면 된다.
+ * 나눗셈·나머지로 계산한다.
  *
- * <p>실제 배지 이미지는 아직 없어서 {@code badgeImageUrl}은 항상 {@code null}이다 — 디자인
- * 리소스가 오면 {@link #badgeImageUrlFor}에 (동물, 색) 조합 → URL 매핑만 채우면 되고
- * 마이그레이션은 필요 없다.
+ * <p>이 값(특히 {@code label})은 앱이 참고하지 않는다 — 발바닥 색·투명도는 앱이 레벨 숫자로 직접
+ * 계산해서 그리므로(반려동물 모양은 사용자가 고르는 값이라 서버가 모른다), 여기서 계산하는 값은
+ * 참고용/과거 호환 필드로만 취급한다. 실제 배지 이미지는 아직 없어서 {@code badgeImageUrl}은 항상
+ * {@code null}이다.
  */
 public record LevelTier(
         int level,
-        PawAnimal animal,
         PawColor color,
+        int opacityPercent,
+        String label,
         String badgeImageUrl
 ) {
 
     private static final PawColor[] COLORS = PawColor.values();
-    private static final PawAnimal[] ANIMALS = PawAnimal.values();
+    private static final int LEVELS_PER_COLOR = 5;
+    private static final int MAX_INDEX = COLORS.length * LEVELS_PER_COLOR - 1;
 
-    /** 1 미만인 레벨은 방어적으로 레벨 1로 취급한다 — 절대 예외를 던지거나 null을 반환하지 않는다. */
+    /** 1 미만인 레벨은 방어적으로 레벨 1로, 40을 넘는 레벨은 40으로 클램핑한다 — 절대 예외를
+     * 던지거나 null을 반환하지 않는다. */
     public static LevelTier of(int level) {
         int safeLevel = Math.max(level, 1);
-        int index = safeLevel - 1;
+        int index = Math.min(safeLevel - 1, MAX_INDEX);
 
-        PawColor color = COLORS[index % COLORS.length];
-        PawAnimal animal = ANIMALS[(index / COLORS.length) % ANIMALS.length];
+        PawColor color = COLORS[index / LEVELS_PER_COLOR];
+        int opacityPercent = 80 - (index % LEVELS_PER_COLOR) * 20;
 
-        return new LevelTier(safeLevel, animal, color, badgeImageUrlFor(animal, color));
+        return new LevelTier(safeLevel, color, opacityPercent, labelFor(color, opacityPercent), null);
     }
 
-    private static String badgeImageUrlFor(
-            PawAnimal animal,
-            PawColor color
+    private static String labelFor(
+            PawColor color,
+            int opacityPercent
     ) {
-        return null;
-    }
-
-    /** "고양이 발바닥 · 보라"처럼 프론트가 텍스트로 바로 쓸 수 있는 조합 라벨. 실제 배지는
-     * 아이콘(발 모양+색)으로 보여줄 테니 이 문자열은 대체 텍스트/접근성 용도에 가깝다. */
-    public String label() {
-        return animal.getLabel() + " 발바닥 · " + color.getLabel();
+        return color.getLabel() + " " + opacityPercent + "% 발바닥";
     }
 
 }

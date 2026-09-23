@@ -42,7 +42,7 @@ public class UserQueryService {
         String accessToken = jwtProvider.createAccessToken(user.getId());
         String refreshToken = jwtProvider.createRefreshToken(user.getId());
 
-        return UserConverter.toLoginResult(accessToken, refreshToken);
+        return UserConverter.toLoginResult(user.getId(), accessToken, refreshToken);
     }
 
     /**
@@ -52,7 +52,7 @@ public class UserQueryService {
     public UserResponseDTO.AccountResult getAccount(Long userId) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
-        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findFacilityIdsByUserId(userId);
+        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(userId);
 
         return UserConverter.toAccountResult(user, ownedFacilityIds);
     }

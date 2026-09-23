@@ -10,12 +10,14 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Set;
 
@@ -282,26 +284,64 @@ class CourseControllerTest {
     @DisplayName("내 코스 목록 조회에 성공하면 200을 반환한다")
     void 내_코스_목록_조회에_성공하면_200을_반환한다() throws Exception {
         when(courseQueryService.getMyCourses(isNull())).thenReturn(List.of(
-                new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(1L, 2L), LocalDateTime.now(), false)
+                new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(new CourseResponseDTO.Stop(1L, null), new CourseResponseDTO.Stop(2L, null)), LocalDateTime.now(), false)
         ));
 
         mockMvc.perform(get("/api/v1/courses"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result[0].courseId").value(10))
-                .andExpect(jsonPath("$.result[0].stopIds[0]").value(1));
+                .andExpect(jsonPath("$.result[0].stops[0].facilityId").value(1));
     }
 
     @Test
     @DisplayName("코스 생성에 성공하면 200을 반환한다")
     void 코스_생성에_성공하면_200을_반환한다() throws Exception {
         when(courseCommandService.createCourse(isNull(), any()))
-                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", "설명", List.of(1L, 2L), LocalDateTime.now(), false));
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", "설명", List.of(new CourseResponseDTO.Stop(1L, null), new CourseResponseDTO.Stop(2L, null)), LocalDateTime.now(), false));
 
         mockMvc.perform(post("/api/v1/courses")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"몽이 코스\",\"description\":\"설명\",\"stopIds\":[1,2]}"))
+                        .content("{\"name\":\"몽이 코스\",\"description\":\"설명\",\"stops\":[{\"facilityId\":1,\"visitTime\":\"10:00\"},{\"facilityId\":2,\"visitTime\":\"11:30\"}]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.courseId").value(10));
+    }
+
+    @Test
+    @DisplayName("도착 시각은 HH:mm으로 내려가고, 요청은 ISO 형식도 받는다")
+    void 도착_시각은_HHmm으로_내려가고_요청은_ISO도_받는다() throws Exception {
+        // 응답 형식을 고정해두지 않으면 나중에 직렬화 설정이 바뀌었을 때 모든 클라이언트가
+        // 깨지는데도 테스트는 통과한다. 요청은 반대로 관대해야 한다 — 모바일 날짜 라이브러리가
+        // 흔히 내보내는 LocalTime.toString()("10:00:00")이 튕기면 앱이 저장을 못 한다.
+        when(courseCommandService.createCourse(isNull(), any()))
+                .thenReturn(new CourseResponseDTO.MyCourse(
+                        10L, "몽이 코스", null,
+                        List.of(new CourseResponseDTO.Stop(1L, LocalTime.of(10, 0))),
+                        LocalDateTime.now(), false
+                ));
+
+        mockMvc.perform(post("/api/v1/courses")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"몽이 코스\",\"stops\":[{\"facilityId\":1,\"visitTime\":\"10:00:00\"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.stops[0].visitTime").value("10:00"));
+
+        ArgumentCaptor<CourseRequestDTO.SaveRequest> captor =
+                ArgumentCaptor.forClass(CourseRequestDTO.SaveRequest.class);
+        verify(courseCommandService).createCourse(isNull(), captor.capture());
+        assertThat(captor.getValue().getStops().get(0).getVisitTime()).isEqualTo(LocalTime.of(10, 0));
+    }
+
+    @Test
+    @DisplayName("스톱 배열에 null이 섞여 있으면 400을 반환한다")
+    void 스톱_배열에_null이_섞여_있으면_400을_반환한다() throws Exception {
+        // 검증기는 리스트 안의 null 원소를 건너뛰어서, 원소에 @NotNull을 직접 걸지 않으면
+        // 여기서 통과한 뒤 서비스에서 NPE(500)가 된다.
+        mockMvc.perform(post("/api/v1/courses")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"몽이 코스\",\"stops\":[null]}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(courseCommandService);
     }
 
     @Test
@@ -309,7 +349,7 @@ class CourseControllerTest {
     void 코스_이름이_없으면_400을_반환한다() throws Exception {
         mockMvc.perform(post("/api/v1/courses")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"stopIds\":[1,2]}"))
+                        .content("{\"stops\":[{\"facilityId\":1},{\"facilityId\":2}]}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.result.name").exists());
 
@@ -321,9 +361,9 @@ class CourseControllerTest {
     void 스톱이_비어있으면_400을_반환한다() throws Exception {
         mockMvc.perform(post("/api/v1/courses")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"몽이 코스\",\"stopIds\":[]}"))
+                        .content("{\"name\":\"몽이 코스\",\"stops\":[]}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.result.stopIds").exists());
+                .andExpect(jsonPath("$.result.stops").exists());
 
         verifyNoInteractions(courseCommandService);
     }
@@ -333,9 +373,9 @@ class CourseControllerTest {
     void 스톱이_10곳을_넘으면_400을_반환한다() throws Exception {
         mockMvc.perform(post("/api/v1/courses")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"몽이 코스\",\"stopIds\":[1,2,3,4,5,6,7,8,9,10,11]}"))
+                        .content("{\"name\":\"몽이 코스\",\"stops\":[{\"facilityId\":1},{\"facilityId\":2},{\"facilityId\":3},{\"facilityId\":4},{\"facilityId\":5},{\"facilityId\":6},{\"facilityId\":7},{\"facilityId\":8},{\"facilityId\":9},{\"facilityId\":10},{\"facilityId\":11}]}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.result.stopIds").exists());
+                .andExpect(jsonPath("$.result.stops").exists());
 
         verifyNoInteractions(courseCommandService);
     }
@@ -344,11 +384,11 @@ class CourseControllerTest {
     @DisplayName("코스 수정에 성공하면 200을 반환한다")
     void 코스_수정에_성공하면_200을_반환한다() throws Exception {
         when(courseCommandService.updateCourse(isNull(), eq(10L), any()))
-                .thenReturn(new CourseResponseDTO.MyCourse(10L, "변경된 이름", null, List.of(3L), LocalDateTime.now(), true));
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "변경된 이름", null, List.of(new CourseResponseDTO.Stop(3L, null)), LocalDateTime.now(), true));
 
         mockMvc.perform(put("/api/v1/courses/{courseId}", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"변경된 이름\",\"stopIds\":[3]}"))
+                        .content("{\"name\":\"변경된 이름\",\"stops\":[{\"facilityId\":3}]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.name").value("변경된 이름"))
                 // record 접근자가 isPublic()이라 Jackson 기본값(public)으로 깎이지 않는지 확인.
@@ -359,11 +399,11 @@ class CourseControllerTest {
     @DisplayName("isPublic 요청 필드가 그대로 바인딩된다")
     void isPublic_요청_필드가_그대로_바인딩된다() throws Exception {
         when(courseCommandService.createCourse(isNull(), any()))
-                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(1L), LocalDateTime.now(), true));
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(new CourseResponseDTO.Stop(1L, null)), LocalDateTime.now(), true));
 
         mockMvc.perform(post("/api/v1/courses")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"몽이 코스\",\"stopIds\":[1],\"isPublic\":true}"))
+                        .content("{\"name\":\"몽이 코스\",\"stops\":[{\"facilityId\":1}],\"isPublic\":true}"))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<CourseRequestDTO.SaveRequest> captor = ArgumentCaptor.forClass(CourseRequestDTO.SaveRequest.class);
@@ -375,13 +415,13 @@ class CourseControllerTest {
     @DisplayName("스톱 교체에 성공하면 200과 교체된 코스를 반환한다")
     void 스톱_교체에_성공하면_200과_교체된_코스를_반환한다() throws Exception {
         when(courseCommandService.replaceStop(isNull(), eq(10L), eq(3), eq(6L)))
-                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(1L, 2L, 3L, 6L, 5L), LocalDateTime.now(), false));
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(new CourseResponseDTO.Stop(1L, null), new CourseResponseDTO.Stop(2L, null), new CourseResponseDTO.Stop(3L, null), new CourseResponseDTO.Stop(6L, null), new CourseResponseDTO.Stop(5L, null)), LocalDateTime.now(), false));
 
         mockMvc.perform(put("/api/v1/courses/{courseId}/stops/{stopOrder}", 10L, 3)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"facilityId\":6}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.stopIds[3]").value(6));
+                .andExpect(jsonPath("$.result.stops[3].facilityId").value(6));
     }
 
     @Test
@@ -393,6 +433,43 @@ class CourseControllerTest {
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(courseCommandService);
+    }
+
+    @Test
+    @DisplayName("이름 변경에 성공하면 200과 변경된 코스를 반환한다")
+    void 이름_변경에_성공하면_200과_변경된_코스를_반환한다() throws Exception {
+        when(courseCommandService.updateName(isNull(), eq(10L), eq("새 이름")))
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "새 이름", null, List.of(new CourseResponseDTO.Stop(1L, null), new CourseResponseDTO.Stop(2L, null)), LocalDateTime.now(), false));
+
+        mockMvc.perform(patch("/api/v1/courses/{courseId}/name", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"새 이름\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.name").value("새 이름"));
+    }
+
+    @Test
+    @DisplayName("이름 변경 시 name이 없으면 400을 반환한다")
+    void 이름_변경_시_name이_없으면_400을_반환한다() throws Exception {
+        mockMvc.perform(patch("/api/v1/courses/{courseId}/name", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(courseCommandService);
+    }
+
+    @Test
+    @DisplayName("공개 토글에 성공하면 200과 변경된 코스를 반환한다")
+    void 공개_토글에_성공하면_200과_변경된_코스를_반환한다() throws Exception {
+        when(courseCommandService.updateVisibility(isNull(), eq(10L), eq(true)))
+                .thenReturn(new CourseResponseDTO.MyCourse(10L, "몽이 코스", null, List.of(new CourseResponseDTO.Stop(1L, null), new CourseResponseDTO.Stop(2L, null)), LocalDateTime.now(), true));
+
+        mockMvc.perform(patch("/api/v1/courses/{courseId}/visibility", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"isPublic\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.isPublic").value(true));
     }
 
     @Test
@@ -426,12 +503,12 @@ class CourseControllerTest {
     @DisplayName("공유 코드로 복사에 성공하면 200과 새 코스를 반환한다")
     void 공유_코드로_복사에_성공하면_200과_새_코스를_반환한다() throws Exception {
         when(courseCommandService.copySharedCourse(isNull(), eq("CRS-ABCDEFGH12")))
-                .thenReturn(new CourseResponseDTO.MyCourse(20L, "몽이 코스", "설명", List.of(1L, 2L), LocalDateTime.now(), false));
+                .thenReturn(new CourseResponseDTO.MyCourse(20L, "몽이 코스", "설명", List.of(new CourseResponseDTO.Stop(1L, null), new CourseResponseDTO.Stop(2L, null)), LocalDateTime.now(), false));
 
         mockMvc.perform(post("/api/v1/courses/shared/{shareCode}/copy", "CRS-ABCDEFGH12"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.courseId").value(20))
-                .andExpect(jsonPath("$.result.stopIds[0]").value(1));
+                .andExpect(jsonPath("$.result.stops[0].facilityId").value(1));
     }
 
     @Test
@@ -495,11 +572,13 @@ class CourseControllerTest {
     void 공개_코스_목록_조회에_성공하면_200을_반환한다() throws Exception {
         CourseResponseDTO.PublicCourseResult result = new CourseResponseDTO.PublicCourseResult(
                 List.of(new CourseResponseDTO.PublicCourse(
-                        10L, "몽이 코스", "설명", "테스터", List.of(1L, 2L), LocalDateTime.now()
+                        10L, "몽이 코스", "설명", "테스터", List.of(new CourseResponseDTO.Stop(1L, null), new CourseResponseDTO.Stop(2L, null)), LocalDateTime.now()
                 )),
                 1
         );
-        when(courseQueryService.getPublicCourses(any())).thenReturn(result);
+        // @WebMvcTest는 별도 인증을 안 걸어 SecurityContext가 비어 있다 — 컨트롤러가 이때
+        // 개인화용 userId를 null로 넘기는지까지 함께 확인한다.
+        when(courseQueryService.getPublicCourses(isNull(), any())).thenReturn(result);
 
         mockMvc.perform(get("/api/v1/courses/public"))
                 .andExpect(status().isOk())

@@ -85,23 +85,28 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
     String ORDER_BY_DISTANCE = "order by " + DISTANCE_METER + ", facility.facilityId";
 
     /**
+     * 지역·분류·동반 여부로 거르는 공통 조건. 전체 목록과 발자국 랭킹이 함께 쓴다.
+     *
+     * <p>지역은 이름이 아니라 코드로 거른다. 지명 개편(강원도 → 강원특별자치도)이 있어도 코드는
+     * 그대로이고, {@code idx_facilities_region}도 코드 기준이다.
+     */
+    String LIST_FILTER =
+            "where facility.isActive = true "
+            + "and (:category is null or facility.category = :category) "
+            + "and (:petAllowed is null or facility.petAllowed = :petAllowed) "
+            + "and (:sidoCode is null or facility.sidoCode = :sidoCode) "
+            + "and (:sigunguCode is null or facility.sigunguCode = :sigunguCode) ";
+
+    /**
      * 발자국 랭킹 대상 조건.
      *
      * <p>등급을 받은 시설만 노출한다(기능명세서 F3-3). 등급 판정은 리뷰가 바뀔 때 미리 계산해
      * {@code pawGradeLevel}에 저장해두므로, 여기서는 임계값을 다시 따지지 않는다. 등급 기준을
      * SQL에도 적어두면 {@link com.freepets.domain.facility.entity.PetFriendlyGrade}가 바뀔 때
      * 한쪽만 고치게 된다.
-     *
-     * <p>지역은 이름이 아니라 코드로 거른다. 지명 개편(강원도 → 강원특별자치도)이 있어도 코드는
-     * 그대로이고, {@code idx_facilities_region}도 코드 기준이다.
      */
-    String RANKING_FILTER =
-            "where facility.isActive = true "
-            + "and facility.pawGradeLevel > " + PetFriendlyGrade.NO_GRADE_LEVEL + " "
-            + "and (:category is null or facility.category = :category) "
-            + "and (:petAllowed is null or facility.petAllowed = :petAllowed) "
-            + "and (:sidoCode is null or facility.sidoCode = :sidoCode) "
-            + "and (:sigunguCode is null or facility.sigunguCode = :sigunguCode) ";
+    String RANKING_FILTER = LIST_FILTER
+            + "and facility.pawGradeLevel > " + PetFriendlyGrade.NO_GRADE_LEVEL + " ";
 
     /** 거리를 함께 계산할 때만 붙이는 조건. 좌표가 없는 시설은 거리를 낼 수 없어 제외된다. */
     String COORDINATE_NOT_NULL_FILTER =
@@ -119,6 +124,16 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
      */
     String ORDER_BY_GRADE =
             "order by facility.pawGradeLevel desc, facility.petScore desc, facility.facilityId";
+
+    /**
+     * 전체 목록 정렬. 이름 가나다순이며 동명이인은 ID로 고정한다.
+     *
+     * <p>DB 정렬은 컬레이션을 따르므로 관광공사 응답을 서버에서 정렬할 때 쓰는
+     * {@code Collator}와 순서가 미세하게 다를 수 있다. 폴백은 관광공사가 죽었을 때만 도는
+     * 경로라 그 차이를 맞추려고 전 건을 메모리로 올리지는 않는다.
+     */
+    String ORDER_BY_NAME =
+            "order by facility.name, facility.facilityId";
   
     /**
      * "취향 비슷한 새곳"(similar) 카테고리 기반 후보 풀 — 좋아한 시설들의 카테고리와 겹치면서,
@@ -297,7 +312,8 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
                 (facility.allowedAnimalText is not null and length(trim(facility.allowedAnimalText)) > 0) or
                 (facility.requiredMatterText is not null and length(trim(facility.requiredMatterText)) > 0) or
                 (facility.etcAccompanyText is not null and length(trim(facility.etcAccompanyText)) > 0) or
-                (facility.accidentRiskText is not null and length(trim(facility.accidentRiskText)) > 0)
+                (facility.accidentRiskText is not null and length(trim(facility.accidentRiskText)) > 0) or
+                (facility.petConditionRaw is not null and length(trim(facility.petConditionRaw)) > 0)
             )
             """)
     Slice<Facility> findByPetConditionStatusWithConditionText(
@@ -319,7 +335,8 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
                 facility.allowedAnimalText like concat('%', :keyword, '%') or
                 facility.requiredMatterText like concat('%', :keyword, '%') or
                 facility.etcAccompanyText like concat('%', :keyword, '%') or
-                facility.accidentRiskText like concat('%', :keyword, '%')
+                facility.accidentRiskText like concat('%', :keyword, '%') or
+                facility.petConditionRaw like concat('%', :keyword, '%')
             )
             """)
     Slice<Facility> findByPetConditionStatusAndConditionTextContaining(
@@ -351,9 +368,10 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
      * {@code FacilityConditionLlmBatchApiService}(#39)가 Batch API 제출 대상을 고를 때 쓴다.
      * {@code FacilityConditionLlmParser.parse()}가 실제로 LLM을 호출하는 조건과 정확히
      * 일치시켰다 — {@code petAllowed=DENIED}는 애초에 호출 안 하고(resolve() 참고),
-     * {@code accompanyType}은 실질 조건 문장이 없는 코드성 필드라 나머지 4종만 본다(그
+     * {@code accompanyType}은 실질 조건 문장이 없는 코드성 필드라 나머지만 본다(그
      * 필드만 있으면 파서가 LLM 호출 없이 기계적으로 처리한다). 이 조건과 어긋나면 제출
-     * 대상 수와 실제 호출 대상 수가 갈린다.
+     * 대상 수와 실제 호출 대상 수가 갈린다 — 파서가 정리 안내문({@code petConditionRaw})까지
+     * 읽게 된 뒤로(#148) 여기서도 같이 본다.
      */
     @Query("""
             select facility from Facility facility
@@ -363,7 +381,8 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
                 (facility.allowedAnimalText is not null and length(trim(facility.allowedAnimalText)) > 0) or
                 (facility.requiredMatterText is not null and length(trim(facility.requiredMatterText)) > 0) or
                 (facility.etcAccompanyText is not null and length(trim(facility.etcAccompanyText)) > 0) or
-                (facility.accidentRiskText is not null and length(trim(facility.accidentRiskText)) > 0)
+                (facility.accidentRiskText is not null and length(trim(facility.accidentRiskText)) > 0) or
+                (facility.petConditionRaw is not null and length(trim(facility.petConditionRaw)) > 0)
             )
             """)
     Slice<Facility> findRequiringLlmParse(
@@ -410,6 +429,53 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
      * 반복할 이유가 없다.
      */
     Slice<Facility> findAllBy(Pageable pageable);
+
+    /**
+     * 전체 시설 목록. 관광공사를 부르지 않는 경로(시군구를 비운 시도 단위·전국)와 관광공사
+     * 실시간 조회가 실패했을 때 쓴다.
+     *
+     * <p>등급 조건이 없어 랭킹과 다르다. 전체 목록은 등급을 못 받은 시설도 보여준다.
+     */
+    @Query("select facility from Facility facility " + LIST_FILTER + ORDER_BY_NAME)
+    List<Facility> searchAll(
+            @Param("category") FacilityCategory category,
+            @Param("petAllowed") PetAllowed petAllowed,
+            @Param("sidoCode") String sidoCode,
+            @Param("sigunguCode") String sigunguCode,
+            Pageable pageable
+    );
+
+    /**
+     * 관광공사 콘텐츠 ID가 없는 시설.
+     *
+     * <p>전체 시설 목록이 관광공사 응답에 더해 내려보낼 대상이다. 사업자가 직접 등록한 시설
+     * ({@link com.freepets.domain.facility.entity.FacilitySource#BUSINESS_SELF})은 관광공사에
+     * 없으므로 콘텐츠 ID로는 영영 찾히지 않는다.
+     *
+     * <p>출처가 아니라 콘텐츠 ID로 거르는 이유는 관광공사 응답으로 이미 찾은 시설과 겹치지 않는
+     * 집합을 정확히 고르기 위해서다. 출처로 거르면 앞으로 어떤 이유로든 콘텐츠 ID를 가진
+     * 자체 등록 시설이 생겼을 때 같은 시설이 목록에 두 번 나온다.
+     *
+     * <p>페이징하지 않는다. 사업자 등록은 시군구 단위로 많아야 수십 건이고, 관광공사 결과와
+     * 합쳐 이름순으로 다시 세운 뒤에야 페이지를 자를 수 있기 때문이다.
+     */
+    @Query("select facility from Facility facility " + LIST_FILTER
+            + "and facility.contentId is null " + ORDER_BY_NAME)
+    List<Facility> findAllWithoutContentId(
+            @Param("category") FacilityCategory category,
+            @Param("petAllowed") PetAllowed petAllowed,
+            @Param("sidoCode") String sidoCode,
+            @Param("sigunguCode") String sigunguCode
+    );
+
+    /** 전체 시설 목록의 건수. */
+    @Query(SELECT_COUNT + LIST_FILTER)
+    long countAll(
+            @Param("category") FacilityCategory category,
+            @Param("petAllowed") PetAllowed petAllowed,
+            @Param("sidoCode") String sidoCode,
+            @Param("sigunguCode") String sigunguCode
+    );
 
     /**
      * 발자국 랭킹. 사용자 좌표가 없을 때 쓴다.

@@ -1,5 +1,7 @@
 package com.freepets.domain.course.entity;
 
+import java.time.LocalTime;
+
 import com.freepets.domain.facility.entity.Facility;
 
 import jakarta.persistence.Column;
@@ -16,8 +18,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// 코스 안의 시설 하나 + 순서. 스톱 시각은 여기 저장하지 않고 조회 시 순서로부터 매번 계산한다
-// (첫 스톱 10:00, 스톱당 +90분 — CourseConverter 참고).
+// 코스 안의 시설 하나 + 순서 + 도착 시각.
 @Getter
 @Entity
 @Table(name = "course_stops")
@@ -39,15 +40,24 @@ public class CourseStop {
     @Column(name = "stop_order", nullable = false)
     private int stopOrder;
 
+    /**
+     * 이 스톱에 몇 시에 도착하는지. 사용자가 안 정했으면 비어 있다 — 기존 코스에는 값이 없고,
+     * 시간을 안 쓰는 PRESET 코스도 비운 채로 둔다.
+     */
+    @Column(name = "visit_time")
+    private LocalTime visitTime;
+
     @Builder
     private CourseStop(
             Course course,
             Facility facility,
-            int stopOrder
+            int stopOrder,
+            LocalTime visitTime
     ) {
         this.course = course;
         this.facility = facility;
         this.stopOrder = stopOrder;
+        this.visitTime = visitTime;
     }
 
 }

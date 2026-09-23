@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -83,7 +84,8 @@ class DenialReportCommandServiceTest {
         assertThat(result.isRealtime()).isTrue();
         assertThat(result.status()).isEqualTo(ReportStatus.APPLIED);
         verify(denialReportNotificationService).notifyDenial(7L, 1L, DenialReason.WEIGHT, "테스트 시설");
-        // 제출 즉시 경험치가 지급되는지(게이미피케이션 훅) — 승인 기능이 없어 제출 시점에 지급하기로 확인받았다.
+        // 제출 즉시 경험치가 지급되는지(게이미피케이션 훅) — 승인 기능이 없어 제출 시점에 지급하기로
+        // 확인받았다.
         verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REPORT), eq(100L), eq(15));
     }
 
@@ -154,4 +156,5 @@ class DenialReportCommandServiceTest {
         ReflectionTestUtils.setField(facility, "facilityId", facilityId);
         return facility;
     }
+
 }

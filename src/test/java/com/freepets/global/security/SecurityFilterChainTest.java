@@ -1,14 +1,21 @@
 package com.freepets.global.security;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
+import java.util.Date;
 import java.util.List;
+import java.util.Optional;
+
+import javax.crypto.SecretKey;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +24,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import io.jsonwebtoken.Jwts;
 
 import com.freepets.domain.auth.controller.AuthController;
 import com.freepets.domain.auth.dto.AuthResponseDTO;
@@ -28,8 +38,21 @@ import com.freepets.domain.course.service.CourseLikedService;
 import com.freepets.domain.course.service.CoursePresetService;
 import com.freepets.domain.course.service.CourseQueryService;
 import com.freepets.domain.course.service.CourseSimilarService;
+import com.freepets.domain.facility.controller.FacilityController;
+import com.freepets.domain.facility.dto.FacilityResponseDTO;
+import com.freepets.domain.facility.service.FacilityListQueryService;
+import com.freepets.domain.facility.service.FacilityQueryService;
+import com.freepets.domain.gamification.controller.GamificationRankingController;
+import com.freepets.domain.gamification.service.RankingQueryService;
+import com.freepets.domain.report.controller.DenialReportController;
+import com.freepets.domain.report.service.DenialReportCommandService;
+import com.freepets.domain.report.service.DenialReportQueryService;
+import com.freepets.domain.review.controller.ReviewController;
+import com.freepets.domain.review.service.ReviewCommandService;
+import com.freepets.domain.review.service.ReviewQueryService;
 import com.freepets.domain.user.controller.UserController;
 import com.freepets.domain.user.dto.UserResponseDTO;
+import com.freepets.domain.user.entity.Role;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.domain.user.service.UserCommandService;
 import com.freepets.domain.user.service.UserQueryService;
@@ -37,7 +60,16 @@ import com.freepets.global.config.SecurityConfig;
 import com.freepets.global.config.JwtConfig;
 import com.freepets.global.security.jwt.JwtProvider;
 
-@WebMvcTest(controllers = {UserController.class, AuthController.class, CourseController.class, SecurityTestPingController.class})
+@WebMvcTest(controllers = {
+        UserController.class,
+        AuthController.class,
+        CourseController.class,
+        FacilityController.class,
+        ReviewController.class,
+        DenialReportController.class,
+        GamificationRankingController.class,
+        SecurityTestPingController.class
+})
 @Import({SecurityConfig.class, JwtConfig.class, JwtProvider.class, JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
 class SecurityFilterChainTest {
 
@@ -46,6 +78,10 @@ class SecurityFilterChainTest {
 
     @Autowired
     private JwtProvider jwtProvider;
+
+    private static final String REVIEW_REQUEST_BODY = """
+            {"petIds":[1],"ratingSpace":5,"ratingStaff":5,"ratingAmenity":5,"content":"좋았어요"}
+            """;
 
     @MockitoBean
     private UserCommandService userCommandService;
@@ -73,6 +109,27 @@ class SecurityFilterChainTest {
 
     @MockitoBean
     private CourseCommandService courseCommandService;
+
+    @MockitoBean
+    private FacilityQueryService facilityQueryService;
+
+    @MockitoBean
+    private FacilityListQueryService facilityListQueryService;
+
+    @MockitoBean
+    private ReviewQueryService reviewQueryService;
+
+    @MockitoBean
+    private ReviewCommandService reviewCommandService;
+
+    @MockitoBean
+    private DenialReportQueryService denialReportQueryService;
+
+    @MockitoBean
+    private DenialReportCommandService denialReportCommandService;
+
+    @MockitoBean
+    private RankingQueryService rankingQueryService;
 
     @Test
     void 토큰없이_보호된_경로_요청시_401과_COMMON401을_반환한다() throws Exception {
@@ -117,6 +174,52 @@ class SecurityFilterChainTest {
     }
 
     @Test
+    void 토큰없이_관리자_경로_요청시_401과_COMMON401을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/security-test/ping"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("COMMON401"));
+    }
+
+    @Test
+    void 일반_사용자_토큰으로_관리자_경로_요청시_403과_COMMON403을_반환한다() throws Exception {
+        String token = jwtProvider.createAccessToken(1L);
+        when(userRepository.existsByIdAndDeletedAtIsNull(1L)).thenReturn(true);
+        when(userRepository.findActiveRoleById(1L)).thenReturn(Optional.of(Role.USER));
+
+        mockMvc.perform(get("/api/v1/admin/security-test/ping")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("COMMON403"));
+    }
+
+    @Test
+    void 관리자_토큰으로_관리자_경로_요청시_200을_반환한다() throws Exception {
+        String token = jwtProvider.createAccessToken(2L);
+        when(userRepository.existsByIdAndDeletedAtIsNull(2L)).thenReturn(true);
+        when(userRepository.findActiveRoleById(2L)).thenReturn(Optional.of(Role.ADMIN));
+
+        mockMvc.perform(get("/api/v1/admin/security-test/ping")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(content().string("admin-pong:2"));
+    }
+
+    // 관리자 역할은 일반 경로 접근을 막지 않아야 한다 — 운영자도 자기 앱 계정으로 앱 기능을 쓴다.
+    // 일반 경로는 관리자 판정을 아예 거치지 않으므로 findActiveRoleById는 부르지 않는다.
+    @Test
+    void 관리자_토큰으로_일반_보호_경로_요청시_200을_반환한다() throws Exception {
+        String token = jwtProvider.createAccessToken(2L);
+        when(userRepository.existsByIdAndDeletedAtIsNull(2L)).thenReturn(true);
+
+        mockMvc.perform(get("/api/v1/security-test/ping")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(content().string("pong:2"));
+    }
+
+    @Test
     void signup_로그인_경로는_토큰없이도_통과한다() throws Exception {
         when(userCommandService.signUp(any())).thenReturn(new UserResponseDTO.SignUpResult());
 
@@ -130,7 +233,7 @@ class SecurityFilterChainTest {
     void 소셜_로그인_경로는_토큰없이도_통과한다() throws Exception {
         // 아직 우리 토큰이 없는 상태로 들어오는 경로라 인증을 요구하면 로그인 자체가 불가능하다.
         when(authCommandService.socialLogin(any(), any()))
-                .thenReturn(new AuthResponseDTO.SocialLoginResult("access", "refresh", true));
+                .thenReturn(new AuthResponseDTO.SocialLoginResult("1", "access", "refresh", true));
 
         mockMvc.perform(post("/api/v1/auth/social/kakao")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -162,6 +265,148 @@ class SecurityFilterChainTest {
         mockMvc.perform(post("/api/v1/courses/optimize-order")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"stopIds\":[2,1]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    // 게스트 모드 — "로그인 없이도 시설 탐색은 돼야 한다"는 요구사항으로 연 5개 읽기 API가
+    // 실제로 토큰 없이 통과하는지 확인한다. 각 서비스는 @AuthenticationPrincipal이 null로 넘겨준
+    // userId를 그대로 받는다.
+    @Test
+    void 시설_검색은_토큰없이도_통과한다() throws Exception {
+        when(facilityQueryService.searchFacilities(any()))
+                .thenReturn(new FacilityResponseDTO.FacilitySearchResult(List.of(), 0));
+
+        mockMvc.perform(post("/api/v1/facilities/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"latitude\":37.5,\"longitude\":127.0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    void 시설_상세_조회는_토큰없이도_통과한다() throws Exception {
+        when(facilityQueryService.getFacilityDetail(any(), any(), any(), any()))
+                .thenReturn(null);
+
+        mockMvc.perform(get("/api/v1/facilities/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    void 전체_시설_목록_조회는_토큰없이도_통과한다() throws Exception {
+        when(facilityListQueryService.getFacilityList(any()))
+                .thenReturn(new FacilityResponseDTO.FacilityListResult(List.of(), 0));
+
+        mockMvc.perform(get("/api/v1/facilities")
+                        .param("sidoCode", "41")
+                        .param("sigunguCode", "480"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    void 발자국_랭킹_조회는_토큰없이도_통과한다() throws Exception {
+        when(facilityQueryService.getRanking(any()))
+                .thenReturn(new FacilityResponseDTO.RankingResult(List.of(), 0));
+
+        mockMvc.perform(get("/api/v1/facilities/ranking"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    void 시설_리뷰_목록_조회는_토큰없이도_통과한다() throws Exception {
+        when(reviewQueryService.getReviews(any(), any(), anyInt(), anyInt()))
+                .thenReturn(null);
+
+        mockMvc.perform(get("/api/v1/facilities/1/reviews"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    @Test
+    void 최근_거부_제보_조회는_토큰없이도_통과한다() throws Exception {
+        when(denialReportQueryService.getRecent(any(), any()))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/facilities/1/denial-reports/recent"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    // 다른 유저와 비교하는 화면이라 개인화 없이도 볼 수 있어야 한다 — 토큰 없으면 me가
+    // 응답에서 빠질 뿐 목록 자체는 그대로 내려간다(GamificationRankingController 참고).
+    @Test
+    void 전국_랭킹_조회는_토큰없이도_통과한다() throws Exception {
+        when(rankingQueryService.getNationalRanking(any(), anyInt(), anyInt()))
+                .thenReturn(null);
+
+        mockMvc.perform(get("/api/v1/gamification/ranking"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true));
+    }
+
+    // 프론트 라이브 제보 — 토큰 없이 리뷰를 작성해도 401이 아니었다. 게스트 모드로 연 건 같은
+    // 경로의 목록 조회(GET)뿐인데 permitAll이 메소드를 가리지 않아 POST까지 같이 열려 있었고,
+    // userId가 null인 채로 컨트롤러까지 들어갔다.
+    @Test
+    void 토큰없이_리뷰_작성_요청시_401과_COMMON401을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/facilities/1/reviews")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REVIEW_REQUEST_BODY))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("COMMON401"));
+    }
+
+    // 멀티파트 경로도 같은 경로에 걸려 있으므로 함께 막혀야 한다.
+    @Test
+    void 토큰없이_멀티파트_리뷰_작성_요청시_401을_반환한다() throws Exception {
+        mockMvc.perform(multipart("/api/v1/facilities/1/reviews")
+                        .param("petIds", "1")
+                        .param("ratingSpace", "5")
+                        .param("ratingStaff", "5")
+                        .param("ratingAmenity", "5")
+                        .param("content", "좋았어요"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("COMMON401"));
+    }
+
+    // 만료된 토큰은 앱이 재발급으로 가야 해서 TOKEN4002로 내려가야 한다 — 경로가 열려 있으면
+    // 필터가 기록해둔 이 코드가 쓰이지 못하고 요청이 그냥 통과해버린다.
+    @Test
+    void 만료된_토큰으로_리뷰_작성_요청시_401과_TOKEN4002를_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/facilities/1/reviews")
+                        .header("Authorization", "Bearer " + expiredAccessToken(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REVIEW_REQUEST_BODY))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("TOKEN4002"));
+    }
+
+    private String expiredAccessToken(Long userId) {
+        SecretKey signingKey = (SecretKey) ReflectionTestUtils.getField(jwtProvider, "signingKey");
+        Date expiry = new Date(System.currentTimeMillis() - Duration.ofMinutes(1).toMillis());
+
+        return Jwts.builder()
+                .subject(String.valueOf(userId))
+                .claim("tokenType", "ACCESS")
+                .issuedAt(new Date(expiry.getTime() - Duration.ofHours(2).toMillis()))
+                .expiration(expiry)
+                .signWith(signingKey)
+                .compact();
+    }
+
+    // 지역 칩을 못 받으면 게스트는 랭킹·전체 목록에서 지역을 고를 수 없다. 응답에 개인화가
+    // 없어 인증을 요구할 이유도 없다.
+    @Test
+    void 시설_지역_목록_조회는_토큰없이도_통과한다() throws Exception {
+        when(facilityQueryService.getRegions()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/facilities/regions"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true));
     }

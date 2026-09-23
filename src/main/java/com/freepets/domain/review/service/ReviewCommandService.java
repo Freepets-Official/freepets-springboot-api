@@ -7,6 +7,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.repository.FacilityRepository;
@@ -20,15 +21,18 @@ import com.freepets.domain.review.converter.ReviewConverter;
 import com.freepets.domain.review.dto.ReviewRequestDTO;
 import com.freepets.domain.review.dto.ReviewResponseDTO;
 import com.freepets.domain.review.entity.Review;
+import com.freepets.domain.review.entity.ReviewPet;
 import com.freepets.domain.review.entity.ReviewReport;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.Tag;
+import com.freepets.domain.review.repository.ReviewHelpfulRepository;
 import com.freepets.domain.review.repository.ReviewReportRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.s3.S3ImageService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,16 +47,23 @@ public class ReviewCommandService {
     // 표현할 수 없는 partial index라 DDL로 직접 생성했다).
     private static final String FACILITY_USER_UNIQUE_CONSTRAINT = "uq_reviews_facility_user_active";
 
+    // review_helpfuls 유니크 제약(review_id, user_id) 이름.
+    private static final String REVIEW_HELPFUL_UNIQUE_CONSTRAINT = "uk_review_helpfuls_review_user";
+
     private final ReviewRepository reviewRepository;
     private final ReviewReportRepository reviewReportRepository;
+    private final ReviewHelpfulRepository reviewHelpfulRepository;
+    private final ReviewHelpfulRecorder reviewHelpfulRecorder;
     private final FacilityRepository facilityRepository;
     private final UserRepository userRepository;
     private final PetRepository petRepository;
     private final PetCheckRepository petCheckRepository;
     private final GamificationService gamificationService;
+    private final S3ImageService s3ImageService;
 
-    // 리뷰 신규 작성 1건당 지급하는 경험치(수정은 미지급). 사진 첨부 가산점은 리뷰에 사진 필드
-    // 자체가 아직 없어 보류했다.
+    // 리뷰 XP는 "리뷰 건수"가 아니라 "이 유저가 이 시설에 이 반려동물로 리뷰를 남긴 적이
+    // 있는지"(시설+반려동물 조합) 단위로 지급한다 — grantReviewXpForNewlyCoveredPets 참고.
+    // 사진 첨부 가산점은 기획 요청이 아직 없어 보류했다(사진 필드 자체는 있음).
     private static final int REVIEW_XP = 20;
 
     // 리뷰가 바뀌면 시설의 친화도 점수·리뷰 수·발자국 등급을 다시 계산해둔다. 발자국 랭킹이
@@ -67,34 +78,54 @@ public class ReviewCommandService {
             Long facilityId,
             ReviewRequestDTO.UpsertRequest request
     ) {
+        requireAuthenticated(userId);
+
         Facility facility = facilityRepository.findById(facilityId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.FACILITY4041));
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
+        User user = findUser(userId);
 
         validateFacilityEligibility(userId, facilityId);
 
         List<Pet> pets = findOwnedPets(userId, request.getPetIds());
         List<Tag> tags = distinctTags(request.getTags());
 
+        MultipartFile photo = request.getPhoto();
         Review existingReview = reviewRepository
                 .findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(facilityId, userId)
                 .orElse(null);
         boolean isNewReview = existingReview == null;
+        String previousPhotoUrl = isNewReview ? null : existingReview.getPhotoUrl();
+        String photoUrl = resolvePhotoUrl(photo, previousPhotoUrl);
+
         Review review = isNewReview
-                ? createReview(request, facility, user)
-                : updateReview(existingReview, request);
+                ? createReview(request, facility, user, photoUrl)
+                : existingReview;
+        applyRequestToReview(review, request, pets, tags, photoUrl);
 
-        review.replacePets(pets);
-        review.replaceTags(tags);
+        // 같은 시설+유저로 사진 첨부된 리뷰 두 개가 동시에 들어오면 둘 다 사진을 먼저 S3에 올린
+        // 뒤 저장을 시도한다 — 한쪽은 saveReview()가 유니크 인덱스 충돌로 막는데(그 메소드
+        // 참고), 이때 이미 올라간 사진이 고아 파일로 남지 않도록 저장 실패 시 지운다.
+        Review savedReview;
+        try {
+            savedReview = saveReview(review);
+        } catch (RuntimeException exception) {
+            if (isNewPhotoPresent(photo)) {
+                s3ImageService.delete(photoUrl);
+            }
+            throw exception;
+        }
 
-        Review savedReview = saveReview(review);
+        // review_pets는 IDENTITY 전략이라 이 시점엔 flush가 아직 안 됐으면 새로 추가된 행의 id가
+        // 비어있을 수 있다(update 경로는 save()가 이미 관리 중인 엔티티라 즉시 insert를 강제하지
+        // 않는다) — grantReviewXpForNewlyCoveredPets가 review_pet_id를 sourceId로 써야 해서
+        // 먼저 flush로 id를 확정한다.
+        reviewRepository.flush();
 
         facilityGradeCacheService.refresh(facilityId);
 
-        if (isNewReview) {
-            gamificationService.grantXp(userId, XpSourceType.REVIEW, savedReview.getReviewId(), REVIEW_XP);
-        }
+        deleteReplacedPhotoIfPresent(photo, previousPhotoUrl);
+
+        grantReviewXpForNewlyCoveredPets(userId, facilityId, savedReview);
 
         return ReviewConverter.toUpsertResult(savedReview);
     }
@@ -102,25 +133,138 @@ public class ReviewCommandService {
     private Review createReview(
             ReviewRequestDTO.UpsertRequest request,
             Facility facility,
-            User user
+            User user,
+            String photoUrl
     ) {
         // 방문일은 실제로 다녀온 날짜라 최초 작성 시에만 정하고, 그 뒤로는 수정해도 바뀌지 않는다.
         LocalDate visitedAt = request.getVisitedAt() != null ? request.getVisitedAt() : LocalDate.now();
-        return ReviewConverter.toReview(request, facility, user, visitedAt);
+        return ReviewConverter.toReview(request, facility, user, visitedAt, photoUrl);
     }
 
-    private Review updateReview(
+    // upsertReview(신규/수정 공통)와 updateReview(PUT) 둘 다 쓴다 — 신규 리뷰에도 그대로 태운다.
+    // createReview가 이미 같은 request로 값을 채워서 update() 호출이 중복이지만, 분기를 나눠서
+    // 따로 관리하는 것보다 한 곳에서만 고치면 두 경로가 갈라질 일이 없는 쪽을 택했다.
+    //
+    // photoUrl은 호출부가 이미 계산해서 넘긴다(새 사진 업로드 여부에 따라 새 URL 또는 기존
+    // URL) — 여기서 request.getPhoto()를 다시 보고 업로드를 결정하지 않는다.
+    private void applyRequestToReview(
             Review review,
-            ReviewRequestDTO.UpsertRequest request
+            ReviewRequestDTO.UpsertRequest request,
+            List<Pet> pets,
+            List<Tag> tags,
+            String photoUrl
     ) {
         review.update(
                 request.getRatingSpace(),
                 request.getRatingStaff(),
                 request.getRatingAmenity(),
                 request.getContent(),
-                request.isShowPetInfo()
+                request.isShowPetInfo(),
+                photoUrl
         );
-        return review;
+        review.replacePets(pets);
+        review.replaceTags(tags);
+    }
+
+    /**
+     * PUT /api/v1/reviews/{reviewId} — 별점·내용만 고치려 해도 지금까지는 삭제 후 재작성뿐이었다
+     * (facilityId 기준 upsertReview는 시설 컨텍스트가 있어야 호출 가능해 이 화면과는 안 맞는다).
+     * reviewId 하나로 바로 수정한다 — upsertReview와 같은 applyRequestToReview를 reviewId
+     * 기준 조회·소유권 검증으로만 감싼 것이다. 방문일은 update()가 안 받아서(엔티티 참고)
+     * 여기서도 그대로 유지된다.
+     *
+     * <p>이 수정으로 아직 이 시설에서 XP를 못 받은 반려동물이 새로 태그되면 그만큼 지급된다
+     * (grantReviewXpForNewlyCoveredPets 참고) — "새 리뷰"가 아니라는 이유로 더는 전부 스킵하지
+     * 않는다.
+     */
+    public ReviewResponseDTO.UpsertResult updateReview(
+            Long userId,
+            Long reviewId,
+            ReviewRequestDTO.UpsertRequest request
+    ) {
+        requireAuthenticated(userId);
+
+        Review review = findOwnedReview(userId, reviewId);
+        List<Pet> pets = findOwnedPets(userId, request.getPetIds());
+        List<Tag> tags = distinctTags(request.getTags());
+
+        MultipartFile photo = request.getPhoto();
+        String previousPhotoUrl = review.getPhotoUrl();
+        String photoUrl = resolvePhotoUrl(photo, previousPhotoUrl);
+
+        applyRequestToReview(review, request, pets, tags, photoUrl);
+
+        reviewRepository.flush();
+
+        facilityGradeCacheService.refresh(review.getFacility().getFacilityId());
+
+        deleteReplacedPhotoIfPresent(photo, previousPhotoUrl);
+
+        grantReviewXpForNewlyCoveredPets(userId, review.getFacility().getFacilityId(), review);
+
+        return ReviewConverter.toUpsertResult(review);
+    }
+
+    /**
+     * 리뷰 XP를 "새 리뷰인지"가 아니라 "이 유저가 이 시설에 이 반려동물로 XP를 받은 적이
+     * 있는지"(시설+반려동물 조합) 단위로 지급한다. 리뷰 하나에 여러 마리가 태그되면 그중
+     * 아직 못 받은 마리마다 각각 REVIEW_XP를 지급한다(다 받은 마리는 몇 번을 다시 태그해도
+     * 또 지급되지 않는다) — 코스 공개가 스톱 구성 단위로 평생 1회를 판정하는 것과 같은
+     * componentSignature 메커니즘을 그대로 쓴다.
+     *
+     * <p>sourceId는 reviewId를 재사용하지 않는다 — 같은 reviewId로 두 번째 호출하면(리뷰를
+     * 수정해서 새 반려동물을 추가) GamificationService가 "이 sourceId로 이미 지급했다"고 보고
+     * 새로 추가된 반려동물분까지 막아버린다. review_pet 행은 replacePets가 매번 새로 만들어서
+     * (기존 반려동물이 그대로 남아있어도 행 자체는 새로 생김) reviewPetId가 항상 새 값이라
+     * sourceId로 재사용될 일이 없다 — 실제 중복 방지는 componentSignature(시설+반려동물)가
+     * 전담한다.
+     */
+    private void grantReviewXpForNewlyCoveredPets(
+            Long userId,
+            Long facilityId,
+            Review review
+    ) {
+        for (ReviewPet reviewPet : review.getReviewPets()) {
+            String componentSignature = facilityId + ":" + reviewPet.getPet().getPetId();
+            gamificationService.grantXp(
+                    userId,
+                    XpSourceType.REVIEW,
+                    reviewPet.getReviewPetId(),
+                    REVIEW_XP,
+                    componentSignature
+            );
+        }
+    }
+
+    // 새 사진이 오면 업로드해서 새 URL을, 안 오면(수정 시 기존 사진 유지) 이전 URL을 그대로
+    // 돌려준다 — upsertReview·updateReview 둘 다 신규/수정 여부와 무관하게 같은 규칙을 쓴다.
+    private String resolvePhotoUrl(
+            MultipartFile photo,
+            String previousPhotoUrl
+    ) {
+        return isNewPhotoPresent(photo) ? uploadPhotoIfPresent(photo) : previousPhotoUrl;
+    }
+
+    // 새 사진으로 교체된 경우에만 이전 S3 객체를 지운다 — 신규 작성이거나 사진을 안 바꾼
+    // 경우는 previousPhotoUrl이 그대로 photoUrl로 쓰이고 있어 지울 대상이 없다.
+    private void deleteReplacedPhotoIfPresent(
+            MultipartFile photo,
+            String previousPhotoUrl
+    ) {
+        if (isNewPhotoPresent(photo) && previousPhotoUrl != null) {
+            s3ImageService.delete(previousPhotoUrl);
+        }
+    }
+
+    private boolean isNewPhotoPresent(MultipartFile photo) {
+        return photo != null && !photo.isEmpty();
+    }
+
+    private String uploadPhotoIfPresent(MultipartFile photo) {
+        if (!isNewPhotoPresent(photo)) {
+            return null;
+        }
+        return s3ImageService.upload(photo);
     }
 
     // 신규 insert일 때는 Review가 GenerationType.IDENTITY라 save() 호출 시점에 바로 INSERT가
@@ -183,6 +327,8 @@ public class ReviewCommandService {
             Long userId,
             Long reviewId
     ) {
+        requireAuthenticated(userId);
+
         Review review = findOwnedReview(userId, reviewId);
         review.delete();
 
@@ -196,10 +342,11 @@ public class ReviewCommandService {
             Long reviewId,
             ReviewRequestDTO.ReportRequest request
     ) {
+        requireAuthenticated(userId);
+
         Review review = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
+        User user = findUser(userId);
 
         if (reviewReportRepository.existsByReviewReviewIdAndUserId(reviewId, userId)) {
             throw new GeneralException(ErrorStatus.REVIEW4003);
@@ -214,6 +361,100 @@ public class ReviewCommandService {
         ReviewReport savedReport = reviewReportRepository.save(reviewReport);
 
         return ReviewConverter.toReportResult(savedReport);
+    }
+
+    /**
+     * POST /api/v1/reviews/{reviewId}/helpful — "도움됐어요" 표시. 존재 여부가 곧 표시 상태라
+     * CalendarMedLog와 같은 방식 — 이미 표시한 리뷰에 다시 눌러도 에러 없이 그대로 성공
+     * 처리한다(멱등). 취소는 {@link #unmarkHelpful}이 대칭으로 처리한다.
+     *
+     * <p>본인 리뷰는 표시할 수 없다 — 작성자 본인이 자기 리뷰를 눌러 카운트를 스스로
+     * 올리는 걸 막는다(CourseCommandService의 자기 복사 방지와 같은 이유).
+     */
+    public ReviewResponseDTO.HelpfulResult markHelpful(
+            Long userId,
+            Long reviewId
+    ) {
+        requireAuthenticated(userId);
+
+        Review review = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
+
+        if (review.isOwnedBy(userId)) {
+            throw new GeneralException(ErrorStatus.REVIEW4005);
+        }
+
+        if (!reviewHelpfulRepository.existsByReviewReviewIdAndUserId(reviewId, userId)) {
+            recordHelpfulIfAbsent(review, findUser(userId));
+        }
+
+        // incrementHelpfulCount는 영속성 컨텍스트를 거치지 않는 벌크 업데이트라(ReviewRepository
+        // 참고) 위에서 로드해둔 review의 메모리 값이 안 바뀐다 — 최신 값을 응답하려면 다시 읽어야
+        // 한다. 이 사이에 리뷰가 지워지는 등의 극단적인 경우엔 방금 읽은 값을 그대로 쓴다.
+        Review refreshed = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId).orElse(review);
+        return ReviewConverter.toHelpfulResult(refreshed);
+    }
+
+    /**
+     * DELETE /api/v1/reviews/{reviewId}/helpful — "도움됐어요" 취소. mark와 대칭으로 멱등하다 —
+     * 표시한 적 없는 리뷰를 취소해도 에러 없이 그대로 성공 처리한다. 삭제되는 행이 실제 있었는지
+     * (반환된 행 수)로만 카운트 감소 여부를 정하므로, 본인 리뷰인지 여부는 따로 검사하지 않는다 —
+     * 애초에 본인 리뷰는 markHelpful에서 막혀 표시 자체가 될 수 없어서 삭제 대상이 없다.
+     *
+     * <p>이미 부여된 "구원자" 배지는 취소해도 회수하지 않는다 — 리뷰를 지워도 REVIEW 계열
+     * 배지를 회수하지 않는 것과 같은 정책이다(한 번 달성한 배지는 계속 남는다).
+     */
+    public ReviewResponseDTO.HelpfulResult unmarkHelpful(
+            Long userId,
+            Long reviewId
+    ) {
+        requireAuthenticated(userId);
+
+        Review review = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
+
+        int deletedCount = reviewHelpfulRepository.deleteByReviewReviewIdAndUserId(reviewId, userId);
+        if (deletedCount > 0) {
+            reviewRepository.decrementHelpfulCount(reviewId);
+        }
+
+        Review refreshed = reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId).orElse(review);
+        return ReviewConverter.toHelpfulResult(refreshed);
+    }
+
+    /**
+     * uk_review_helpfuls_review_user가 마지막 방어선이다 — exists 확인과 저장 사이에 거의
+     * 동시에 두 번 눌리면 유니크 제약이 뒤늦은 쪽을 막아준다. 이미 표시된 것으로 보고 조용히
+     * 넘어간다(멱등 — 원래 액션이 실패해야 할 이유가 없다).
+     *
+     * <p>저장 자체는 {@link ReviewHelpfulRecorder}로 별도 트랜잭션에 격리해서 부른다 —
+     * PostgreSQL은 트랜잭션 안에서 문장 하나가 실패하면 트랜잭션 전체가 "aborted" 상태가
+     * 돼서, 이 메소드가 쓰는 트랜잭션 안에서 그대로 저장을 시도했다면 여기서 예외를 잡아도
+     * 커밋 시점에 JPA가 RollbackException을 뒤늦게 던진다(그 클래스 주석 참고).
+     */
+    private void recordHelpfulIfAbsent(
+            Review review,
+            User marker
+    ) {
+        User author = review.getUser();
+
+        try {
+            reviewHelpfulRecorder.record(review, marker);
+        } catch (DataIntegrityViolationException exception) {
+            if (!isUniqueConstraintViolation(exception, REVIEW_HELPFUL_UNIQUE_CONSTRAINT)) {
+                throw exception;
+            }
+            log.warn("이미 표시된 도움됐어요입니다 — reviewId={}, userId={}", review.getReviewId(), marker.getId());
+            return;
+        }
+
+        reviewRepository.incrementHelpfulCount(review.getReviewId());
+
+        // "구원자" 배지 — 도움됐어요는 작성자 본인의 행동이 아니라 남이 눌러주는 게 트리거라
+        // GamificationService.grantXp의 XpEvent 경로를 안 탄다(그 클래스 참고). 총합은 이 도메인이
+        // 이미 들고 있는 개념이라 여기서 계산해서 넘긴다.
+        long totalHelpfulReceived = reviewRepository.sumHelpfulCountByUserId(author.getId());
+        gamificationService.evaluateHelpfulSaviorBadge(author, totalHelpfulReceived);
     }
 
     // 반려동물 단위가 아니라 시설 단위로 확인한다 — 새·토끼처럼 개별 판별 자체가 없는 종도
@@ -254,5 +495,26 @@ public class ReviewCommandService {
         }
 
         return review;
+    }
+
+    /**
+     * 인증되지 않은 요청에서 {@code @AuthenticationPrincipal}은 userId를 null로 넘긴다. 경로가
+     * 실수로 열려 있으면(리뷰 작성 POST가 목록 조회와 경로가 같아 실제로 그랬다 — SecurityConfig
+     * 참고) 그대로 여기까지 들어오는데, 그러면 {@code findById(null)}이 던지는
+     * IllegalArgumentException 때문에 원인을 알 수 없는 500이나, 본문 검증에 먼저 걸린 400이
+     * 나간다. 앱이 재로그인·토큰 재발급으로 갈 수 있게 쓰기 로직에 들어가기 전에 401로 끊는다.
+     *
+     * <p>만료·위조 토큰의 구분(TOKEN4002 등)은 인증 단계에서 이미 끝난다 — 여기까지 온 건
+     * 토큰이 아예 없는 요청이므로 COMMON401로 내린다.
+     */
+    private void requireAuthenticated(Long userId) {
+        if (userId == null) {
+            throw new GeneralException(ErrorStatus.COMMON401);
+        }
+    }
+
+    private User findUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
     }
 }

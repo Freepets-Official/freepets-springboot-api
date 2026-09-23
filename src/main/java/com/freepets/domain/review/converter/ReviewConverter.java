@@ -21,7 +21,8 @@ public class ReviewConverter {
             ReviewRequestDTO.UpsertRequest request,
             Facility facility,
             User user,
-            LocalDate visitedAt
+            LocalDate visitedAt,
+            String photoUrl
     ) {
         return Review.builder()
                 .facility(facility)
@@ -32,6 +33,7 @@ public class ReviewConverter {
                 .content(request.getContent())
                 .isShowPetInfo(request.isShowPetInfo())
                 .visitedAt(visitedAt)
+                .photoUrl(photoUrl)
                 .build();
     }
 
@@ -46,7 +48,8 @@ public class ReviewConverter {
 
     public static ReviewResponseDTO.ReviewDetail toReviewDetail(
             Review review,
-            boolean reportedByMe
+            boolean reportedByMe,
+            boolean helpfulByMe
     ) {
         // showPetInfo=false면 서버 응답 자체에서 반려동물 정보를 빼서, 클라이언트가 플래그만 보고
         // 숨기는 방식(이미 노출된 데이터를 화면에서만 가리는 것)이 되지 않게 한다.
@@ -71,7 +74,10 @@ public class ReviewConverter {
                 review.getContent(),
                 tags,
                 review.getVisitedAt(),
-                reportedByMe
+                reportedByMe,
+                review.getHelpfulCount(),
+                helpfulByMe,
+                review.getPhotoUrl()
         );
     }
 
@@ -93,7 +99,8 @@ public class ReviewConverter {
                 review.getRatingAmenity(),
                 review.getContent(),
                 tags,
-                review.getVisitedAt()
+                review.getVisitedAt(),
+                review.getPhotoUrl()
         );
     }
 
@@ -103,5 +110,9 @@ public class ReviewConverter {
 
     public static ReviewResponseDTO.ReportResult toReportResult(ReviewReport reviewReport) {
         return new ReviewResponseDTO.ReportResult(reviewReport.getReview().getReviewId());
+    }
+
+    public static ReviewResponseDTO.HelpfulResult toHelpfulResult(Review review) {
+        return new ReviewResponseDTO.HelpfulResult(review.getReviewId(), review.getHelpfulCount());
     }
 }

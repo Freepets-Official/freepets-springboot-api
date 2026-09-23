@@ -8,6 +8,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
@@ -127,6 +128,70 @@ public class FacilityRequestDTO {
 
         public boolean isCoordinateGiven() {
             return latitude != null && longitude != null;
+        }
+    }
+
+    /**
+     * 전체 시설 목록 조회 조건.
+     *
+     * <p>랭킹 조건에서 좌표와 반경을 뺀 형태다. 거리순이 아니라 이름순으로 내려가므로 좌표가
+     * 필요 없고, 좌표를 안 받으니 개인위치정보가 쿼리 스트링에 실릴 일도 없다.
+     *
+     * <p>지역을 얼마나 좁혔는지에 따라 어디서 답하는지가 갈린다. 관광공사는 조건에 맞는 전량을
+     * 한 번에 받아오는 구조라 응답이 커지면 감당할 수 없어서다.
+     *
+     * <table>
+     *   <tr><th>요청</th><th>응답 출처</th><th>규모</th></tr>
+     *   <tr><td>시도 + 시군구</td><td>관광공사 실시간</td><td>최대 700여 건</td></tr>
+     *   <tr><td>시도만</td><td>적재해둔 DB</td><td>9천 건 이상</td></tr>
+     *   <tr><td>둘 다 없음(전국)</td><td>적재해둔 DB</td><td>5만 건에 가까움</td></tr>
+     *   <tr><td>시군구만</td><td>400</td><td>시도 없이는 지역이 안 정해짐</td></tr>
+     * </table>
+     *
+     * <p>세종특별자치시처럼 하위 시군구가 없는 시도는 시군구를 비워서 보내면 된다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class FacilityListRequest {
+
+        /** 시도 코드. 비우면 전국이며, 이때는 관광공사가 아니라 적재해둔 DB에서 내려간다. */
+        @Size(max = 10, message = "시도 코드는 10자 이하여야 합니다.")
+        private String sidoCode;
+
+        /** 시군구 코드. 비우면 시도 전체이며, 이때도 DB에서 내려간다. 시도 없이 단독으로는 못 쓴다. */
+        @Size(max = 10, message = "시군구 코드는 10자 이하여야 합니다.")
+        private String sigunguCode;
+
+        private FacilityCategory category;
+
+        private PetAllowed petAllowed;
+
+        @Min(value = 0, message = "페이지 번호는 0 이상이어야 합니다.")
+        private int page = 0;
+
+        @Min(value = 1, message = "페이지 크기는 1 이상이어야 합니다.")
+        @Max(value = 100, message = "페이지 크기는 100 이하여야 합니다.")
+        private int size = 15;
+
+        /**
+         * 빈 문자열로 온 시군구 코드를 "안 보냈다"와 같게 다룬다.
+         *
+         * <p>쿼리 스트링은 {@code ?sigunguCode=}처럼 값 없이 올 수 있는데, 그걸 그대로 조건에 실으면
+         * 코드가 빈 문자열인 시설을 찾게 된다. 판단을 DTO가 들고 있어야 쓰는 쪽마다 어긋나지 않는다.
+         */
+        public String sigunguCodeOrNull() {
+            return sigunguCode == null || sigunguCode.isBlank() ? null : sigunguCode;
+        }
+
+        /** 시도 코드도 같은 규칙으로 다룬다. {@link #sigunguCodeOrNull()} 참고. */
+        public String sidoCodeOrNull() {
+            return sidoCode == null || sidoCode.isBlank() ? null : sidoCode;
+        }
+
+        /** 지역을 지정하지 않은 전국 조회인지. 관광공사를 부를지 DB를 읽을지가 여기서 갈린다. */
+        public boolean isNationwide() {
+            return sidoCodeOrNull() == null;
         }
     }
 }

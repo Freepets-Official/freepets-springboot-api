@@ -69,9 +69,9 @@ class FacilityConditionLlmBatchApiServiceTest {
     }
 
     @Test
-    void 대상_시설_수만큼_배치_요청을_만들어_제출한다() {
-        Facility facility1 = facility(1L);
-        Facility facility2 = facility(2L);
+    void 원문이_다른_시설은_각각_요청으로_제출한다() {
+        Facility facility1 = facility(1L, "전 견종 동반 가능");
+        Facility facility2 = facility(2L, "10kg 이하만 동반 가능");
 
         when(facilityRepository.findRequiringLlmParse(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
                 .thenReturn(new SliceImpl<>(List.of(facility1, facility2)));
@@ -90,21 +90,19 @@ class FacilityConditionLlmBatchApiServiceTest {
 
         assertThat(result.getSubmitted()).isEqualTo(2);
         assertThat(paramsCaptor.getValue().requests()).hasSize(2);
-        // petConditionHash를 안 채운 시설끼리는 서로 다른 그룹으로 취급돼 "facility:{id}"로
-        // 각자 자기 ID를 쓴다 — 해시가 같은 경우의 묶음 동작은 별도 테스트에서 확인한다.
         assertThat(paramsCaptor.getValue().requests())
                 .extracting(request -> request.customId())
-                .containsExactlyInAnyOrder("facility:1", "facility:2");
+                .doesNotHaveDuplicates();
         verify(batchService).create(any(BatchCreateParams.class));
     }
 
     @Test
-    void 조건_해시가_같은_시설은_요청_하나로_묶어_제출한다() {
-        // 원문(5종 필드)이 완전히 같으면 pet_condition_hash도 같다 — 파싱 결과가 항상 같을 걸
-        // 알면서 시설마다 따로 호출하면 API 비용만 늘어난다.
-        Facility facility1 = facility(1L, "SAME_HASH");
-        Facility facility2 = facility(2L, "SAME_HASH");
-        Facility facility3 = facility(3L, "DIFFERENT_HASH");
+    void 원문이_같은_시설은_요청_하나로_묶어_제출한다() {
+        // 프롬프트가 완전히 같으면 파싱 결과도 항상 같다 — 그걸 알면서 시설마다 따로 호출하면
+        // API 비용만 늘어난다.
+        Facility facility1 = facility(1L, "전 견종 동반 가능");
+        Facility facility2 = facility(2L, "전 견종 동반 가능");
+        Facility facility3 = facility(3L, "10kg 이하만 동반 가능");
 
         when(facilityRepository.findRequiringLlmParse(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
                 .thenReturn(new SliceImpl<>(List.of(facility1, facility2, facility3)));
@@ -121,12 +119,38 @@ class FacilityConditionLlmBatchApiServiceTest {
 
         FacilityConditionLlmBatchApiResult result = facilityConditionLlmBatchApiService.run(Integer.MAX_VALUE);
 
-        // 제출 집계는 시설 수 기준(3)이지만, 실제로 나간 요청은 고유 해시 수만큼(2)이어야 한다.
+        // 제출 집계는 시설 수 기준(3)이지만, 실제로 나간 요청은 고유 프롬프트 수만큼(2)이어야 한다.
         assertThat(result.getSubmitted()).isEqualTo(3);
+        assertThat(paramsCaptor.getValue().requests()).hasSize(2);
+    }
+
+    @Test
+    void 관광공사_원문이_같아도_정리_안내문이_다르면_따로_제출한다() {
+        // #148 회귀 방지 — pet_condition_hash는 관광공사 원문 5종만 담아서, 그 해시로 묶으면
+        // 관광공사 원문이 똑같이 비어 있고 정리 안내문만 다른 시설들이 한 그룹이 돼 서로 남의
+        // 파싱 결과를 받는다.
+        Facility facility1 = facilityWithConditionRaw(1L, "전 구역에서 모든 견종이 이용할 수 있습니다.");
+        Facility facility2 = facilityWithConditionRaw(2L, "일부 구역에 한해 9kg 이하만 이용할 수 있습니다.");
+
+        when(facilityRepository.findRequiringLlmParse(eq(PetConditionStatus.NOT_PROCESSED), any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of(facility1, facility2)));
+
+        when(anthropicClient.messages()).thenReturn(messageService);
+        when(messageService.batches()).thenReturn(batchService);
+
+        ArgumentCaptor<BatchCreateParams> paramsCaptor = ArgumentCaptor.forClass(BatchCreateParams.class);
+        when(batchService.create(paramsCaptor.capture())).thenReturn(endedBatch("batch_test", 2));
+        when(batchService.retrieve(anyString())).thenReturn(endedBatch("batch_test", 2));
+
+        StreamResponse<MessageBatchIndividualResponse> emptyStream = mockEmptyStream();
+        when(batchService.resultsStreaming(anyString())).thenReturn(emptyStream);
+
+        facilityConditionLlmBatchApiService.run(Integer.MAX_VALUE);
+
         assertThat(paramsCaptor.getValue().requests()).hasSize(2);
         assertThat(paramsCaptor.getValue().requests())
                 .extracting(request -> request.customId())
-                .containsExactlyInAnyOrder("SAME_HASH", "DIFFERENT_HASH");
+                .doesNotHaveDuplicates();
     }
 
     @Test
@@ -183,22 +207,35 @@ class FacilityConditionLlmBatchApiServiceTest {
     }
 
     private Facility facility(Long facilityId) {
+        return facility(facilityId, "전 견종 동반 가능");
+    }
+
+    private Facility facility(
+            Long facilityId,
+            String allowedAnimalText
+    ) {
         Facility facility = Facility.builder()
                 .name("테스트 시설")
                 .category(FacilityCategory.CAFE)
                 .petAllowed(PetAllowed.ALLOWED)
-                .allowedAnimalText("전 견종 동반 가능")
+                .allowedAnimalText(allowedAnimalText)
                 .build();
         org.springframework.test.util.ReflectionTestUtils.setField(facility, "facilityId", facilityId);
         return facility;
     }
 
-    private Facility facility(
+    /** 관광공사 원문은 전부 비어 있고 정리 안내문만 있는 시설 — 실측 8,600건이 이 모양이다. */
+    private Facility facilityWithConditionRaw(
             Long facilityId,
-            String petConditionHash
+            String petConditionRaw
     ) {
-        Facility facility = facility(facilityId);
-        org.springframework.test.util.ReflectionTestUtils.setField(facility, "petConditionHash", petConditionHash);
+        Facility facility = Facility.builder()
+                .name("테스트 시설")
+                .category(FacilityCategory.CAFE)
+                .petAllowed(PetAllowed.ALLOWED)
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(facility, "facilityId", facilityId);
+        org.springframework.test.util.ReflectionTestUtils.setField(facility, "petConditionRaw", petConditionRaw);
         return facility;
     }
 }

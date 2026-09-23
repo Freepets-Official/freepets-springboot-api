@@ -2,17 +2,21 @@ package com.freepets.domain.user.service;
 
 import java.util.List;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.freepets.domain.business.repository.FacilityOwnerClaimRepository;
+import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.user.converter.UserConverter;
 import com.freepets.domain.user.dto.UserRequestDTO;
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.entity.Provider;
 import com.freepets.domain.user.entity.User;
+import com.freepets.domain.user.event.UserWithdrawnEvent;
 import com.freepets.domain.user.entity.UserDeviceToken;
 import com.freepets.domain.user.repository.UserDeviceTokenRepository;
 import com.freepets.domain.user.repository.UserRepository;
@@ -29,9 +33,11 @@ public class UserCommandService {
 
     private final UserRepository userRepository;
     private final FacilityOwnerClaimRepository facilityOwnerClaimRepository;
+    private final FacilityRepository facilityRepository;
     private final PasswordEncoder passwordEncoder;
     private final S3ImageService s3ImageService;
     private final UserDeviceTokenRepository userDeviceTokenRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public UserResponseDTO.SignUpResult signUp(UserRequestDTO.SignUpRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -107,7 +113,7 @@ public class UserCommandService {
         }
 
         // 계정 조회와 같은 응답이라 프로필도 함께 채운다. 빠뜨리면 수정 직후 앱이 사업자 프로필을 잃는다.
-        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findFacilityIdsByUserId(userId);
+        List<Long> ownedFacilityIds = facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(userId);
         return UserConverter.toAccountResult(user, ownedFacilityIds);
     }
 
@@ -174,6 +180,15 @@ public class UserCommandService {
         String avatarUri = user.getAvatarUri();
         user.withdraw();
         userDeviceTokenRepository.deleteAllByUser_Id(userId);
+
+        // 소유 기록을 지우기 전에 승인된 매장을 먼저 알아둔다 — 지운 뒤에는 어떤 시설이 이 계정의
+        // 승인 기록이었는지 알 수 없다. 확정을 풀지 않으면 주인 없는 매장이 계속 CONFIRMED 배지를
+        // 달고 있게 된다(Facility.releaseOwnerConfirmation 참고).
+        List<Long> approvedFacilityIds = facilityOwnerClaimRepository.findApprovedFacilityIdsByUserId(userId);
+        if (!approvedFacilityIds.isEmpty()) {
+            facilityRepository.findAllById(approvedFacilityIds).forEach(Facility::releaseOwnerConfirmation);
+        }
+
         // 탈퇴는 소프트 삭제라 사용자 행이 남아 외래 키 CASCADE가 동작하지 않는다. 소유 기록을
         // 남겨두면 탈퇴한 계정이 매장을 붙잡고 있어 진짜 사장이 그 매장을 영영 등록하지 못한다.
         facilityOwnerClaimRepository.deleteAllByUser_Id(userId);
@@ -181,6 +196,11 @@ public class UserCommandService {
         if (avatarUri != null) {
             s3ImageService.delete(avatarUri);
         }
+
+        // 애플 토큰 폐기는 커밋된 뒤에 처리한다 — 이 트랜잭션이 롤백되면 사용자는 여전히
+        // 회원인데 애플 연결만 끊긴, 되돌릴 수 없는 상태가 된다(AppleTokenRevocationListener 참고).
+        // userId는 withdraw()가 지우지 않으므로 avatarUri처럼 미리 담아둘 필요가 없다.
+        eventPublisher.publishEvent(new UserWithdrawnEvent(userId));
 
         return UserConverter.toWithdrawResult();
     }

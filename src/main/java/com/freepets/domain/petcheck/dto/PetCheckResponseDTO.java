@@ -56,7 +56,7 @@ public class PetCheckResponseDTO {
 
     // GET /verify/{code} 렌더링용 — 판별 시점에 저장된 값을 그대로 보여준다(조건 원문·확인
     // 시각은 예외로 시설의 최신 값을 쓴다, 지금 시설이 게시한 원문이 곧 "우리가 쓴 문장"이라는
-    // 확인 근거이기 때문).
+    // 확인 근거이기 때문). benefits도 같은 이유로 시설의 현재 값(조회 시점에 켜져 있는 것)을 쓴다.
     public record VerifyPage(
             String verifyCode,
             PetCheckResult result,
@@ -66,6 +66,14 @@ public class PetCheckResponseDTO {
             String reason,
             String petConditionRaw,
             LocalDateTime confirmedAt,
-            LocalDateTime issuedAt
+            LocalDateTime issuedAt,
+            List<VerifyBenefit> benefits
+    ) {}
+
+    // GET /verify/{code} 렌더링용 방문 혜택 한 건. 혜택 문구가 "출입증 제시 시"라 이 페이지에서
+    // 바로 보여야 손님이 앱을 따로 열 필요가 없다 — 켜진 것만 내려간다.
+    public record VerifyBenefit(
+            String title,
+            String description
     ) {}
 }

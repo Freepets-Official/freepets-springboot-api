@@ -3,6 +3,10 @@ package com.freepets.domain.business.dto;
 import java.math.BigDecimal;
 import java.util.List;
 
+import org.springframework.web.multipart.MultipartFile;
+
+import com.freepets.domain.facility.entity.FacilityAmenity;
+import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
 
@@ -10,6 +14,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -42,11 +47,14 @@ public class BusinessRequestDTO {
     }
 
     /**
-     * 매장 등록 요청. 사업자 정보와 출입 조건을 함께 받는다.
+     * 매장 등록 신청. 사업자 정보와 출입 조건, 사업자등록증 파일을 함께 받는다.
      *
      * <p>사업자 정보를 다시 받는 이유는 {@code verify}가 서버에 아무 기록도 남기지 않기 때문이다.
      * 등록 요청만 직접 호출해 인증을 건너뛰는 것을 막으려면 이 시점에 한 번 더 확인해야 한다.
      * 사용자가 다시 입력하지는 않는다 — 앞 화면 입력값을 그대로 실어 보낸다.
+     *
+     * <p>파일이 있어 {@code multipart/form-data}로 받는다. {@code requirements}처럼 목록인 값은 같은 이름을
+     * 여러 번 실어 보낸다({@code requirements=LEASH&requirements=MUZZLE}).
      */
     @Getter
     @Setter
@@ -79,5 +87,184 @@ public class BusinessRequestDTO {
 
         /** 화면에 그대로 보여줄 조건 안내문. */
         private String conditionRaw;
+
+        /** 사업자등록증 사진 또는 PDF. 운영자가 상호·소재지를 신청한 매장과 대조한다. */
+        @NotNull(message = "사업자등록증 파일은 필수입니다.")
+        private MultipartFile registrationCertificate;
+    }
+
+    /**
+     * 신규 매장 등록. 관광공사 목록에 없는 매장을 사업자가 직접 입력해 시설을 만들면서 동시에 소유권을
+     * 갖는다. {@link ClaimRequest}와 사업자 인증 3필드·출입 조건 5필드는 동일하게 받되, 대상이 기존
+     * 시설이 아니라 새로 만들 시설이라 기본 정보(name/category/address/phone/지역코드)를 추가로 받는다.
+     *
+     * <p>사업자등록증 대조·관리자 심사를 거치지 않아(파일 없음) {@code multipart/form-data}가 아닌
+     * JSON으로 받는다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class FacilityRegisterRequest {
+
+        @NotBlank(message = "사업자등록번호는 필수입니다.")
+        @Pattern(regexp = "\\d{10}", message = "사업자등록번호는 하이픈 없이 10자리 숫자로 입력해주세요.")
+        private String businessNumber;
+
+        @NotBlank(message = "대표자 성명은 필수입니다.")
+        private String representativeName;
+
+        @NotBlank(message = "개업일자는 필수입니다.")
+        @Pattern(regexp = "\\d{8}", message = "개업일자는 YYYYMMDD 형식으로 입력해주세요.")
+        private String openingDate;
+
+        @NotBlank(message = "매장명은 필수입니다.")
+        @Size(max = 200, message = "매장명은 200자 이내로 입력해주세요.")
+        private String name;
+
+        @NotNull(message = "카테고리는 필수입니다.")
+        private FacilityCategory category;
+
+        @NotBlank(message = "주소는 필수입니다.")
+        @Size(max = 300, message = "주소는 300자 이내로 입력해주세요.")
+        private String address;
+
+        @Size(max = 200, message = "연락처는 200자 이내로 입력해주세요.")
+        private String phone;
+
+        @NotBlank(message = "시도 코드는 필수입니다.")
+        @Size(max = 10, message = "시도 코드는 10자 이내로 입력해주세요.")
+        private String sidoCode;
+
+        /** 세종특별자치시처럼 하위 시군구가 없는 시도는 생략할 수 있다. */
+        @Size(max = 10, message = "시군구 코드는 10자 이내로 입력해주세요.")
+        private String sigunguCode;
+
+        @NotNull(message = "반려동물 동반 가능 여부는 필수입니다.")
+        private PetAllowed petAllowed;
+
+        /** 동반 가능한 최대 체중(kg). 상한이 있을 때만 보낸다. */
+        @DecimalMin(value = "0.0", inclusive = false, message = "최대 체중은 0보다 커야 합니다.")
+        private BigDecimal maxWeight;
+
+        /** {@code true}="이하", {@code false}="미만". 최대 체중이 없으면 무시된다. */
+        private Boolean maxWeightInclusive;
+
+        /** 방문객이 지켜야 할 조건. 없으면 비워 보낸다. */
+        private List<Requirement> requirements;
+
+        /** 화면에 그대로 보여줄 조건 안내문. */
+        private String conditionRaw;
+
+        /**
+         * 사전조회({@code duplicate-check})에서 유사 후보를 보고도 "다른 매장이 맞다"고 확인했을 때만
+         * {@code true}로 보낸다. 기본값 {@code false}는 후보가 있으면 등록을 막는 방어선이다.
+         */
+        private boolean isDuplicateCheckAcknowledged;
+    }
+
+    /**
+     * 신규 매장 등록 전 중복 후보 사전조회. 폼 작성 초반(사업자 정보를 아직 입력하지 않은 시점)에도
+     * 부를 수 있어야 해서 이름·주소만 받는다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class FacilityDuplicateCheckRequest {
+
+        @NotBlank(message = "매장명은 필수입니다.")
+        @Size(max = 200, message = "매장명은 200자 이내로 입력해주세요.")
+        private String name;
+
+        @NotBlank(message = "주소는 필수입니다.")
+        @Size(max = 300, message = "주소는 300자 이내로 입력해주세요.")
+        private String address;
+    }
+
+    /**
+     * 출입 조건 수정. 재심사 없이 즉시 반영된다 — 이미 등록증 대조를 통과한 소유자의 매장이기 때문이다.
+     *
+     * <p>{@link ClaimRequest}의 조건 5필드와 같은 값·검증을 쓴다. 등록증 파일이 없어 JSON body로 받는다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class ConditionUpdateRequest {
+
+        @NotNull(message = "반려동물 동반 가능 여부는 필수입니다.")
+        private PetAllowed petAllowed;
+
+        /** 동반 가능한 최대 체중(kg). 상한이 있을 때만 보낸다. */
+        @DecimalMin(value = "0.0", inclusive = false, message = "최대 체중은 0보다 커야 합니다.")
+        private BigDecimal maxWeight;
+
+        /** {@code true}="이하", {@code false}="미만". 최대 체중이 없으면 무시된다. */
+        private Boolean maxWeightInclusive;
+
+        /** 방문객이 지켜야 할 조건. 없으면 빈 목록으로 보낸다. */
+        @NotNull(message = "필수 준비물 목록은 필수입니다.")
+        private List<Requirement> requirements;
+
+        /** 화면에 그대로 보여줄 조건 안내문. */
+        private String conditionRaw;
+    }
+
+    /**
+     * 매장 소개·홍보 저장. 소개글과 편의시설 태그를 화면 하단 "저장하기" 하나로 함께 보낸다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class FacilityProfileUpdateRequest {
+
+        @Size(max = 500, message = "소개글은 500자 이내로 입력해주세요.")
+        private String introduction;
+
+        /** 반려동물 편의시설 태그. 없으면 빈 목록으로 보내 전체 해제한다. */
+        @NotNull(message = "편의시설 태그 목록은 필수입니다.")
+        private List<FacilityAmenity> amenityTags;
+    }
+
+    /** 방문 혜택 추가. 상세 안내는 선택이다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class VisitBenefitCreateRequest {
+
+        @NotBlank(message = "제목은 필수입니다.")
+        @Size(max = 50, message = "제목은 50자 이내로 입력해주세요.")
+        private String title;
+
+        @Size(max = 300, message = "상세 안내는 300자 이내로 입력해주세요.")
+        private String description;
+    }
+
+    /** 방문 혜택 노출 on/off. 목표 상태를 명시적으로 받는다 — blind toggle은 중복 호출에 취약하다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class VisitBenefitEnabledUpdateRequest {
+
+        @NotNull(message = "노출 여부는 필수입니다.")
+        private Boolean isEnabled;
+    }
+
+    /** 관리자 반려. 사유는 신청자에게 보여줄 수 있어야 하므로 필수로 받는다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class RejectClaimRequest {
+
+        @NotBlank(message = "반려 사유는 필수입니다.")
+        private String reason;
+    }
+
+    /** 관리자의 승인 해제(이의 제기 처리). 사유는 신청자에게 보여줄 수 있어야 하므로 필수로 받는다. */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class RevokeClaimRequest {
+
+        @NotBlank(message = "해제 사유는 필수입니다.")
+        private String reason;
     }
 }

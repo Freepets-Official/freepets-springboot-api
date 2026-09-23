@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
+import java.util.List;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,8 +16,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.freepets.domain.business.dto.BusinessRequestDTO;
 import com.freepets.domain.business.dto.BusinessResponseDTO;
+import com.freepets.domain.facility.entity.FacilityCategory;
+import com.freepets.domain.facility.entity.FacilitySource;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.geocoding.GeocodedAddress;
 import com.freepets.infra.nts.NtsClient;
 import com.freepets.infra.nts.NtsException;
 import com.freepets.infra.nts.NtsProperties;
@@ -26,11 +32,19 @@ class BusinessQueryServiceTest {
     @Mock
     private NtsClient ntsClient;
 
+    @Mock
+    private GeocodingService geocodingService;
+
+    @Mock
+    private FacilityDuplicateCandidateQueryService facilityDuplicateCandidateQueryService;
+
     private BusinessQueryService businessQueryService;
 
     @BeforeEach
     void setUp() {
-        businessQueryService = new BusinessQueryService(new NtsProperties("service-key"), ntsClient);
+        businessQueryService = new BusinessQueryService(
+                new NtsProperties("service-key"), ntsClient, geocodingService, facilityDuplicateCandidateQueryService
+        );
     }
 
     private BusinessRequestDTO.VerifyRequest createRequest() {
@@ -114,8 +128,9 @@ class BusinessQueryServiceTest {
     void 서비스키가_없으면_호출하지_않고_BUSINESS5001() {
         // 키가 없으면 클라이언트 생성이 실패하는데, 그 예외는 스프링이 감싸서 던져 NtsException
         // 처리에 안 걸린다. 그대로 두면 서버 설정 문제가 사용자에게 500으로 나간다.
-        BusinessQueryService serviceWithoutKey =
-                new BusinessQueryService(new NtsProperties("  "), ntsClient);
+        BusinessQueryService serviceWithoutKey = new BusinessQueryService(
+                new NtsProperties("  "), ntsClient, geocodingService, facilityDuplicateCandidateQueryService
+        );
 
         GeneralException exception = assertThrows(
                 GeneralException.class,
@@ -124,5 +139,43 @@ class BusinessQueryServiceTest {
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS5001);
         verifyNoInteractions(ntsClient);
+    }
+
+    @Test
+    void duplicateCheck_주소를_지오코딩한_뒤_후보를_조회한다() {
+        BusinessRequestDTO.FacilityDuplicateCheckRequest request = new BusinessRequestDTO.FacilityDuplicateCheckRequest();
+        request.setName("카페 파도살롱");
+        request.setAddress("강원 강릉시 창해로 17");
+
+        GeocodedAddress geocoded = new GeocodedAddress(new BigDecimal("37.8"), new BigDecimal("128.9"));
+        when(geocodingService.geocode("강원 강릉시 창해로 17")).thenReturn(geocoded);
+
+        BusinessResponseDTO.FacilityDuplicateCandidate candidate = new BusinessResponseDTO.FacilityDuplicateCandidate(
+                6L, "카페 파도살롱", "강원 강릉시 창해로 17", FacilityCategory.CAFE, FacilitySource.TOUR_API, 30.0
+        );
+        when(facilityDuplicateCandidateQueryService.findCandidates("카페 파도살롱", 37.8, 128.9))
+                .thenReturn(List.of(candidate));
+
+        BusinessResponseDTO.FacilityDuplicateCandidateList result = businessQueryService.duplicateCheck(request);
+
+        assertThat(result.candidates()).containsExactly(candidate);
+    }
+
+    @Test
+    void duplicateCheck_지오코딩에_실패하면_후보_조회를_하지_않는다() {
+        BusinessRequestDTO.FacilityDuplicateCheckRequest request = new BusinessRequestDTO.FacilityDuplicateCheckRequest();
+        request.setName("카페 파도살롱");
+        request.setAddress("존재하지 않는 주소");
+
+        when(geocodingService.geocode("존재하지 않는 주소"))
+                .thenThrow(new GeneralException(ErrorStatus.BUSINESS4011));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> businessQueryService.duplicateCheck(request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.BUSINESS4011);
+        verifyNoInteractions(facilityDuplicateCandidateQueryService);
     }
 }

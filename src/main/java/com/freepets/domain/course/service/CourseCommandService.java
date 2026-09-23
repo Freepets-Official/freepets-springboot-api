@@ -1,11 +1,14 @@
 package com.freepets.domain.course.service;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,8 +19,10 @@ import com.freepets.domain.course.dto.CourseResponseDTO;
 import com.freepets.domain.course.entity.Course;
 import com.freepets.domain.course.entity.CourseSource;
 import com.freepets.domain.course.entity.CourseStop;
+import com.freepets.domain.course.entity.CourseStopDraft;
 import com.freepets.domain.course.repository.CourseRepository;
 import com.freepets.domain.facility.entity.Facility;
+import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.repository.FacilityRepository;
 import com.freepets.domain.gamification.entity.XpSourceType;
 import com.freepets.domain.gamification.service.GamificationService;
@@ -45,9 +50,10 @@ public class CourseCommandService {
     private final ReviewRepository reviewRepository;
 
     // 코스가 처음 공개(isPublic=true)로 전환된 시점에 지급하는 경험치 — 스톱이 많을수록(그만큼
-    // 판별·리뷰를 더 많이 실제로 남겨야 하므로) 조금씩 더 준다. 코스당 평생 1회만 지급되도록
-    // GamificationService의 sourceId 중복 검사에 courseId를 넘긴다 — 비공개로 돌렸다가 다시
-    // 공개해도 재지급되지 않는다.
+    // 판별·리뷰를 더 많이 실제로 남겨야 하므로) 조금씩 더 준다. courseId 자체는 매번 새로
+    // 발급되는 값이라(같은 시설 구성이라도 코스를 새로 만들면 새 courseId) 이것만으로는 "평생
+    // 1회"를 못 지킨다 — grantCoursePublishedXpIfEarned가 스톱 구성(시설 집합) 기준으로 한 번 더
+    // 걸러낸다.
     private static final int COURSE_PUBLISHED_BASE_XP = 20;
     private static final int COURSE_PUBLISHED_XP_PER_STOP = 5;
 
@@ -60,7 +66,9 @@ public class CourseCommandService {
     ) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.MEMBER4005));
-        List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
+        List<CourseStopDraft> stopDrafts = toStopDrafts(request.getStops());
+        List<Facility> stops = facilitiesOf(stopDrafts);
+        validateStopsPetAllowed(stops);
 
         if (request.isPublic()) {
             validateStopsEligibleForPublish(userId, stops);
@@ -73,12 +81,12 @@ public class CourseCommandService {
                 .source(CourseSource.CUSTOM)
                 .isPublic(request.isPublic())
                 .build();
-        course.replaceStops(stops);
+        course.replaceStops(stopDrafts);
 
         Course saved = courseRepository.save(course);
 
         if (saved.isPublic()) {
-            gamificationService.grantXp(userId, XpSourceType.COURSE_PUBLISHED, saved.getCourseId(), coursePublishedXp(stops.size()));
+            grantCoursePublishedXpIfEarned(userId, saved.getCourseId(), stops);
         }
 
         return CourseConverter.toMyCourse(saved);
@@ -90,18 +98,70 @@ public class CourseCommandService {
             CourseRequestDTO.SaveRequest request
     ) {
         Course course = findOwnedCourse(userId, courseId);
-        List<Facility> stops = findFacilitiesInOrder(request.getStopIds());
+        List<CourseStopDraft> stopDrafts = toStopDrafts(request.getStops());
+        List<Facility> stops = facilitiesOf(stopDrafts);
+        validateStopsPetAllowed(stops);
         boolean isPublicBeforeUpdate = course.isPublic();
 
         if (request.isPublic()) {
             validateStopsEligibleForPublish(userId, stops);
         }
 
-        course.update(request.getName(), request.getDescription(), stops);
+        course.update(request.getName(), request.getDescription(), stopDrafts);
         course.updateVisibility(request.isPublic());
 
         if (!isPublicBeforeUpdate && course.isPublic()) {
-            gamificationService.grantXp(userId, XpSourceType.COURSE_PUBLISHED, course.getCourseId(), coursePublishedXp(stops.size()));
+            grantCoursePublishedXpIfEarned(userId, course.getCourseId(), stops);
+        }
+
+        return CourseConverter.toMyCourse(course);
+    }
+
+    /**
+     * PATCH /api/v1/courses/{courseId}/name — 이름만 바꾼다. 남이 만든 코스는(본인 소유가
+     * 아니면) findOwnedCourse가 COURSE4042로 막는다 — 자기 코스만 바꿀 수 있다.
+     */
+    public CourseResponseDTO.MyCourse updateName(
+            Long userId,
+            Long courseId,
+            String name
+    ) {
+        Course course = findOwnedCourse(userId, courseId);
+        course.rename(name);
+
+        return CourseConverter.toMyCourse(course);
+    }
+
+    /**
+     * PATCH /api/v1/courses/{courseId}/visibility — 공개 여부만 바꾼다. updateCourse(PUT)는
+     * name·stops 전체를 요구해서, 공개만 켜고 싶은 요청도 코스를 통째로 다시 보내야 했다 —
+     * 그 부담 때문에 실제로는 토글이 거의 안 될 위험이 있어 가벼운 전용 경로를 따로 둔다.
+     * 공개 전환 시 스톱 발행 요건 검증·XP 지급은 updateCourse와 동일하게 적용한다.
+     */
+    public CourseResponseDTO.MyCourse updateVisibility(
+            Long userId,
+            Long courseId,
+            boolean isPublic
+    ) {
+        Course course = findOwnedCourse(userId, courseId);
+        boolean isPublicBeforeUpdate = course.isPublic();
+
+        // 아래 두 곳 모두 공개 전환(isPublic=true) 경로에서만 쓰인다 — 비공개 전환에서는
+        // 스톱을 정렬·순회할 필요가 없으니 그 경로에서는 아예 계산하지 않는다.
+        if (isPublic) {
+            List<Facility> stops = course.getStops().stream()
+                    .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
+                    .map(CourseStop::getFacility)
+                    .toList();
+            validateStopsEligibleForPublish(userId, stops);
+
+            course.updateVisibility(true);
+
+            if (!isPublicBeforeUpdate) {
+                grantCoursePublishedXpIfEarned(userId, course.getCourseId(), stops);
+            }
+        } else {
+            course.updateVisibility(false);
         }
 
         return CourseConverter.toMyCourse(course);
@@ -123,7 +183,7 @@ public class CourseCommandService {
     /**
      * PUT /api/v1/courses/{courseId}/stops/{stopOrder} — 그 자리(0부터 시작하는 순서)의
      * 스톱만 다른 시설로 교체한다. 나머지 스톱과 순서는 그대로 — "1·2·3·4·5에서 4번만
-     * 6번으로" 같은 한 곳 스왑을 위해 매번 stopIds 전체를 다시 구성해 보낼 필요가 없게 한다.
+     * 6번으로" 같은 한 곳 스왑을 위해 매번 stops 전체를 다시 구성해 보낼 필요가 없게 한다.
      * 스톱을 추가하거나 빼서 개수 자체가 바뀌는 편집은 여전히 updateCourse(전체 교체)를 쓴다.
      */
     public CourseResponseDTO.MyCourse replaceStop(
@@ -133,19 +193,23 @@ public class CourseCommandService {
             Long newFacilityId
     ) {
         Course course = findOwnedCourse(userId, courseId);
-        List<Facility> facilitiesInOrder = course.getStops().stream()
+        // 시설만 바꾸는 엔드포인트라 그 자리에 잡아둔 도착 시각은 그대로 둔다 — 시설을 바꿨다고
+        // 일정까지 지워지면 시간표를 다시 짜야 한다.
+        List<CourseStopDraft> stopsInOrder = course.getStops().stream()
                 .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
-                .map(CourseStop::getFacility)
+                .map(stop -> new CourseStopDraft(stop.getFacility(), stop.getVisitTime()))
                 .collect(Collectors.toCollection(ArrayList::new));
 
-        if (stopOrder < 0 || stopOrder >= facilitiesInOrder.size()) {
+        if (stopOrder < 0 || stopOrder >= stopsInOrder.size()) {
             throw new GeneralException(ErrorStatus.COURSE4043);
         }
 
         Facility newFacility = facilityRepository.findById(newFacilityId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.FACILITY4001));
+        validateStopsPetAllowed(List.of(newFacility));
 
-        facilitiesInOrder.set(stopOrder, newFacility);
+        stopsInOrder.set(stopOrder, new CourseStopDraft(newFacility, stopsInOrder.get(stopOrder).visitTime()));
+        List<Facility> facilitiesInOrder = facilitiesOf(stopsInOrder);
 
         // 이 코스가 이미 공개 상태라면, updateCourse(전체 교체)와 똑같이 스왑 후 스톱 전체가
         // 다시 발행 요건(판별+리뷰)을 만족하는지 확인한다 — 안 그러면 검증된 코스를 공개해둔
@@ -154,7 +218,7 @@ public class CourseCommandService {
             validateStopsEligibleForPublish(userId, facilitiesInOrder);
         }
 
-        course.replaceStops(facilitiesInOrder);
+        course.replaceStops(stopsInOrder);
 
         return CourseConverter.toMyCourse(course);
     }
@@ -191,10 +255,17 @@ public class CourseCommandService {
         Course original = courseRepository.findByShareCode(shareCode)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.COURSE4044));
 
-        List<Facility> stops = original.getStops().stream()
+        // 도착 시각까지 그대로 복사한다 — 시간표가 코스의 내용인데 복사본에서 비면 받은 쪽이
+        // 일정을 처음부터 다시 짜야 한다.
+        List<CourseStopDraft> stopDrafts = original.getStops().stream()
                 .sorted(Comparator.comparingInt(CourseStop::getStopOrder))
-                .map(CourseStop::getFacility)
+                .map(stop -> new CourseStopDraft(stop.getFacility(), stop.getVisitTime()))
                 .toList();
+        List<Facility> stops = facilitiesOf(stopDrafts);
+        // 원본이 이 게이트가 생기기 전에 만들어졌거나, 저장 이후 시설의 petAllowed가 DENIED로
+        // 바뀌었을 수 있다 — 복사도 결국 새 CUSTOM 코스를 만드는 경로라 createCourse/updateCourse와
+        // 같은 검증을 거쳐야 한다.
+        validateStopsPetAllowed(stops);
 
         Course copy = Course.builder()
                 .user(user)
@@ -203,19 +274,34 @@ public class CourseCommandService {
                 .source(CourseSource.CUSTOM)
                 .isPublic(false)
                 .build();
-        copy.replaceStops(stops);
+        copy.replaceStops(stopDrafts);
 
         Course saved = courseRepository.save(copy);
+
+        // 인기순 폴백(GET /courses/public)의 신호라 자기 복사여도 센다 — XP와 달리 파밍 방지
+        // 대상이 아니다(경험치를 노리고 자기 코스를 반복 복사해도 "얼마나 담아갔는지"라는
+        // 사실 자체는 바뀌지 않는다).
+        original.incrementCopyCount();
 
         // 자기 코스를 자기 공유 코드로 복사하면 원 소유자 == 복사한 사람이라 실제 참여 없이도
         // 매번 새 courseId로 XP를 받아갈 수 있다(하루 상한만으로는 완전히 막지 못한다) —
         // 원 소유자 본인이 복사한 경우는 지급하지 않는다.
         if (!original.getUser().getId().equals(userId)) {
+            Long originalOwnerId = original.getUser().getId();
+            // sourceId(복사본 courseId)는 복사할 때마다 새로 발급돼 반복 복사를 못 막는다 —
+            // 같은 사람이 같은 원본을 계속 복사하면 매번 다른 sourceId라 "평생 1회" sourceId
+            // 검사를 그대로 통과해버린다. "원본 courseId + 복사한 사람" 조합을 componentSignature로
+            // 묶어, 같은 사람이 같은 원본을 아무리 여러 번 복사해도 원 소유자에게는 평생 한 번만
+            // 지급되게 한다 — 일일 상한(10회)에만 기대면 알트 계정으로 하루 안에 반복 파밍하는
+            // 걸 못 막는다. 서로 다른 실제 유저가 같은 코스를 각자 복사하면 각자 여전히
+            // 지급되므로, 의도된 "인기 코스 리워드" 신호는 그대로 유지된다.
+            String componentSignature = originalCourseCopierSignature(original.getCourseId(), userId);
             gamificationService.grantXp(
-                    original.getUser().getId(),
+                    originalOwnerId,
                     XpSourceType.COURSE_SHARED_COPY,
                     saved.getCourseId(),
-                    COURSE_SHARED_COPY_XP
+                    COURSE_SHARED_COPY_XP,
+                    componentSignature
             );
         }
 
@@ -270,8 +356,122 @@ public class CourseCommandService {
         }
     }
 
-    private int coursePublishedXp(int stopCount) {
-        return COURSE_PUBLISHED_BASE_XP + COURSE_PUBLISHED_XP_PER_STOP * stopCount;
+    private int coursePublishedXp(int newStopCount) {
+        return COURSE_PUBLISHED_BASE_XP + COURSE_PUBLISHED_XP_PER_STOP * newStopCount;
+    }
+
+    /**
+     * 코스 공개 XP를 스톱 구성 기준으로 다시 계산해 지급한다 — sourceId(courseId)만으로는 막지
+     * 못하는 두 가지 파밍을 여기서 막는다. 판정 기준은 {@link Course}의 "현재" 스톱이 아니라
+     * 지급 시점에 XpEvent에 함께 굳혀 저장한 componentSignature다 — 이후 그 코스가 수정되거나
+     * 삭제돼도 이미 지급된 이력은 그대로 남는다(코스를 다시 조회할 필요도, N+1도 없다).
+     *
+     * <ol>
+     *   <li>같은 시설 구성(순서 무관)으로 이미 XP를 받은 적이 있으면(과거 어느 날이든) 이번엔
+     *       완전히 스킵한다 — 재정렬만 해서 새 코스로 다시 올리는 패턴을 막는다. 이 판정은
+     *       componentSignature를 인자로 넘기기만 하면 GamificationService.grantXp가 잠금
+     *       전/후로 이미 두 번 해주므로 여기서 따로 미리 확인하지 않는다.</li>
+     *   <li>과거 어느 날이든 다른 코스로 이미 XP를 받은 스톱은 이번 코스에서 다시 세지 않는다
+     *       — 스톱 하나짜리 차이만 두고 여러 코스를 만들어 하루 상한(5회)을 다 채우는 패턴은
+     *       물론, 하루 지나 반복하며 매일 거의 풀 XP를 다시 받아가는 패턴까지 막는다("오늘"로만
+     *       좁히면 어제 쓴 시설 9개 + 새 시설 1개로 오늘 다시 공개했을 때 9개가 전부 "새
+     *       스톱"으로 잡혀 그대로 뚫린다). 겹치지 않는 새 스톱이 하나도 없으면(전부 이미 쓴
+     *       시설) 기본 지급(20XP)도 없이 완전히 스킵한다. 이 계산은 "이미 쓴 스톱"을 다시
+     *       조회해야 해서, 미리 계산해 고정값으로 넘기지 않고
+     *       {@link java.util.function.IntSupplier}로 넘긴다 — 그래야
+     *       GamificationService가 User 행 잠금을 잡아 동시 요청을 직렬화한 뒤에야 이 계산이
+     *       실행된다. 잠금 밖에서 미리 계산해버리면, 겹치는 스톱을 가진 두 코스를 거의 동시에
+     *       공개했을 때 둘 다 같은 스톱을 "아직 안 쓴 것"으로 보고 중복 지급하는 레이스가 남는다.</li>
+     * </ol>
+     */
+    private void grantCoursePublishedXpIfEarned(
+            Long userId,
+            Long courseId,
+            List<Facility> stops
+    ) {
+        Set<Long> currentFacilityIds = stops.stream()
+                .map(Facility::getFacilityId)
+                .collect(Collectors.toSet());
+        String componentSignature = componentSignatureOf(currentFacilityIds);
+
+        gamificationService.grantXp(
+                userId,
+                XpSourceType.COURSE_PUBLISHED,
+                courseId,
+                () -> resolveCoursePublishedXp(userId, currentFacilityIds),
+                componentSignature
+        );
+    }
+
+    // "과거 어느 날이든 다른 코스로 이미 XP를 받은 스톱"을 뺀 나머지 스톱 수로 금액을 계산한다.
+    // 새 스톱이 0개면 0을 돌려줘 GamificationService가 기본 지급(20XP)도 없이 완전히 스킵하게
+    // 한다 — coursePublishedXp(0)을 그대로 넘기면 기본 XP만큼은 새어나간다.
+    // grantCoursePublishedXpIfEarned의 IntSupplier가 GamificationService의 잠금을 잡은 뒤에
+    // 호출하는 메서드라, 매번 새로 조회해야 정확하다(호출 시점에 값을 캐싱해서 넘기면 안 된다).
+    private int resolveCoursePublishedXp(
+            Long userId,
+            Set<Long> currentFacilityIds
+    ) {
+        Set<Long> alreadyCreditedFacilityIds = gamificationService
+                .findAllComponentSignaturesGranted(userId, XpSourceType.COURSE_PUBLISHED).stream()
+                .flatMap(CourseCommandService::facilityIdsFromComponentSignature)
+                .collect(Collectors.toSet());
+
+        long newStopCount = currentFacilityIds.stream()
+                .filter(facilityId -> !alreadyCreditedFacilityIds.contains(facilityId))
+                .count();
+        if (newStopCount == 0) {
+            return 0;
+        }
+
+        return coursePublishedXp((int) newStopCount);
+    }
+
+    // "이 원본 코스를 이 사람이 복사했다"를 나타내는 정규화 표현 — 원 소유자 기준
+    // (originalOwnerId, COURSE_SHARED_COPY, 이 값) 조합이 평생 1회만 지급되게 묶는 키다.
+    private static String originalCourseCopierSignature(
+            Long originalCourseId,
+            Long copierId
+    ) {
+        return originalCourseId + ":" + copierId;
+    }
+
+    // 정렬된 facilityId를 콤마로 이어붙인 정규화 표현 — 스톱 순서가 달라도 구성이 같으면 항상
+    // 같은 문자열이 나와야, 이 값 하나로 "같은 시설 구성" 여부를 DB 유니크 제약까지 포함해
+    // 그대로 판정할 수 있다.
+    private static String componentSignatureOf(Set<Long> facilityIds) {
+        return facilityIds.stream()
+                .sorted()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+    }
+
+    private static Stream<Long> facilityIdsFromComponentSignature(String componentSignature) {
+        if (componentSignature.isEmpty()) {
+            return Stream.empty();
+        }
+        return Arrays.stream(componentSignature.split(",")).map(Long::valueOf);
+    }
+
+    /**
+     * 요청의 스톱을 순서 그대로 시설 + 도착 시각 묶음으로 바꾼다. 시설 조회는
+     * {@link #findFacilitiesInOrder}가 하던 그대로다 — 없는 시설이면 FACILITY4001로 막는다.
+     */
+    private List<CourseStopDraft> toStopDrafts(List<CourseRequestDTO.StopRequest> stopRequests) {
+        List<Long> facilityIds = stopRequests.stream()
+                .map(CourseRequestDTO.StopRequest::getFacilityId)
+                .toList();
+        List<Facility> facilities = findFacilitiesInOrder(facilityIds);
+
+        List<CourseStopDraft> drafts = new ArrayList<>();
+        for (int index = 0; index < stopRequests.size(); index++) {
+            drafts.add(new CourseStopDraft(facilities.get(index), stopRequests.get(index).getVisitTime()));
+        }
+        return drafts;
+    }
+
+    private static List<Facility> facilitiesOf(List<CourseStopDraft> drafts) {
+        return drafts.stream().map(CourseStopDraft::facility).toList();
     }
 
     private List<Facility> findFacilitiesInOrder(List<Long> stopIds) {
@@ -287,6 +487,22 @@ public class CourseCommandService {
             ordered.add(facility);
         }
         return ordered;
+    }
+
+    /**
+     * 반려동물 동반이 애초에 불가능한(PetAllowed.DENIED) 시설은 코스에 담을 수 없다 —
+     * preset/liked/similar 추천은 이미 후보 단계에서 DENIED를 걸러내지만(FacilityRepository의
+     * findPresetCandidates 등), CUSTOM 코스는 직접 검색해서 담는 방식이라 이 게이트가 없으면
+     * 프론트가 검색 필터를 깜빡했을 때 그대로 저장돼버린다. validateStopsEligibleForPublish(공개
+     * 게이트, "방문한 적 있는지")와는 별개 검사다 — 이건 비공개 코스를 만들 때도 항상 적용된다.
+     * PENDING(아직 파싱 안 됨)은 "불가로 확인된 것"이 아니므로 통과시킨다 — 다른 곳의 필터
+     * (petAllowed <> DENIED)와 기준을 맞춘다.
+     */
+    private void validateStopsPetAllowed(List<Facility> stops) {
+        boolean isAnyDenied = stops.stream().anyMatch(facility -> facility.getPetAllowed() == PetAllowed.DENIED);
+        if (isAnyDenied) {
+            throw new GeneralException(ErrorStatus.COURSE4046);
+        }
     }
 
 }

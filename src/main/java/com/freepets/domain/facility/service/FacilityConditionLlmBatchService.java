@@ -172,7 +172,8 @@ public class FacilityConditionLlmBatchService {
                 facility.getAllowedAnimalText(),
                 facility.getRequiredMatterText(),
                 facility.getEtcAccompanyText(),
-                facility.getAccidentRiskText()
+                facility.getAccidentRiskText(),
+                facility.getPetConditionRaw()
         );
 
         return FacilityConditionGuard.apply(facility, parsed);

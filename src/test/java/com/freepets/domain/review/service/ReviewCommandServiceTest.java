@@ -3,12 +3,14 @@ package com.freepets.domain.review.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -26,6 +28,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.freepets.domain.facility.entity.Facility;
 import com.freepets.domain.facility.entity.FacilityCategory;
@@ -47,6 +50,7 @@ import com.freepets.domain.review.entity.ReviewReport;
 import com.freepets.domain.review.entity.ReviewReportReason;
 import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.Tag;
+import com.freepets.domain.review.repository.ReviewHelpfulRepository;
 import com.freepets.domain.review.repository.ReviewReportRepository;
 import com.freepets.domain.review.repository.ReviewRepository;
 import com.freepets.domain.user.entity.Provider;
@@ -54,6 +58,7 @@ import com.freepets.domain.user.entity.User;
 import com.freepets.domain.user.repository.UserRepository;
 import com.freepets.global.apiPayload.code.status.ErrorStatus;
 import com.freepets.global.apiPayload.exception.GeneralException;
+import com.freepets.infra.s3.S3ImageService;
 
 @ExtendWith(MockitoExtension.class)
 class ReviewCommandServiceTest {
@@ -63,6 +68,12 @@ class ReviewCommandServiceTest {
 
     @Mock
     private ReviewReportRepository reviewReportRepository;
+
+    @Mock
+    private ReviewHelpfulRepository reviewHelpfulRepository;
+
+    @Mock
+    private ReviewHelpfulRecorder reviewHelpfulRecorder;
 
     @Mock
     private FacilityRepository facilityRepository;
@@ -81,6 +92,9 @@ class ReviewCommandServiceTest {
 
     @Mock
     private GamificationService gamificationService;
+
+    @Mock
+    private S3ImageService s3ImageService;
 
     @InjectMocks
     private ReviewCommandService reviewCommandService;
@@ -140,6 +154,36 @@ class ReviewCommandServiceTest {
         return request;
     }
 
+    // 인증 경계가 뚫려 있으면(경로가 permitAll에 잘못 걸리는 등) userId가 null로 들어온다 —
+    // 예전에는 그대로 findById(null)까지 가서 IllegalArgumentException으로 500이 됐다.
+    // 마지막 방어선으로 여기서 401로 끊는지 확인한다.
+    @Test
+    void upsertReview_userId가_null이면_401을_던지고_조회를_시도하지_않는다() {
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.upsertReview(null, 7L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON401);
+        verify(userRepository, never()).findById(any());
+        verify(facilityRepository, never()).findById(any());
+    }
+
+    @Test
+    void updateReview_userId가_null이면_401을_던진다() {
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.updateReview(null, 3L, request)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.COMMON401);
+        verify(reviewRepository, never()).findByReviewIdAndDeletedAtIsNull(any());
+    }
+
     @Test
     void upsertReview_신규_리뷰를_생성한다() {
         Facility facility = createFacility(7L);
@@ -161,8 +205,9 @@ class ReviewCommandServiceTest {
         assertThat(result.petIds()).containsExactlyInAnyOrder(1L, 2L);
         assertThat(result.ratingSpace()).isEqualTo(5);
         assertThat(result.tags()).containsExactlyInAnyOrder(Tag.SPACIOUS, Tag.WATER_BOWL);
-        // 신규 작성에만 경험치가 지급되는지(게이미피케이션 훅).
-        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20));
+        // 시설+반려동물 조합 둘 다 처음이라 각각 따로 지급된다(componentSignature="시설ID:반려동물ID").
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:1"));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"));
     }
 
     @Test
@@ -322,8 +367,182 @@ class ReviewCommandServiceTest {
         assertThat(existingReview.getTags()).hasSize(2);
         // 요청에 visitedAt을 안 보내면 기존 방문일을 그대로 유지해야 한다.
         assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
-        // 수정은 경험치를 지급하지 않는다(게이미피케이션 결정).
-        verify(gamificationService, never()).grantXp(any(), any(), any(), anyInt());
+        // newPet(2)은 이 시설(7)에서 처음 태그되는 조합이라 지급된다. oldPet(1)은 이번에
+        // 태그가 빠져서(replacePets로 교체됨) 아예 호출 대상이 아니다.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"));
+        verifyNoMoreInteractions(gamificationService);
+    }
+
+    @Test
+    void upsertReview_기존_반려동물을_유지한채_새_반려동물을_추가하면_둘_다_그랜트를_호출한다() {
+        // ReviewCommandService는 "새로 추가된 마리"를 스스로 구분하지 않는다 — 매번 현재 태그된
+        // 마리 전체를 대상으로 grantXp를 호출하고, 이미 이 시설+반려동물 조합으로 받은 적 있는지는
+        // GamificationService의 componentSignature 중복 판정에 전적으로 맡긴다. 그래서 oldPet이
+        // 계속 태그돼 있어도(재지급 여부는 GamificationService 책임) 호출 자체는 두 마리 다
+        // 나가야 한다.
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet oldPet = createPet(1L, user);
+        Pet newPet = createPet(2L, user);
+
+        Review existingReview = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .build();
+        existingReview.replacePets(List.of(oldPet));
+
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L, 2L));
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.of(existingReview));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(oldPet));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(newPet));
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        reviewCommandService.upsertReview(1L, 7L, request);
+
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:1"));
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"));
+    }
+
+    @Test
+    void upsertReview_신규_리뷰에_사진을_첨부하면_S3에_업로드하고_photoUrl로_내려준다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+        MultipartFile photo = mock(MultipartFile.class);
+        when(photo.isEmpty()).thenReturn(false);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+        request.setPhoto(photo);
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(s3ImageService.upload(photo)).thenReturn("https://s3/new-photo.jpg");
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.upsertReview(1L, 7L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3/new-photo.jpg");
+        // 신규 작성이라 지울 이전 사진이 없다.
+        verify(s3ImageService, never()).delete(any());
+    }
+
+    @Test
+    void upsertReview_기존_리뷰의_사진을_교체하면_이전_사진을_S3에서_지운다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+
+        Review existingReview = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .photoUrl("https://s3/old-photo.jpg")
+                .build();
+        existingReview.replacePets(List.of(pet));
+
+        MultipartFile newPhoto = mock(MultipartFile.class);
+        when(newPhoto.isEmpty()).thenReturn(false);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+        request.setPhoto(newPhoto);
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.of(existingReview));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(s3ImageService.upload(newPhoto)).thenReturn("https://s3/new-photo.jpg");
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.upsertReview(1L, 7L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3/new-photo.jpg");
+        verify(s3ImageService).delete("https://s3/old-photo.jpg");
+    }
+
+    @Test
+    void upsertReview_사진_없이_수정하면_기존_사진을_유지하고_지우지_않는다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+
+        Review existingReview = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .photoUrl("https://s3/old-photo.jpg")
+                .build();
+        existingReview.replacePets(List.of(pet));
+
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.of(existingReview));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.upsertReview(1L, 7L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3/old-photo.jpg");
+        verify(s3ImageService, never()).delete(any());
+        verify(s3ImageService, never()).upload(any());
+    }
+
+    @Test
+    void upsertReview_저장에_실패하면_새로_업로드한_사진을_S3에서_지운다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+        MultipartFile photo = mock(MultipartFile.class);
+        when(photo.isEmpty()).thenReturn(false);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+        request.setPhoto(photo);
+
+        when(facilityRepository.findById(7L)).thenReturn(Optional.of(facility));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(petCheckRepository.existsByUserIdAndFacilityFacilityId(1L, 7L)).thenReturn(true);
+        when(reviewRepository.findByFacilityFacilityIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(s3ImageService.upload(photo)).thenReturn("https://s3/orphan-photo.jpg");
+        // 동시에 같은 시설+유저로 리뷰가 하나 더 저장돼 유니크 인덱스에 걸린 상황을 흉내낸다.
+        ConstraintViolationException uniqueConstraintViolation = new ConstraintViolationException(
+                "duplicate key value violates unique constraint",
+                new SQLException("duplicate key"),
+                "uq_reviews_facility_user_active"
+        );
+        when(reviewRepository.save(any(Review.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key", uniqueConstraintViolation));
+
+        assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.upsertReview(1L, 7L, request)
+        );
+
+        // 저장이 실패했으니 방금 올린 사진이 고아 파일로 남지 않도록 지워야 한다.
+        verify(s3ImageService).delete("https://s3/orphan-photo.jpg");
     }
 
     @Test
@@ -380,6 +599,371 @@ class ReviewCommandServiceTest {
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.PET4002);
         verify(reviewRepository, never()).save(any());
+    }
+
+    @Test
+    void updateReview_reviewId로_직접_수정하면_방문일은_유지된채_나머지가_바뀐다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet oldPet = createPet(1L, user);
+        Pet newPet = createPet(2L, user);
+
+        Review review = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .build();
+        review.replacePets(List.of(oldPet));
+        review.replaceTags(List.of(Tag.QUIET));
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(2L));
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(newPet));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.updateReview(1L, 7001L, request);
+
+        assertThat(result.reviewId()).isEqualTo(7001L);
+        assertThat(result.petIds()).containsExactly(2L);
+        assertThat(result.ratingSpace()).isEqualTo(5);
+        assertThat(result.visitedAt()).isEqualTo(LocalDate.now().minusDays(10));
+        verify(facilityGradeCacheService).refresh(7L);
+        // newPet(2)은 이 시설(7)에서 처음 태그되는 조합이라 PUT 수정으로도 지급된다.
+        // oldPet(1)은 이번에 태그가 빠져서 호출 대상이 아니다.
+        verify(gamificationService).grantXp(eq(1L), eq(XpSourceType.REVIEW), any(), eq(20), eq("7:2"));
+        verifyNoMoreInteractions(gamificationService);
+    }
+
+    @Test
+    void updateReview_사진을_교체하면_이전_사진을_S3에서_지운다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+
+        Review review = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .photoUrl("https://s3/old-photo.jpg")
+                .build();
+        review.replacePets(List.of(pet));
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        MultipartFile newPhoto = mock(MultipartFile.class);
+        when(newPhoto.isEmpty()).thenReturn(false);
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+        request.setPhoto(newPhoto);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+        when(s3ImageService.upload(newPhoto)).thenReturn("https://s3/new-photo.jpg");
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.updateReview(1L, 7001L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3/new-photo.jpg");
+        verify(s3ImageService).delete("https://s3/old-photo.jpg");
+    }
+
+    @Test
+    void updateReview_사진_없이_수정하면_기존_사진을_유지하고_지우지_않는다() {
+        Facility facility = createFacility(7L);
+        User user = createUser(1L);
+        Pet pet = createPet(1L, user);
+
+        Review review = Review.builder()
+                .facility(facility)
+                .user(user)
+                .ratingSpace(3)
+                .ratingStaff(3)
+                .ratingAmenity(3)
+                .content("예전 리뷰")
+                .isShowPetInfo(false)
+                .visitedAt(LocalDate.now().minusDays(10))
+                .photoUrl("https://s3/old-photo.jpg")
+                .build();
+        review.replacePets(List.of(pet));
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        ReviewRequestDTO.UpsertRequest request = createUpsertRequest(List.of(1L));
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(petRepository.findByPetIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(pet));
+
+        ReviewResponseDTO.UpsertResult result = reviewCommandService.updateReview(1L, 7001L, request);
+
+        assertThat(result.photoUrl()).isEqualTo("https://s3/old-photo.jpg");
+        verify(s3ImageService, never()).delete(any());
+        verify(s3ImageService, never()).upload(any());
+    }
+
+    @Test
+    void updateReview_본인_리뷰가_아니면_예외를_던진다() {
+        Facility facility = createFacility(7L);
+        Review review = Review.builder()
+                .facility(facility)
+                .user(createUser(1L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.updateReview(2L, 7001L, createUpsertRequest(List.of(1L)))
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4002);
+    }
+
+    @Test
+    void updateReview_존재하지_않으면_예외를_던진다() {
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.empty());
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.updateReview(1L, 7001L, createUpsertRequest(List.of(1L)))
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4041);
+    }
+
+    @Test
+    void markHelpful_처음_표시하면_카운트가_1_증가한다() {
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+        // incrementHelpfulCount는 영속성 컨텍스트를 안 거치는 벌크 업데이트라, 최신 값은 재조회로만
+        // 얻는다 — 재조회 시점에 DB가 이미 반영된 걸 흉내내려고 별도 인스턴스를 하나 더 둔다.
+        Review refreshed = Review.builder()
+                .facility(review.getFacility())
+                .user(review.getUser())
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(refreshed, "reviewId", 7001L);
+        ReflectionTestUtils.setField(refreshed, "helpfulCount", 1L);
+        User marker = createUser(1L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L))
+                .thenReturn(Optional.of(review))
+                .thenReturn(Optional.of(refreshed));
+        when(reviewHelpfulRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(marker));
+        // 이 유저(작성자 100L)의 리뷰 전체가 받은 도움됐어요 총합 — "구원자" 배지 평가에 넘어간다.
+        when(reviewRepository.sumHelpfulCountByUserId(100L)).thenReturn(7L);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.markHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(1L);
+        verify(reviewHelpfulRecorder).record(review, marker);
+        verify(reviewRepository).incrementHelpfulCount(7001L);
+        // 도움됐어요 표시 자체는 작성자(리뷰 주인)에게 평가되는 배지다 — 누른 사람(marker)이 아니다.
+        verify(gamificationService).evaluateHelpfulSaviorBadge(review.getUser(), 7L);
+    }
+
+    @Test
+    void markHelpful_이미_표시했으면_중복으로_늘지_않는다() {
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(reviewHelpfulRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(true);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.markHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(0L);
+        verify(reviewHelpfulRecorder, never()).record(any(), any());
+        verify(reviewRepository, never()).incrementHelpfulCount(any());
+        verify(userRepository, never()).findById(any());
+        verify(gamificationService, never()).evaluateHelpfulSaviorBadge(any(), anyLong());
+    }
+
+    @Test
+    void markHelpful_이미_표시된_경우_저장_시점에_유니크_제약_위반이_나도_조용히_넘어간다() {
+        // exists 확인과 저장 사이에 거의 동시에 두 번 눌린 race — DB 유니크 제약이 뒤늦은 쪽을
+        // 막아준다. ReviewHelpfulRecorder는 별도 트랜잭션이라 이 예외를 여기서 잡아도 호출부의
+        // 트랜잭션(review 조회 등)에는 영향이 없다.
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+        User marker = createUser(1L);
+
+        ConstraintViolationException uniqueConstraintViolation = new ConstraintViolationException(
+                "duplicate key value violates unique constraint",
+                new SQLException("duplicate key"),
+                "uk_review_helpfuls_review_user"
+        );
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(reviewHelpfulRepository.existsByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(marker));
+        org.mockito.Mockito.doThrow(new DataIntegrityViolationException("duplicate key", uniqueConstraintViolation))
+                .when(reviewHelpfulRecorder).record(review, marker);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.markHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(0L);
+        verify(reviewRepository, never()).incrementHelpfulCount(any());
+        verify(gamificationService, never()).evaluateHelpfulSaviorBadge(any(), anyLong());
+    }
+
+    @Test
+    void markHelpful_본인_리뷰는_표시할_수_없다() {
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(1L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.markHelpful(1L, 7001L)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4005);
+        verify(reviewHelpfulRecorder, never()).record(any(), any());
+    }
+
+    @Test
+    void markHelpful_존재하지_않는_리뷰면_예외를_던진다() {
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.empty());
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.markHelpful(1L, 7001L)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4041);
+    }
+
+    @Test
+    void unmarkHelpful_표시돼_있으면_카운트가_1_감소한다() {
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+        ReflectionTestUtils.setField(review, "helpfulCount", 1L);
+        // decrementHelpfulCount도 incrementHelpfulCount와 같은 벌크 업데이트라 재조회로만 최신
+        // 값을 얻는다.
+        Review refreshed = Review.builder()
+                .facility(review.getFacility())
+                .user(review.getUser())
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(refreshed, "reviewId", 7001L);
+        ReflectionTestUtils.setField(refreshed, "helpfulCount", 0L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L))
+                .thenReturn(Optional.of(review))
+                .thenReturn(Optional.of(refreshed));
+        when(reviewHelpfulRepository.deleteByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(1);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.unmarkHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(0L);
+        verify(reviewRepository).decrementHelpfulCount(7001L);
+    }
+
+    @Test
+    void unmarkHelpful_표시한_적_없으면_아무것도_하지_않고_그대로_성공한다() {
+        Review review = Review.builder()
+                .facility(createFacility(7L))
+                .user(createUser(100L))
+                .ratingSpace(5)
+                .ratingStaff(5)
+                .ratingAmenity(5)
+                .content("좋았어요")
+                .isShowPetInfo(true)
+                .visitedAt(LocalDate.now())
+                .build();
+        ReflectionTestUtils.setField(review, "reviewId", 7001L);
+
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.of(review));
+        when(reviewHelpfulRepository.deleteByReviewReviewIdAndUserId(7001L, 1L)).thenReturn(0);
+
+        ReviewResponseDTO.HelpfulResult result = reviewCommandService.unmarkHelpful(1L, 7001L);
+
+        assertThat(result.helpfulCount()).isEqualTo(0L);
+        verify(reviewRepository, never()).decrementHelpfulCount(any());
+    }
+
+    @Test
+    void unmarkHelpful_존재하지_않는_리뷰면_예외를_던진다() {
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(7001L)).thenReturn(Optional.empty());
+
+        GeneralException exception = assertThrows(
+                GeneralException.class,
+                () -> reviewCommandService.unmarkHelpful(1L, 7001L)
+        );
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4041);
+        verify(reviewHelpfulRepository, never()).deleteByReviewReviewIdAndUserId(any(), any());
     }
 
     @Test

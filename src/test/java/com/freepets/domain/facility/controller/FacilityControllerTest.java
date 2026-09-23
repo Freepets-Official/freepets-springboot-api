@@ -31,6 +31,7 @@ import com.freepets.domain.facility.entity.ConfidenceSource;
 import com.freepets.domain.facility.entity.FacilityCategory;
 import com.freepets.domain.facility.entity.PetAllowed;
 import com.freepets.domain.facility.entity.Requirement;
+import com.freepets.domain.facility.service.FacilityListQueryService;
 import com.freepets.domain.facility.service.FacilityQueryService;
 
 @WebMvcTest(FacilityController.class)
@@ -40,12 +41,16 @@ class FacilityControllerTest {
     private static final String SEARCH_PATH = "/api/v1/facilities/search";
     private static final String RANKING_PATH = "/api/v1/facilities/ranking";
     private static final String REGIONS_PATH = "/api/v1/facilities/regions";
+    private static final String LIST_PATH = "/api/v1/facilities";
 
     @Autowired
     private MockMvc mockMvc;
 
     @MockitoBean
     private FacilityQueryService facilityQueryService;
+
+    @MockitoBean
+    private FacilityListQueryService facilityListQueryService;
 
     private FacilityResponseDTO.FacilitySearchResult createSearchResult() {
         FacilityResponseDTO.FacilitySummary summary = new FacilityResponseDTO.FacilitySummary(
@@ -56,6 +61,7 @@ class FacilityControllerTest {
                 1200L,
                 PetAllowed.PENDING,
                 new BigDecimal("10.00"),
+                true,
                 List.of(Requirement.LEASH),
                 null,
                 null,
@@ -82,8 +88,77 @@ class FacilityControllerTest {
                 .andExpect(jsonPath("$.result.items[0].category").value("CAFE"))
                 .andExpect(jsonPath("$.result.items[0].distanceM").value(1200))
                 .andExpect(jsonPath("$.result.items[0].petAllowed").value("PENDING"))
+                .andExpect(jsonPath("$.result.items[0].maxWeight").value(10.00))
+                .andExpect(jsonPath("$.result.items[0].maxWeightInclusive").value(true))
                 .andExpect(jsonPath("$.result.items[0].requirements[0]").value("LEASH"))
                 .andExpect(jsonPath("$.result.items[0].reviewCnt").value(45));
+    }
+
+    // ------------------------------------------------------------------
+    // 전체 시설 목록
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("전체 목록 조회에 성공하면 200과 시설 목록을 반환한다")
+    void 전체_목록_조회에_성공하면_200과_시설_목록을_반환한다() throws Exception {
+        FacilityResponseDTO.FacilityListItem item = new FacilityResponseDTO.FacilityListItem(
+                7L,
+                "카페 파도살롱",
+                FacilityCategory.CAFE,
+                "경기 파주시 회동길 17",
+                "경기도",
+                "파주시",
+                PetAllowed.ALLOWED,
+                new BigDecimal("10.00"),
+                true,
+                List.of(Requirement.LEASH),
+                87,
+                "1등급",
+                45L
+        );
+
+        when(facilityListQueryService.getFacilityList(any()))
+                .thenReturn(new FacilityResponseDTO.FacilityListResult(List.of(item), 31L));
+
+        mockMvc.perform(get(LIST_PATH)
+                        .param("sidoCode", "41")
+                        .param("sigunguCode", "480")
+                        .param("category", "CAFE")
+                        .param("petAllowed", "ALLOWED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.total").value(31))
+                .andExpect(jsonPath("$.result.items[0].facilityId").value(7))
+                .andExpect(jsonPath("$.result.items[0].sido").value("경기도"))
+                .andExpect(jsonPath("$.result.items[0].sigungu").value("파주시"))
+                .andExpect(jsonPath("$.result.items[0].petAllowed").value("ALLOWED"))
+                .andExpect(jsonPath("$.result.items[0].reviewCnt").value(45));
+    }
+
+    @Test
+    @DisplayName("전체 목록 조회는 지역 없이도 200이다 — 전국 조회")
+    void 전체_목록_조회는_지역_없이도_200이다() throws Exception {
+        when(facilityListQueryService.getFacilityList(any()))
+                .thenReturn(new FacilityResponseDTO.FacilityListResult(List.of(), 48786L));
+
+        mockMvc.perform(get(LIST_PATH))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.total").value(48786));
+    }
+
+    @Test
+    @DisplayName("전체 목록 조회의 페이지 크기가 상한을 넘으면 400을 반환한다")
+    void 전체_목록_조회의_페이지_크기가_상한을_넘으면_400을_반환한다() throws Exception {
+        mockMvc.perform(get(LIST_PATH)
+                        .param("sidoCode", "41")
+                        .param("sigunguCode", "480")
+                        .param("size", "101"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400"))
+                .andExpect(jsonPath("$.result.size").exists());
+
+        verifyNoInteractions(facilityListQueryService);
     }
 
     @Test
@@ -187,6 +262,8 @@ class FacilityControllerTest {
                 1200L,
                 PetAllowed.PENDING,
                 null,
+                new BigDecimal("10.00"),
+                true,
                 LocalDateTime.of(2026, 7, 5, 0, 0),
                 Confidence.UNVERIFIED,
                 ConfidenceSource.NONE,
@@ -195,7 +272,9 @@ class FacilityControllerTest {
                 new FacilityResponseDTO.PawGrade(4, "동반 우수"),
                 new FacilityResponseDTO.Ratings(88.4, 4.5, 4.8, 4.2),
                 List.of(new FacilityResponseDTO.OwnedPet(1L, "몽이", new BigDecimal("3.20"))),
-                false
+                false,
+                null,
+                List.of()
         );
     }
 
@@ -219,6 +298,8 @@ class FacilityControllerTest {
                 .andExpect(jsonPath("$.result.longitude").value(128.9107))
                 .andExpect(jsonPath("$.result.distanceM").value(1200))
                 .andExpect(jsonPath("$.result.petAllowed").value("PENDING"))
+                .andExpect(jsonPath("$.result.maxWeight").value(10.00))
+                .andExpect(jsonPath("$.result.maxWeightInclusive").value(true))
                 .andExpect(jsonPath("$.result.imageUrl").value("https://tong.visitkorea.or.kr/image.jpg"))
                 .andExpect(jsonPath("$.result.pawGrade.level").value(4))
                 .andExpect(jsonPath("$.result.pawGrade.label").value("동반 우수"))

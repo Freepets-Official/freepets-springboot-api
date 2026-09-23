@@ -1,5 +1,6 @@
 package com.freepets.domain.petcheck.service;
 
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.data.domain.Page;
@@ -7,6 +8,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.freepets.domain.facility.entity.FacilityBenefit;
+import com.freepets.domain.facility.repository.FacilityBenefitRepository;
 import com.freepets.domain.petcheck.converter.PetCheckConverter;
 import com.freepets.domain.petcheck.dto.PetCheckResponseDTO;
 import com.freepets.domain.petcheck.entity.PetCheck;
@@ -29,6 +32,7 @@ public class PetCheckQueryService {
 
     private final PetCheckRepository petCheckRepository;
     private final PetCheckVerdictRepository petCheckVerdictRepository;
+    private final FacilityBenefitRepository facilityBenefitRepository;
 
     // GET /api/v1/pet-checks — 내 판별 이력(최신순). facilityId로 필터 가능.
     // offset은 limit의 배수로 들어온다고 가정(프론트 "더보기" 방식) — Pageable의 page 개념으로 환산.
@@ -87,6 +91,15 @@ public class PetCheckQueryService {
         PetCheckVerdict verdict = petCheckVerdictRepository.findByVerifyCode(verifyCode)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.PETCHECK4001));
 
-        return PetCheckConverter.toVerifyPage(verdict);
+        Long facilityId = verdict.getPetCheck().getFacility().getFacilityId();
+        List<FacilityBenefit> benefits = facilityBenefitRepository
+                .findAllByFacility_FacilityIdAndIsEnabledTrueOrderByCreatedAtAsc(facilityId);
+
+        return PetCheckConverter.toVerifyPage(verdict, benefits);
+    }
+
+    // "함께한 발자국"(GET /pets/{petId}/stats)이 쓰는 값 — 이 반려동물이 낀 판별 결과 수.
+    public long countForPet(Long petId) {
+        return petCheckVerdictRepository.countByPet_PetId(petId);
     }
 }

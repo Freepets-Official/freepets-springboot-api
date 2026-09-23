@@ -1,6 +1,7 @@
 package com.freepets.domain.gamification.service;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -51,27 +52,36 @@ class BadgeEvaluationServiceTest {
     }
 
     @Test
-    void 리뷰_10개를_달성하면_REVIEWS_10_배지가_부여된다() {
+    void 리뷰_10개를_달성하면_해당하는_단계까지_전부_부여된다() {
         setUpService();
         User user = user();
-        // 첫 리뷰 배지는 이미 보유 중이라고 가정 — REVIEWS_10만 새로 부여돼야 한다.
-        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.FIRST_REVIEW)).thenReturn(true);
-        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.REVIEWS_10)).thenReturn(false);
+        // 동(1) 단계는 이미 보유 중이라고 가정 — 은(5)·금(10)만 새로 부여돼야 한다.
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.REVIEW_BRONZE)).thenReturn(true);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.REVIEW_SILVER)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.REVIEW_GOLD)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.REVIEW_RUBY)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.REVIEW_CRYSTAL)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.REVIEW_DIAMOND)).thenReturn(false);
         when(xpEventRepository.countByUser_IdAndSourceType(1L, XpSourceType.REVIEW)).thenReturn(10L);
 
         badgeEvaluationService.evaluateAfterXpEvent(user, XpSourceType.REVIEW);
 
-        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.FIRST_REVIEW));
-        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REVIEWS_10));
-        verify(gamificationNotificationService).notifyBadgeEarned(1L, Badge.REVIEWS_10);
-        verify(gamificationNotificationService, never()).notifyBadgeEarned(1L, Badge.FIRST_REVIEW);
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.REVIEW_BRONZE));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REVIEW_SILVER));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REVIEW_GOLD));
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.REVIEW_RUBY));
+        verify(gamificationNotificationService).notifyBadgeEarned(1L, Badge.REVIEW_SILVER);
+        verify(gamificationNotificationService).notifyBadgeEarned(1L, Badge.REVIEW_GOLD);
+        verify(gamificationNotificationService, never()).notifyBadgeEarned(1L, Badge.REVIEW_BRONZE);
     }
 
     @Test
     void 이미_보유한_배지는_다시_부여하지_않는다() {
         setUpService();
         User user = user();
-        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.FIRST_PETCHECK)).thenReturn(true);
+        // PETCHECK 관련 배지(동/은/금/루비/크리스탈/다이아) 전부 이미 가진 것으로 —
+        // 이 테스트가 확인하려는 건 "이미 있으면 개수 조회 자체를 안 한다"는 것뿐이다.
+        when(userBadgeRepository.existsByUser_IdAndBadge(eq(1L), any())).thenReturn(true);
 
         badgeEvaluationService.evaluateAfterXpEvent(user, XpSourceType.PETCHECK);
 
@@ -85,8 +95,7 @@ class BadgeEvaluationServiceTest {
     void 아직_기준에_못_미치면_부여하지_않는다() {
         setUpService();
         User user = user();
-        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.FIRST_REVIEW)).thenReturn(false);
-        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.REVIEWS_10)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(eq(1L), any())).thenReturn(false);
         when(xpEventRepository.countByUser_IdAndSourceType(1L, XpSourceType.REVIEW)).thenReturn(0L);
 
         badgeEvaluationService.evaluateAfterXpEvent(user, XpSourceType.REVIEW);
@@ -99,11 +108,131 @@ class BadgeEvaluationServiceTest {
     void 관련없는_sourceType의_배지는_확인하지_않는다() {
         setUpService();
         User user = user();
+        // 이미 다 가진 것으로 응답해 count 조회로까지 새지 않게 한다 — 이 테스트가 확인하려는
+        // 건 "관련 없는 sourceType의 배지는 아예 안 건드린다"는 것뿐이다.
+        when(userBadgeRepository.existsByUser_IdAndBadge(eq(1L), any())).thenReturn(true);
 
-        // SATISFACTION은 관련된 배지가 하나도 없다 — existsByUser_IdAndBadge 자체가 호출되면 안 된다.
-        badgeEvaluationService.evaluateAfterXpEvent(user, XpSourceType.SATISFACTION);
+        badgeEvaluationService.evaluateAfterXpEvent(user, XpSourceType.PETCHECK);
 
-        verify(userBadgeRepository, never()).existsByUser_IdAndBadge(any(), any());
+        verify(userBadgeRepository, never()).existsByUser_IdAndBadge(1L, Badge.REVIEW_BRONZE);
+        verify(userBadgeRepository, never()).existsByUser_IdAndBadge(1L, Badge.REVIEW_GOLD);
+        verify(xpEventRepository, never()).countByUser_IdAndSourceType(1L, XpSourceType.REVIEW);
+    }
+
+    @Test
+    void 도움됐어요_총합이_금_단계_기준_이상이면_구원자_배지가_부여된다() {
+        setUpService();
+        User user = user();
+        // 하위 단계(동/은)는 이미 보유 중이라고 가정 — 금(10) 단계만 새로 부여돼야 한다.
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_BRONZE)).thenReturn(true);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_SILVER)).thenReturn(true);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_GOLD)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_RUBY)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_CRYSTAL)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_DIAMOND)).thenReturn(false);
+
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(user, 10L);
+
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.HELPFUL_GOLD));
+        verify(gamificationNotificationService).notifyBadgeEarned(1L, Badge.HELPFUL_GOLD);
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.HELPFUL_RUBY));
+    }
+
+    @Test
+    void 도움됐어요_총합이_기준에_못_미치면_구원자_배지를_주지_않는다() {
+        setUpService();
+        User user = user();
+        // 하위 단계(동/은)는 이미 보유 중이라고 가정 — 금(10)은 아직 총합(9)이 못 미친다.
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_BRONZE)).thenReturn(true);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_SILVER)).thenReturn(true);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_GOLD)).thenReturn(false);
+
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(user, 9L);
+
+        verify(userBadgeRepository, never()).save(any());
+        verify(gamificationNotificationService, never()).notifyBadgeEarned(any(), any());
+    }
+
+    @Test
+    void 이미_구원자_배지가_있으면_다시_부여하지_않는다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_BRONZE)).thenReturn(true);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_SILVER)).thenReturn(true);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_GOLD)).thenReturn(true);
+        // 상위 단계(루비/크리스탈/다이아)는 아직 기준(50/100/500) 미달이라 이 값(10)으로는
+        // 같이 확인돼도 부여되지 않는다.
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_RUBY)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_CRYSTAL)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.HELPFUL_DIAMOND)).thenReturn(false);
+
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(user, 10L);
+
+        verify(userBadgeRepository, never()).save(any());
+        verify(gamificationNotificationService, never()).notifyBadgeEarned(any(), any());
+    }
+
+    @Test
+    void 총합이_한번에_크게_뛰면_해당하는_단계를_전부_부여한다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(eq(1L), any())).thenReturn(false);
+
+        // 여러 리뷰가 한꺼번에 몰려 도움됐어요를 받아 총합이 60이 됐다고 가정 — 동(1)·은(5)·
+        // 금(10)·루비(50) 단계는 이미 기준을 넘었고 크리스탈(100)·다이아(500)는 아직이다.
+        badgeEvaluationService.evaluateHelpfulSaviorBadge(user, 60L);
+
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.HELPFUL_BRONZE));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.HELPFUL_SILVER));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.HELPFUL_GOLD));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.HELPFUL_RUBY));
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.HELPFUL_CRYSTAL));
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.HELPFUL_DIAMOND));
+    }
+
+    @Test
+    void 도장_10개를_모으면_해당하는_단계까지_전부_부여된다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_BRONZE)).thenReturn(true);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_SILVER)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_GOLD)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_RUBY)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_CRYSTAL)).thenReturn(false);
+        when(userBadgeRepository.existsByUser_IdAndBadge(1L, Badge.STAMP_DIAMOND)).thenReturn(false);
+
+        badgeEvaluationService.evaluateStampBadge(user, 10L);
+
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.STAMP_BRONZE));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.STAMP_SILVER));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.STAMP_GOLD));
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.STAMP_RUBY));
+    }
+
+    @Test
+    void 정복자는_1_5_15_30_기준으로_평가되고_크리스탈_다이아는_없다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(eq(1L), any())).thenReturn(false);
+
+        // 시/군/구 15곳을 찍어 동(1)·은(5)·금(15) 단계까지만 기준을 넘고, 루비(30)는 아직이다.
+        badgeEvaluationService.evaluateRegionBadge(user, 15L);
+
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REGION_BRONZE));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REGION_SILVER));
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REGION_GOLD));
+        verify(userBadgeRepository, never()).save(argThatBadgeIs(Badge.REGION_RUBY));
+    }
+
+    @Test
+    void 정복자_30곳을_채우면_루비까지_부여된다() {
+        setUpService();
+        User user = user();
+        when(userBadgeRepository.existsByUser_IdAndBadge(eq(1L), any())).thenReturn(false);
+
+        badgeEvaluationService.evaluateRegionBadge(user, 30L);
+
+        verify(userBadgeRepository).save(argThatBadgeIs(Badge.REGION_RUBY));
     }
 
     private UserBadge argThatBadgeIs(Badge badge) {

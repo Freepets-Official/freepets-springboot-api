@@ -70,7 +70,7 @@ public class ReviewCommandService {
     // 전체 시설을 점수순으로 정렬해야 해서, 조회 시점에 집계하면 매 요청마다 리뷰 전체를 훑게 된다.
     //
     // 신고(reportReview)는 PENDING으로 저장되고 집계는 ACCEPTED만 제외하므로 여기서 갱신하지
-    // 않는다. 신고를 승인하는 기능이 생기면 그 지점에 추가해야 한다.
+    // 않는다. 신고 승인 시점의 갱신은 ReviewReportAdminCommandService.accept가 맡는다.
     private final FacilityGradeCacheService facilityGradeCacheService;
 
     public ReviewResponseDTO.UpsertResult upsertReview(

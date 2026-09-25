@@ -2,6 +2,7 @@ package com.freepets.global.security;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -47,9 +48,12 @@ import com.freepets.domain.gamification.service.RankingQueryService;
 import com.freepets.domain.report.controller.DenialReportController;
 import com.freepets.domain.report.service.DenialReportCommandService;
 import com.freepets.domain.report.service.DenialReportQueryService;
+import com.freepets.domain.review.controller.ReviewAdminController;
 import com.freepets.domain.review.controller.ReviewController;
 import com.freepets.domain.review.service.ReviewCommandService;
 import com.freepets.domain.review.service.ReviewQueryService;
+import com.freepets.domain.review.service.ReviewReportAdminCommandService;
+import com.freepets.domain.review.service.ReviewReportAdminQueryService;
 import com.freepets.domain.user.controller.UserController;
 import com.freepets.domain.user.dto.UserResponseDTO;
 import com.freepets.domain.user.entity.Role;
@@ -66,6 +70,7 @@ import com.freepets.global.security.jwt.JwtProvider;
         CourseController.class,
         FacilityController.class,
         ReviewController.class,
+        ReviewAdminController.class,
         DenialReportController.class,
         GamificationRankingController.class,
         SecurityTestPingController.class
@@ -121,6 +126,12 @@ class SecurityFilterChainTest {
 
     @MockitoBean
     private ReviewCommandService reviewCommandService;
+
+    @MockitoBean
+    private ReviewReportAdminQueryService reviewReportAdminQueryService;
+
+    @MockitoBean
+    private ReviewReportAdminCommandService reviewReportAdminCommandService;
 
     @MockitoBean
     private DenialReportQueryService denialReportQueryService;
@@ -204,6 +215,21 @@ class SecurityFilterChainTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(content().string("admin-pong:2"));
+    }
+
+    // 리뷰 신고 처리는 리뷰를 숨기는 실제 운영 기능이라, 일반 유저가 호출하면 서비스까지 닿지 않고 막혀야 한다.
+    @Test
+    void 일반_사용자_토큰으로_리뷰_신고_승인_요청시_403이고_서비스를_호출하지_않는다() throws Exception {
+        String token = jwtProvider.createAccessToken(1L);
+        when(userRepository.existsByIdAndDeletedAtIsNull(1L)).thenReturn(true);
+        when(userRepository.findActiveRoleById(1L)).thenReturn(Optional.of(Role.USER));
+
+        mockMvc.perform(post("/api/v1/admin/reviews/1/reports/accept")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMMON403"));
+
+        verifyNoInteractions(reviewReportAdminCommandService);
     }
 
     // 관리자 역할은 일반 경로 접근을 막지 않아야 한다 — 운영자도 자기 앱 계정으로 앱 기능을 쓴다.

@@ -2,11 +2,15 @@ package com.freepets.domain.review.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.freepets.domain.pet.entity.Kind;
+import com.freepets.domain.review.entity.ReviewReportReason;
+import com.freepets.domain.review.entity.ReviewReportStatus;
 import com.freepets.domain.review.entity.Tag;
 
 public class ReviewResponseDTO {
@@ -111,5 +115,45 @@ public class ReviewResponseDTO {
     public record HelpfulResult(
             Long reviewId,
             long helpfulCount
+    ) {}
+
+    /** 관리자 신고 목록. 신고를 리뷰 단위로 묶고, 첫 신고가 오래된 순이다. */
+    public record AdminReportedReviewList(
+            List<AdminReportedReview> reviews,
+            PageInfo pageInfo
+    ) {}
+
+    /**
+     * 관리자가 숨길지 판단하는 데 필요한 리뷰 원문과 신고 현황.
+     *
+     * @param reportCount     조회한 상태(예: 대기)의 신고 수
+     * @param reasonCounts    사유별 신고 수. 신고가 없는 사유는 키가 없다
+     * @param firstReportedAt 조회한 상태의 신고 중 가장 먼저 접수된 시각
+     */
+    public record AdminReportedReview(
+            Long reviewId,
+            Long facilityId,
+            String facilityName,
+            Long authorUserId,
+            String authorNickname,
+            String content,
+            String photoUrl,
+            Integer ratingSpace,
+            Integer ratingStaff,
+            Integer ratingAmenity,
+            LocalDateTime reviewCreatedAt,
+            long reportCount,
+            Map<ReviewReportReason, Long> reasonCounts,
+            LocalDateTime firstReportedAt
+    ) {}
+
+    /**
+     * @param status               처리 후 신고 상태(승인 또는 반려)
+     * @param processedReportCount 이번에 처리한 대기 신고 수
+     */
+    public record AdminReportActionResult(
+            Long reviewId,
+            ReviewReportStatus status,
+            int processedReportCount
     ) {}
 }

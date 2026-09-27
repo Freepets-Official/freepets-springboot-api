@@ -61,4 +61,14 @@ public class ReviewAdminController {
                 reviewReportAdminCommandService.reject(adminUserId, reviewId)
         );
     }
+
+    @PostMapping("/{reviewId}/reports/revert")
+    public ApiResponse<ReviewResponseDTO.AdminReportActionResult> revertAccept(
+            @AuthenticationPrincipal Long adminUserId,
+            @PathVariable("reviewId") Long reviewId
+    ) {
+        return ApiResponse.onSuccess(
+                reviewReportAdminCommandService.revertAccept(adminUserId, reviewId)
+        );
+    }
 }

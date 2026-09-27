@@ -82,4 +82,13 @@ public class ReviewReport extends BaseEntity {
         this.reviewedByUserId = adminUserId;
     }
 
+    // 잘못 승인한 신고를 대기로 되돌린다 — 승인된 신고가 사라지면 리뷰가 목록·집계에 다시 나온다.
+    // 대기 상태는 처리 시각·운영자가 null이라는 규칙을 지키려고 둘 다 비운다. 누가 되돌렸는지는
+    // ReviewReportAdminCommandService.revertAccept의 로그에 남긴다.
+    public void revertToPending() {
+        this.status = ReviewReportStatus.PENDING;
+        this.reviewedAt = null;
+        this.reviewedByUserId = null;
+    }
+
 }

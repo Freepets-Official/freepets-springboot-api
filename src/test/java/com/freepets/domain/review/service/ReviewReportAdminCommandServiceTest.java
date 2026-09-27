@@ -216,4 +216,83 @@ class ReviewReportAdminCommandServiceTest {
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4006);
     }
+
+    // ---------------------------------------------------------------
+    // revertAccept
+    // ---------------------------------------------------------------
+
+    private ReviewReport createAcceptedReport(
+            Review review,
+            ReviewReportReason reason
+    ) {
+        ReviewReport report = createPendingReport(review, reason);
+        report.accept(ADMIN_USER_ID);
+        return report;
+    }
+
+    @Test
+    void revertAccept_승인된_신고를_모두_대기로_되돌리고_시설_등급을_다시_계산한다() {
+        Review review = createReview();
+        List<ReviewReport> acceptedReports = List.of(
+                createAcceptedReport(review, ReviewReportReason.SPAM),
+                createAcceptedReport(review, ReviewReportReason.ABUSE)
+        );
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(REVIEW_ID)).thenReturn(Optional.of(review));
+        when(reviewReportRepository.findAllByReviewIdAndStatusForUpdate(REVIEW_ID, ReviewReportStatus.ACCEPTED))
+                .thenReturn(acceptedReports);
+
+        ReviewResponseDTO.AdminReportActionResult result =
+                reviewReportAdminCommandService.revertAccept(ADMIN_USER_ID, REVIEW_ID);
+
+        assertThat(result.status()).isEqualTo(ReviewReportStatus.PENDING);
+        assertThat(result.processedReportCount()).isEqualTo(2);
+        // 대기 상태는 처리 시각·운영자가 비어 있어야 한다 — 다시 승인·반려할 때 새로 채워진다.
+        assertThat(acceptedReports)
+                .allSatisfy(report -> {
+                    assertThat(report.getStatus()).isEqualTo(ReviewReportStatus.PENDING);
+                    assertThat(report.getReviewedByUserId()).isNull();
+                    assertThat(report.getReviewedAt()).isNull();
+                });
+        verify(facilityGradeCacheService).refresh(FACILITY_ID);
+    }
+
+    // accept와 같은 이유로 신고 → 시설 순으로 잠근 뒤에 집계를 다시 계산해야 한다.
+    @Test
+    void revertAccept_신고와_시설을_잠근_뒤에_시설_등급을_다시_계산한다() {
+        Review review = createReview();
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(REVIEW_ID)).thenReturn(Optional.of(review));
+        when(reviewReportRepository.findAllByReviewIdAndStatusForUpdate(REVIEW_ID, ReviewReportStatus.ACCEPTED))
+                .thenReturn(List.of(createAcceptedReport(review, ReviewReportReason.SPAM)));
+
+        reviewReportAdminCommandService.revertAccept(ADMIN_USER_ID, REVIEW_ID);
+
+        InOrder lockOrder = inOrder(reviewReportRepository, facilityRepository, facilityGradeCacheService);
+        lockOrder.verify(reviewReportRepository).findAllByReviewIdAndStatusForUpdate(REVIEW_ID, ReviewReportStatus.ACCEPTED);
+        lockOrder.verify(facilityRepository).findByIdForUpdate(FACILITY_ID);
+        lockOrder.verify(facilityGradeCacheService).refresh(FACILITY_ID);
+    }
+
+    @Test
+    void revertAccept_존재하지_않거나_삭제된_리뷰면_REVIEW4041() {
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(REVIEW_ID)).thenReturn(Optional.empty());
+
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> reviewReportAdminCommandService.revertAccept(ADMIN_USER_ID, REVIEW_ID));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4041);
+        verifyNoInteractions(reviewReportRepository, facilityRepository, facilityGradeCacheService);
+    }
+
+    @Test
+    void revertAccept_승인된_신고가_없으면_REVIEW4007이고_등급을_다시_계산하지_않는다() {
+        when(reviewRepository.findByReviewIdAndDeletedAtIsNull(REVIEW_ID)).thenReturn(Optional.of(createReview()));
+        when(reviewReportRepository.findAllByReviewIdAndStatusForUpdate(REVIEW_ID, ReviewReportStatus.ACCEPTED))
+                .thenReturn(List.of());
+
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> reviewReportAdminCommandService.revertAccept(ADMIN_USER_ID, REVIEW_ID));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorStatus.REVIEW4007);
+        verify(facilityGradeCacheService, never()).refresh(any());
+    }
 }

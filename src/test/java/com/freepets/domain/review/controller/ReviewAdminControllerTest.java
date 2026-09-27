@@ -136,4 +136,25 @@ class ReviewAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("REJECTED"));
     }
+
+    @Test
+    void revertAccept_성공하면_200과_대기로_되돌린_결과를_반환한다() throws Exception {
+        when(reviewReportAdminCommandService.revertAccept(any(), eq(31L)))
+                .thenReturn(new ReviewResponseDTO.AdminReportActionResult(31L, ReviewReportStatus.PENDING, 2));
+
+        mockMvc.perform(post("/api/v1/admin/reviews/31/reports/revert"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.status").value("PENDING"))
+                .andExpect(jsonPath("$.result.processedReportCount").value(2));
+    }
+
+    @Test
+    void revertAccept_승인된_신고가_없으면_409를_반환한다() throws Exception {
+        when(reviewReportAdminCommandService.revertAccept(any(), eq(31L)))
+                .thenThrow(new GeneralException(ErrorStatus.REVIEW4007));
+
+        mockMvc.perform(post("/api/v1/admin/reviews/31/reports/revert"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("REVIEW4007"));
+    }
 }

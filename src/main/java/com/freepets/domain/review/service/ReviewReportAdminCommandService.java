@@ -21,7 +21,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 관리자의 리뷰 신고 승인·반려. 신고는 리뷰 단위로 처리한다 — 한 리뷰의 대기 신고 전체가 한꺼번에
+ * 관리자의 리뷰 신고 승인·반려·승인 되돌리기. 신고는 리뷰 단위로 처리한다 — 한 리뷰의 대기 신고 전체가 한꺼번에
  * 같은 상태로 바뀐다. 일반 유저용 {@link ReviewCommandService}와는 호출 주체(관리자)와 권한이 달라
  * 클래스를 분리한다({@code FacilityOwnerClaimAdminCommandService}와 같은 방식).
  *
@@ -87,6 +87,34 @@ public class ReviewReportAdminCommandService {
         return ReviewConverter.toAdminReportActionResult(reviewId, ReviewReportStatus.REJECTED, pendingReports.size());
     }
 
+    /**
+     * 잘못 숨긴 리뷰를 되살린다. 승인된 신고를 모두 대기로 되돌려서 리뷰가 목록·집계에 다시 나오게 하고,
+     * 신고는 대기 목록으로 돌아가 운영자가 다시 판단한다.
+     *
+     * <p>리뷰가 집계에 다시 들어가므로 {@link #accept}와 같은 이유·같은 순서(신고 → 시설)로 잠근 뒤
+     * 시설 등급을 다시 계산한다.
+     */
+    public ReviewResponseDTO.AdminReportActionResult revertAccept(
+            Long adminUserId,
+            Long reviewId
+    ) {
+        Review review = findReview(reviewId);
+        List<ReviewReport> acceptedReports = findAcceptedReportsForUpdate(reviewId);
+
+        acceptedReports.forEach(ReviewReport::revertToPending);
+
+        Long facilityId = review.getFacility().getFacilityId();
+        facilityRepository.findByIdForUpdate(facilityId);
+        facilityGradeCacheService.refresh(facilityId);
+
+        log.info(
+                "리뷰 신고 승인 되돌리기: reviewId={}, reportCount={}, adminUserId={}",
+                reviewId, acceptedReports.size(), adminUserId
+        );
+
+        return ReviewConverter.toAdminReportActionResult(reviewId, ReviewReportStatus.PENDING, acceptedReports.size());
+    }
+
     private Review findReview(Long reviewId) {
         return reviewRepository.findByReviewIdAndDeletedAtIsNull(reviewId)
                 .orElseThrow(() -> new GeneralException(ErrorStatus.REVIEW4041));
@@ -99,5 +127,14 @@ public class ReviewReportAdminCommandService {
             throw new GeneralException(ErrorStatus.REVIEW4006);
         }
         return pendingReports;
+    }
+
+    private List<ReviewReport> findAcceptedReportsForUpdate(Long reviewId) {
+        List<ReviewReport> acceptedReports =
+                reviewReportRepository.findAllByReviewIdAndStatusForUpdate(reviewId, ReviewReportStatus.ACCEPTED);
+        if (acceptedReports.isEmpty()) {
+            throw new GeneralException(ErrorStatus.REVIEW4007);
+        }
+        return acceptedReports;
     }
 }

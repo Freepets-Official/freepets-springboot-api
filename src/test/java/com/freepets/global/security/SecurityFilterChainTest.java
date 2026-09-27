@@ -232,6 +232,21 @@ class SecurityFilterChainTest {
         verifyNoInteractions(reviewReportAdminCommandService);
     }
 
+    // 승인 되돌리기도 숨긴 리뷰를 다시 노출하는 운영 기능이라 승인과 똑같이 막혀야 한다.
+    @Test
+    void 일반_사용자_토큰으로_리뷰_신고_승인_되돌리기_요청시_403이고_서비스를_호출하지_않는다() throws Exception {
+        String token = jwtProvider.createAccessToken(1L);
+        when(userRepository.existsByIdAndDeletedAtIsNull(1L)).thenReturn(true);
+        when(userRepository.findActiveRoleById(1L)).thenReturn(Optional.of(Role.USER));
+
+        mockMvc.perform(post("/api/v1/admin/reviews/1/reports/revert")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMMON403"));
+
+        verifyNoInteractions(reviewReportAdminCommandService);
+    }
+
     // 관리자 역할은 일반 경로 접근을 막지 않아야 한다 — 운영자도 자기 앱 계정으로 앱 기능을 쓴다.
     // 일반 경로는 관리자 판정을 아예 거치지 않으므로 findActiveRoleById는 부르지 않는다.
     @Test
